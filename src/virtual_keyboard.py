@@ -19,123 +19,24 @@ from toolbox import round_half_up
 
 class VirtualKeyboard():
     __white_map = {
-        0: 0,
-        1: 2,
-        2: 4,
-        3: 5,
-        4: 7,
-        5: 9,
-        6: 11,
-        7: 12,
-        8: 14,
-        9: 16,
-        10: 17,
-        11: 19,
-        12: 21,
-        13: 23,
-        14: 24,
-        15: 26,
-        16: 28,
-        17: 29,
-        18: 31,
-        19: 33,
-        20: 35,
-        21: 36,
-        22: 38,
-        23: 40,
-        24: 41,
-        25: 43,
-        26: 45,
-        27: 47
+        0: 0,   # Primera tecla blanca -> nota 0
+        1: 1,   # Segunda tecla blanca -> nota 2
+        2: 2,   # Tercera tecla blanca -> nota 4
+        3: 3    # Cuarta tecla blanca -> nota 5
     }
 
     __black_map = {
-        0: 1,
-        1: 3,
+        0: None,
+        1: None,
         2: None,
-        3: 6,
-        4: 8,
-        5: 10,
-        6: None,
-
-        7: 13,  # DO#
-        8: 15,
-        9: None,
-        10: 18,
-        11: 20,
-        12: 22,
-        13: None,
-
-        14: 25,
-        15: 27,
-        16: None,
-        17: 30,
-        18: 32,
-        19: 34,
-        20: None,
-
-        21: 37,
-        22: 39,
-        23: None,
-        24: 42,
-        25: 44,
-        26: 46,
-        27: None,
-
-        28: 49,
-        29: 51
+        3: None
     }
 
-    __keyboard_piano_map = {  # Recomended set GM2 21-108
-        0:  36,  # DO
-        1:  37,  # DO#
-        2:  38,  # RE
-        3:  39,  # RE#
-        4:  40,  # MI
-        5:  41,  # FA
-        6:  42,  # FA#
-        7:  43,  # SOL
-        8:  44,  # SOL#
-        9:  45,  # LA
-        10: 46,  # LA#
-        11: 47,  # SI
-        12: 48,  # DO
-        13: 49,  # DO#
-        14: 50,  # RE
-        15: 51,  # RE#
-        16: 52,  # MI
-        17: 53,  # FA
-        18: 54,  # FA#
-        19: 55,  # SOL
-        20: 56,  # SOL#
-        21: 57,  # LA
-        22: 58,  # LA#
-        23: 59,  # SI
-        24: 60,  # DO
-        25: 61,  # DO#
-        26: 62,  # RE
-        27: 63,  # RE#
-        28: 64,  # MI
-        29: 65,  # FA
-        30: 66,  # FA#
-        31: 67,  # SOL
-        32: 68,  # SOL#
-        33: 69,  # LA
-        34: 70,  # LA#
-        35: 71,  # SI
-        36: 72,  # DO
-        37: 73,  # DO#
-        38: 74,  # RE
-        39: 75,  # RE#
-        40: 76,  # MI
-        41: 77,  # FA
-        42: 78,  # FA#
-        43: 79,  # SOL
-        44: 80,  # SOL#
-        45: 81,  # LA
-        46: 82,  # LA#
-        47: 83,  # SI
-        48: 84  # DO
+    __keyboard_piano_map = {
+        0: 60,  # DO (C4)
+        1: 62,  # RE (D4)
+        2: 64,  # MI (E4)
+        3: 65   # FA (F4)
     }
 
     def __init__(self, canvas_w, canvas_h, kb_white_n_keys):
@@ -327,6 +228,7 @@ class VirtualKeyboard():
                 # print('find_key:key {}'.format(key))
                 key = math.floor(key)
                 # print('find_key:ceil key {}'.format(key))
+                print(f"Tecla superior detectada: {key}")  # DEBUG
                 return self.__white_map[int(key)]
             else:
                 return self.__black_map[int(key)]
@@ -335,6 +237,7 @@ class VirtualKeyboard():
             # print('find_key:key {}'.format(key))
             key = math.floor(key)
             # print('find_key:ceil key {}'.format(key))
+            print(f"Tecla inferior detectada: {key}")  # DEBUG
             return self.__white_map[int(key)]
 
     def note_from_key(self, key):

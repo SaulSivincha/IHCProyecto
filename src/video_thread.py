@@ -47,7 +47,7 @@ class VideoThread:
         # ------------------------------
 
         # buffer setup
-        self.buffer_length = 5
+        self.buffer_length = 1
 
         # control states
         self.frame_grab_run = False

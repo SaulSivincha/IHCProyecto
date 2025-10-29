@@ -74,6 +74,9 @@ import keyboard_mapper as kbm
 import numpy as np
 import fluidsynth
 import math
+from rythm_game import RhythmGame
+from song_chart import TUTORIAL_FACIL
+from side_contact_detector import SideContactDetector
 
 def frame_add_crosshairs(frame,
                          x,
@@ -93,7 +96,6 @@ def frame_add_crosshairs(frame,
 
     cv2.circle(frame, (x, y), r, cc, cw)
 
-
 def main():
 
     try:
@@ -103,8 +105,8 @@ def main():
         # ------------------------------
 
         # cameras variables
-        left_camera_source = 2   # Left Camera in Camrea Point of View (PoV)
-        right_camera_source = 0  # Right Camera in Camrea Point of View (PoV)
+        left_camera_source = 0  # Left Camera in Camrea Point of View (PoV)
+        right_camera_source = 2  # Right Camera in Camrea Point of View (PoV)
         pixel_width = 640
         pixel_height = 480
 
@@ -227,13 +229,13 @@ def main():
         # set up virtual keyboards
         # ------------------------------
 
-        N_BANK = 3
-        N_MAYOR_NOTES_X_BANK = 7
+        N_BANK = 0
+        N_MAYOR_NOTES_X_BANK = 0
 
         # KEYBOARD_WHIITE_N_KEYS + 1 agrega el ultimo DO
-        KEYBOARD_WHIITE_N_KEYS = N_BANK*N_MAYOR_NOTES_X_BANK + 1
+        KEYBOARD_WHIITE_N_KEYS = 4
 
-        KEYBOARD_TOT_KEYS = KEYBOARD_WHIITE_N_KEYS + N_BANK * 5
+        KEYBOARD_TOT_KEYS = 4
         print('KEYBOARD_TOT_KEYS:{}'.format(KEYBOARD_TOT_KEYS))
         octave_base = 0
 
@@ -241,12 +243,15 @@ def main():
                                       KEYBOARD_WHIITE_N_KEYS)
         vk_right = vkb.VirtualKeyboard(pixel_width, pixel_height,
                                       KEYBOARD_WHIITE_N_KEYS)
-
+        # Inicializar juego de ritmo
+        rhythm_game = RhythmGame(num_keys=4)
+        game_mode = False  # False = modo libre, True = modo juego
 
         # ------------------------------
         # set up keyboards map
         # -----------------------------
         km = kbm.KeyboardMap()
+        contact_detector = SideContactDetector(canvas_height=pixel_height)
 
         # ------------------------------
         # set up angles
@@ -268,10 +273,10 @@ def main():
         # ------------------------------
 
         fs = fluidsynth.Synth()
-        fs.start(driver='alsa') # Linux
+        fs.start(driver='dsound') # Windows
         # sfid = fs.sfload("/home/mherrera/Proyectos/Desa/\
         #                  00400-VirtualPianoKeyboard/0100-lab/example.sf2")
-        sfid = fs.sfload("/usr/share/sounds/sf2/FluidR3_GM.sf2")
+        sfid = fs.sfload(r"C:\Users\MI PC\OneDrive\Desktop\fluid\FluidR3_GM.sf2")
 
         # 000-000 Yamaha Grand Piano
         fs.program_select(chan=0, sfid=sfid, bank=0, preset=0)
@@ -359,6 +364,11 @@ def main():
 
                 hands_right_image, fingers_right_image = \
                     right_detector.getFingerTipsPos()
+            
+            # Detectar contacto con la mesa desde cámara lateral
+            if len(fingers_right_image) > 0:
+                contact_detector.detect_contact(fingers_right_image)
+                frame_right = contact_detector.draw_table_line(frame_right)
             # else:
             #     vk_right.draw_virtual_keyboard(frame_right)
 
@@ -402,10 +412,27 @@ def main():
                 on_map, off_map = km.get_kayboard_map(
                     virtual_keyboard=vk_left,
                     fingertips_pos=fingers_left_image,
-                    fingers_height=fingers_dist,
-                    center_point_distance=vkb_center_point_camera_dist-2.5,
+                    contact_detector=contact_detector,  # NUEVO PARÁMETRO
                     keyboard_n_key=KEYBOARD_TOT_KEYS)
-
+                
+                if game_mode:
+                    rhythm_game.update()
+                    
+                    # Verificar aciertos cuando se presiona una tecla
+                    for k_pos, on_key in enumerate(on_map):
+                        if on_key:
+                            hit_result = rhythm_game.check_hit(k_pos)
+                            if hit_result:
+                                print(f"Tecla {k_pos}: {hit_result}")
+                    
+                    # Dibujar el juego de ritmo sobre el frame
+                    frame_left = rhythm_game.draw(
+                        frame_left, 
+                        vk_left.kb_x0, 
+                        vk_left.kb_x1,
+                        vk_left.white_key_width
+                    )
+                
                 if np.any((on_map == True)):
                     for k_pos, on_key in enumerate(on_map):
                         # print('k_pos:{}   on_key:{}'.format(k_pos, on_key))
@@ -492,11 +519,8 @@ def main():
             # Detect control keys
             key = cv2.waitKey(1) & 0xFF
             if cv2.getWindowProperty(
-                    main_window_name, cv2.WND_PROP_VISIBLE) < 1:
+                main_window_name, cv2.WND_PROP_VISIBLE) < 1:
                 break
-            # elif cv2.getWindowProperty(
-            #         right_window_name, cv2.WND_PROP_VISIBLE) < 1:
-            #     break
             elif key == ord('q'):
                 break
             elif key == ord('d'):
@@ -504,6 +528,19 @@ def main():
                     display_dashboard = False
                 else:
                     display_dashboard = True
+            elif key == ord('g'):  # ========== NUEVA TECLA ==========
+                game_mode = True
+                rhythm_game.start_game(TUTORIAL_FACIL)
+                print("¡Juego de ritmo iniciado! Presiona 'f' para volver al modo libre")
+            elif key == ord('f'):  # ========== NUEVA TECLA ==========
+                game_mode = False
+                print("Modo libre activado")
+            elif key == ord('t'):  # Subir nivel de mesa
+                contact_detector.table_y_threshold -= 5
+                print(f"Nivel de mesa subió a: {contact_detector.table_y_threshold}")
+            elif key == ord('b'):  # Bajar nivel de mesa
+                contact_detector.table_y_threshold += 5
+                print(f"Nivel de mesa bajó a: {contact_detector.table_y_threshold}")
             elif key != 255:
                 print('KEY PRESS:', [chr(key)])
 

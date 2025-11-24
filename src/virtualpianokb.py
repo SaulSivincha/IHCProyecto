@@ -342,31 +342,40 @@ def main():
             hands_left_image = fingers_left_image = []
             hands_right_image = fingers_right_image = []
 
-            # Dibujar teclado siempre
-            vk_left.draw_virtual_keyboard(frame_left)
-            
-            # Detect Hands
+            # CORRECCIÓN: Primero detectar manos en frame limpio, LUEGO dibujar teclado
+            # Detect Hands ANTES de dibujar el teclado
             if left_detector.findHands(frame_left):
-                left_detector.drawHands(frame_left)
-                left_detector.drawTips(frame_left)
-                
                 hands_left_image, fingers_left_image = \
                     left_detector.getFingerTipsPos()
             else:
                 hands_left_image = fingers_left_image = []
 
-            if right_detector.findHands(frame_right):
-                #vk_right.draw_virtual_keyboard(frame_right)
-                right_detector.drawHands(frame_right)
-                right_detector.drawTips(frame_right)
+            # Ahora sí dibujar el teclado y las manos encima
+            vk_left.draw_virtual_keyboard(frame_left)
 
+            # Dibujar las manos DESPUÉS del teclado
+            if len(hands_left_image) > 0:
+                left_detector.drawHands(frame_left)
+                left_detector.drawTips(frame_left)
+
+            # CORRECCIÓN: Primero detectar manos en frame limpio
+            if right_detector.findHands(frame_right):
                 hands_right_image, fingers_right_image = \
                     right_detector.getFingerTipsPos()
-            
+            else:
+                hands_right_image = fingers_right_image = []
+
             # Detectar contacto con la mesa desde cámara lateral
             if len(fingers_right_image) > 0:
                 contact_detector.detect_contact(fingers_right_image)
-                frame_right = contact_detector.draw_table_line(frame_right)
+
+            # Dibujar todo DESPUÉS de la detección
+            frame_right = contact_detector.draw_table_line(frame_right)
+
+            # Dibujar las manos DESPUÉS 
+            if len(hands_right_image) > 0:
+                right_detector.drawHands(frame_right)
+                right_detector.drawTips(frame_right)
             # else:
             #     vk_right.draw_virtual_keyboard(frame_right)
 

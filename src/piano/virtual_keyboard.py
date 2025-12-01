@@ -10,6 +10,7 @@ import cv2
 import numpy as np
 import math
 from src.common.toolbox import round_half_up
+from src.vision.stereo_config import StereoConfig
 
 # black keys averaging 13.7 mm (0.54 in) and
 # white keys about 23.5 mm (0.93 in) at the
@@ -50,12 +51,11 @@ class VirtualKeyboard():
         if self.canvas_w == 640 and self.canvas_h == 480:
             # If camera are on the front of the user, the left keyboard
             # image (on the right of the screen) must be centered at left
-            
-            self.kb_x0 = int(round_half_up(canvas_w * 0.20))  # 30
-            self.kb_y0 = int(round_half_up(canvas_h * 0.35))  # 50 + 100
-
-            self.kb_x1 = int(round_half_up(canvas_w * 0.80))  # 610
-            self.kb_y1 = int(round_half_up(canvas_h * 0.55))  # 190 + 100
+            # Usar configuración centralizada
+            self.kb_x0 = int(round_half_up(canvas_w * StereoConfig.KEYBOARD_X0_RATIO))
+            self.kb_y0 = int(round_half_up(canvas_h * StereoConfig.KEYBOARD_Y0_RATIO))
+            self.kb_x1 = int(round_half_up(canvas_w * StereoConfig.KEYBOARD_X1_RATIO))
+            self.kb_y1 = int(round_half_up(canvas_h * StereoConfig.KEYBOARD_Y1_RATIO))
 
         # print('Piano Coords: (x0,y0) (x1,y1): ({},{}) ({}, {})'.format(
         #     self.kb_x0, self.kb_y0, self.kb_x1, self.kb_y1))
@@ -70,12 +70,12 @@ class VirtualKeyboard():
         self.white_key_width = self.kb_len/kb_white_n_keys
         print('virtual_keyboard:key_width:{}'.format(self.white_key_width))
 
-        # (13.7 / 23.5)
-        self.black_key_width = self.white_key_width*(0.54/0.93)
+        # Usar relación de tamaño desde configuración centralizada
+        self.black_key_width = self.white_key_width * (StereoConfig.BLACK_KEY_WIDTH_RATIO / StereoConfig.WHITE_KEY_WIDTH_RATIO)
 
         print('virtual_keyboard:black_key_width:{}'.
               format(self.black_key_width))
-        self.black_key_heigth = self.white_kb_height * 2/3
+        self.black_key_heigth = self.white_kb_height * StereoConfig.BLACK_KEY_HEIGHT_RATIO
         print('virtual_keyboard:black_key_heigth:{}'.
               format(self.black_key_heigth))
 
@@ -107,7 +107,8 @@ class VirtualKeyboard():
 
         # Generate output by blending image with shapes image, using the shapes
         # images also as mask to limit the blending to those parts
-        alpha = 0.5  #   Alpha transparency
+        # Usar alpha desde configuración centralizada
+        alpha = StereoConfig.KEYBOARD_ALPHA
         mask = shapes.astype(bool)
         img[mask] = cv2.addWeighted(img, alpha, shapes, 1 - alpha, 0)[mask]
 

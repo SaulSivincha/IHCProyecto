@@ -69,8 +69,12 @@ class VideoThread:
     
         self.finished = False
 
-        # camera setup
-        self.video_init_wait_time = 0.5
+        # camera setup - usar configuración centralizada si está disponible
+        try:
+            from src.vision.stereo_config import StereoConfig
+            self.video_init_wait_time = StereoConfig.CAMERA_INIT_WAIT
+        except ImportError:
+            self.video_init_wait_time = 0.5  # Fallback
 
         self.resource = cv2.VideoCapture(self.video_source)
         

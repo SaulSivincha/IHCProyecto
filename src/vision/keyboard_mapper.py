@@ -7,24 +7,29 @@ Actualizado para usar visión estereoscópica y profundidad 3D
 @author: mherrera
 """
 import numpy as np
+from src.vision.stereo_config import StereoConfig
+from src.vision.stereo_config import StereoConfig
 
 
 class KeyboardMap:
-    def __init__(self, depth_threshold=3.0):
+    def __init__(self, depth_threshold=None):
         """
         Inicializa el mapeador de teclado para visión estereoscópica.
         
         Args:
             depth_threshold: Profundidad máxima (cm) para detectar contacto con tecla.
+                            Si es None, usa StereoConfig.DEPTH_THRESHOLD
                             Valores típicos: 2-5 cm (ajustar según calibración)
         """
         self.prev_map = np.empty(0, dtype=bool)
-        self.depth_threshold = depth_threshold
+        self.depth_threshold = depth_threshold if depth_threshold is not None else StereoConfig.DEPTH_THRESHOLD
         self.finger_depths = {}  # Para rastrear profundidad de cada dedo
 
     def set_depth_threshold(self, threshold):
         """Ajusta dinámicamente el umbral de profundidad"""
         self.depth_threshold = threshold
+        # También actualizar en StereoConfig para consistencia
+        StereoConfig.DEPTH_THRESHOLD = threshold
 
     def get_kayboard_map(self,
                          virtual_keyboard,

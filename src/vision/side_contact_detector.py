@@ -6,12 +6,14 @@ Side Contact Detector - Detecta contacto con mesa desde vista lateral
 
 import cv2
 import numpy as np
+from src.vision.stereo_config import StereoConfig
 
 class SideContactDetector:
     def __init__(self, canvas_height=480):
         self.canvas_height = canvas_height
-        self.table_y_threshold = int(canvas_height * 0.70)  # Línea de la mesa (70% desde arriba)
-        self.contact_tolerance = 15  # Píxeles de tolerancia
+        # Usar configuración centralizada
+        self.table_y_threshold = int(canvas_height * StereoConfig.TABLE_Y_THRESHOLD_RATIO)
+        self.contact_tolerance = StereoConfig.CONTACT_TOLERANCE
         self.is_touching = {}  # Estado de contacto por dedo
         
     def set_table_level(self, y_position):

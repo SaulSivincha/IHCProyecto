@@ -125,8 +125,8 @@ def test_stereo_depth():
             frame_count += 1
             
             # Capturar frames
-            finished_left, frame_left = cam_left.next(black=True, wait=0.01)
-            finished_right, frame_right = cam_right.next(black=True, wait=0.01)
+            finished_left, frame_left = cam_left.next(black=True, wait=config.FRAME_WAIT_TIME_SETUP)
+            finished_right, frame_right = cam_right.next(black=True, wait=config.FRAME_WAIT_TIME_SETUP)
             
             if finished_left or finished_right:
                 print("✓ Captura completada")
@@ -176,9 +176,9 @@ def test_stereo_depth():
                         degrees=True
                     )
                     
-                    # Corrección de profundidad (delta_y)
-                    delta_y = (0.006509695290859 * X_local * X_local +
-                               0.039473684210526 * -1 * X_local)
+                    # Corrección de profundidad usando configuración centralizada
+                    delta_y = (config.DEPTH_CORRECTION_A * X_local * X_local +
+                               config.DEPTH_CORRECTION_B * -1 * X_local)
                     depth_corrected = D_local - delta_y
                     
                     hand_id = finger_left[0]

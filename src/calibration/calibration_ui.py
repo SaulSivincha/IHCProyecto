@@ -196,33 +196,41 @@ class CalibrationUI:
             y_offset += 22
         
         # ========== ESTADO DE DETECCIÓN ==========
-        status_y = self.height - 110
+        status_y = self.height - 120
         if detected:
-            status_text = "TABLERO DETECTADO"
+            status_text = "✓ TABLERO DETECTADO"
             status_color = CalibrationConfig.COLOR_SUCCESS
             action_text = "Presiona ESPACIO para capturar"
         else:
-            status_text = "BUSCANDO TABLERO..."
+            status_text = "✗ BUSCANDO TABLERO..."
             status_color = CalibrationConfig.COLOR_ERROR
             action_text = "Ajusta el tablero segun la instruccion"
         
         # Fondo para estado
         status_bg = frame_display.copy()
-        cv2.rectangle(status_bg, (0, status_y - 10), (self.width, self.height),
+        cv2.rectangle(status_bg, (0, status_y - 15), (self.width, self.height),
                      (20, 20, 20), -1)
         frame_display = cv2.addWeighted(frame_display, 0.7, status_bg, 0.3, 0)
         
         # Texto de estado
-        (status_w, _), _ = cv2.getTextSize(status_text, cv2.FONT_HERSHEY_SIMPLEX, 1.0, 2)
+        (status_w, _), _ = cv2.getTextSize(status_text, cv2.FONT_HERSHEY_SIMPLEX, 1.2, 3)
         status_x = (self.width - status_w) // 2
-        cv2.putText(frame_display, status_text, (status_x, status_y + 20),
-                   cv2.FONT_HERSHEY_SIMPLEX, 1.0, status_color, 2)
+        cv2.putText(frame_display, status_text, (status_x, status_y + 25),
+                   cv2.FONT_HERSHEY_SIMPLEX, 1.2, status_color, 3)
         
         # Acción
         (action_w, _), _ = cv2.getTextSize(action_text, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2)
         action_x = (self.width - action_w) // 2
-        cv2.putText(frame_display, action_text, (action_x, status_y + 55),
+        cv2.putText(frame_display, action_text, (action_x, status_y + 60),
                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (200, 200, 200), 2)
+        
+        # Tips de debug (si no detecta)
+        if not detected:
+            tips = "Tips: Mejor luz | Tablero completo | Enfoque claro | Prueba mas cerca/lejos"
+            (tips_w, _), _ = cv2.getTextSize(tips, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
+            tips_x = (self.width - tips_w) // 2
+            cv2.putText(frame_display, tips, (tips_x, status_y + 90),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (100, 150, 255), 1)
         
         # Controles
         controls = "ESC: Cancelar | Q: Salir"

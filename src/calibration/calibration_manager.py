@@ -112,7 +112,8 @@ class CalibrationManager:
     
     def _configure_chessboard(self):
         """
-        Solicita al usuario los parámetros del tablero de calibración
+        Solicita al usuario solo el tamaño del cuadrado
+        (Tablero 8x8 fijo: 7x7 esquinas internas)
         
         Returns:
             bool: True si se configuró exitosamente
@@ -123,6 +124,10 @@ class CalibrationManager:
         
         # Frame negro para la UI
         base_frame = np.zeros((self.resolution[1], self.resolution[0], 3), dtype=np.uint8)
+        
+        # TABLERO FIJO 8x8 (7x7 esquinas)
+        self.board_cols = 7
+        self.board_rows = 7
         
         # ========== SOLICITAR NÚMERO DE COLUMNAS ==========
         input_value = str(self.board_cols)
@@ -234,14 +239,207 @@ class CalibrationManager:
                 input_value += chr(key)
                 error_msg = ""
         
+        # ========== SOLICITAR SOLO TAMAÑO DEL CUADRADO ==========
+        input_value = str(int(self.square_size_mm))
+        error_msg = ""
+        
+        while True:
+            frame = base_frame.copy()
+            
+            # Panel informativo
+            info_y = 100
+            cv2.putText(frame, "TABLERO DE AJEDREZ ESTANDAR (8x8)", 
+                       (self.resolution[0]//2 - 300, info_y),
+                       cv2.FONT_HERSHEY_SIMPLEX, 1.3, (0, 200, 255), 3)
+            
+            cv2.putText(frame, "El sistema detectara 7x7 esquinas internas", 
+                       (self.resolution[0]//2 - 250, info_y + 50),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (200, 200, 200), 1)
+            
+            # Dibujar representación visual del tablero
+            board_x = self.resolution[0]//2 - 120
+            board_y = info_y + 100
+            square_size = 30
+            for i in range(8):
+                for j in range(8):
+                    color = (200, 200, 200) if (i + j) % 2 == 0 else (50, 50, 50)
+                    cv2.rectangle(frame, 
+                                (board_x + j*square_size, board_y + i*square_size),
+                                (board_x + (j+1)*square_size, board_y + (i+1)*square_size),
+                                color, -1)
+            
+            # Dibujar esquinas internas
+            for i in range(1, 8):
+                for j in range(1, 8):
+                    cv2.circle(frame, 
+                             (board_x + j*square_size, board_y + i*square_size),
+                             4, (0, 255, 0), -1)
+            
+            cv2.putText(frame, "49 esquinas detectadas", 
+                       (board_x + 20, board_y + 8*square_size + 30),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+            
+            # Solicitar tamaño
+            frame = self.ui.draw_input_screen(
+                frame,
+                f"Tamano de cada cuadrado (milimetros):",
+                input_value,
+                error_msg
+            )
+            
+            # Agregar instrucción de medición
+            cv2.putText(frame, "Mide un cuadrado de tu tablero con una regla", 
+                       (self.resolution[0]//2 - 250, self.resolution[1] - 100),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (100, 200, 255), 1)
+            
+            cv2.imshow(window_name, frame)
+            
+            key = cv2.waitKey(1) & 0xFF
+            
+            if key == 13:  # ENTER
+                try:
+                    size = float(input_value)
+                    if 10.0 <= size <= 100.0:
+                        self.square_size_mm = size
+                        break
+                    else:
+                        error_msg = "Valor debe estar entre 10 y 100 mm"
+                except ValueError:
+                    error_msg = "Ingresa un numero valido"
+            elif key == 27:  # ESC
+                cv2.destroyWindow(window_name)
+                return False
+            elif key == 8 and len(input_value) > 0:  # BACKSPACE
+                input_value = input_value[:-1]
+                error_msg = ""
+            elif 48 <= key <= 57 or key == 46:  # Números 0-9 y punto decimal
+                if key == 46 and '.' in input_value:
+                    continue
+                input_value += chr(key)
+                error_msg = ""
+        
         cv2.destroyWindow(window_name)
         
         print(f"\n✓ Configuración del tablero:")
-        print(f"  Columnas: {self.board_cols}")
-        print(f"  Filas: {self.board_rows}")
+        print(f"  Tipo: Ajedrez estándar (8x8 cuadrados)")
+        print(f"  Esquinas internas: 7 x 7")
         print(f"  Tamaño cuadrado: {self.square_size_mm} mm")
         
         return True
+    
+    def _show_board_presets_OLD(self, base_frame, window_name):
+        """
+        Muestra menú de presets de tableros comunes
+        
+        Returns:
+            bool: True si se seleccionó un preset o configuración personalizada
+        """
+        from .calibration_config import CalibrationConfig
+        
+        while True:
+            frame = base_frame.copy()
+            
+            # Título
+            title = "SELECCIONA TIPO DE TABLERO"
+            cv2.putText(frame, title, (self.resolution[0]//2 - 300, 80),
+                       cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0, 200, 255), 3)
+            
+            # Descripción
+            desc = "Selecciona el preset que coincida con tu tablero impreso"
+            cv2.putText(frame, desc, (self.resolution[0]//2 - 350, 130),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (200, 200, 200), 1)
+            
+            y_start = 180
+            y_spacing = 120
+            
+            # Opción 1: Profesional (recomendado)
+            self._draw_preset_option(frame, 1, "PROFESIONAL (Recomendado)", 
+                                    "10x7 cuadrados = 9x6 esquinas | 25mm",
+                                    20, y_start, True)
+            
+            # Opción 2: Ajedrez estándar
+            self._draw_preset_option(frame, 2, "AJEDREZ ESTANDAR", 
+                                    "8x8 cuadrados = 7x7 esquinas | 30mm",
+                                    20, y_start + y_spacing, False)
+            
+            # Opción 3: Tablero grande
+            self._draw_preset_option(frame, 3, "TABLERO GRANDE", 
+                                    "12x9 cuadrados = 11x8 esquinas | 30mm",
+                                    20, y_start + y_spacing * 2, False)
+            
+            # Opción 4: Personalizado
+            self._draw_preset_option(frame, 4, "PERSONALIZADO", 
+                                    "Ingresar valores manualmente",
+                                    20, y_start + y_spacing * 3, False)
+            
+            # Instrucciones
+            cv2.putText(frame, "Presiona 1, 2, 3 o 4 | ESC: Cancelar", 
+                       (self.resolution[0]//2 - 250, self.resolution[1] - 40),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.8, (100, 255, 100), 2)
+            
+            cv2.imshow(window_name, frame)
+            
+            key = cv2.waitKey(1) & 0xFF
+            
+            if key == ord('1'):
+                # Profesional
+                self.board_cols = 9
+                self.board_rows = 6
+                self.square_size_mm = 25.0
+                print("\n✓ Preset seleccionado: PROFESIONAL (10x7 cuadrados, 9x6 esquinas)")
+                return True
+            elif key == ord('2'):
+                # Ajedrez estándar
+                self.board_cols = 7
+                self.board_rows = 7
+                self.square_size_mm = 30.0
+                print("\n✓ Preset seleccionado: AJEDREZ ESTÁNDAR (8x8 cuadrados, 7x7 esquinas)")
+                return True
+            elif key == ord('3'):
+                # Grande
+                self.board_cols = 11
+                self.board_rows = 8
+                self.square_size_mm = 30.0
+                print("\n✓ Preset seleccionado: TABLERO GRANDE (12x9 cuadrados, 11x8 esquinas)")
+                return True
+            elif key == ord('4'):
+                # Personalizado - continuar con el flujo original
+                print("\n✓ Configuración personalizada seleccionada")
+                return True  # Continuará con las preguntas manuales
+            elif key == 27:  # ESC
+                return False
+    
+    def _draw_preset_option(self, frame, number, title, description, x, y, recommended=False):
+        """Dibuja una opción de preset"""
+        width = self.resolution[0] - 40
+        height = 100
+        
+        # Color según si es recomendado
+        border_color = (0, 255, 100) if recommended else (100, 150, 200)
+        
+        # Fondo
+        overlay = frame.copy()
+        cv2.rectangle(overlay, (x, y), (x + width, y + height), (30, 35, 40), -1)
+        frame[:] = cv2.addWeighted(frame, 0.7, overlay, 0.3, 0)[:]
+        
+        # Borde
+        cv2.rectangle(frame, (x, y), (x + width, y + height), border_color, 3)
+        
+        # Número
+        cv2.rectangle(frame, (x + 15, y + 15), (x + 65, y + 65), border_color, -1)
+        cv2.putText(frame, str(number), (x + 30, y + 50),
+                   cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0, 0, 0), 3)
+        
+        # Título
+        title_text = f"{title}"
+        if recommended:
+            title_text += " ★"
+        cv2.putText(frame, title_text, (x + 85, y + 40),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 255), 2)
+        
+        # Descripción
+        cv2.putText(frame, description, (x + 85, y + 70),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, (180, 180, 180), 1)
     
     def _calibrate_single_camera(self, calibrator, camera_name):
         """

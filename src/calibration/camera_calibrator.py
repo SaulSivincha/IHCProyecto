@@ -63,14 +63,29 @@ class CameraCalibrator:
         """
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         
-        # Detectar esquinas
-        ret, corners = cv2.findChessboardCorners(
-            gray, 
-            self.board_size, 
-            cv2.CALIB_CB_ADAPTIVE_THRESH + cv2.CALIB_CB_NORMALIZE_IMAGE
-        )
+        # Método 1: Detección con flags estándar
+        flags = (cv2.CALIB_CB_ADAPTIVE_THRESH + 
+                cv2.CALIB_CB_NORMALIZE_IMAGE + 
+                cv2.CALIB_CB_FAST_CHECK)
+        
+        ret, corners = cv2.findChessboardCorners(gray, self.board_size, flags)
+        
+        # Método 2: Si falla, intentar sin FAST_CHECK (más lento pero más robusto)
+        if not ret:
+            flags = cv2.CALIB_CB_ADAPTIVE_THRESH + cv2.CALIB_CB_NORMALIZE_IMAGE
+            ret, corners = cv2.findChessboardCorners(gray, self.board_size, flags)
+        
+        # Método 3: Si falla, intentar con ecualización de histograma
+        if not ret:
+            gray_eq = cv2.equalizeHist(gray)
+            ret, corners = cv2.findChessboardCorners(gray_eq, self.board_size, flags)
         
         frame_display = frame.copy()
+        
+        # Mostrar configuración del tablero en pantalla (debug)
+        debug_text = f"Buscando: {self.board_size[0]}x{self.board_size[1]} esquinas"
+        cv2.putText(frame_display, debug_text, (10, frame.shape[0] - 40),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2)
         
         if ret:
             # Refinar esquinas con precisión subpíxel

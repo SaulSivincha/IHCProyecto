@@ -19,10 +19,32 @@ class CalibrationConfig:
     CALIBRATION_FILE = CALIBRATION_DATA_DIR / "calibration.json"
     
     # ==================== TABLERO DE CALIBRACIÓN ====================
-    # Valores por defecto (el usuario puede cambiarlos)
-    DEFAULT_CHESSBOARD_ROWS = 6  # Filas internas (esquinas)
-    DEFAULT_CHESSBOARD_COLS = 9  # Columnas internas (esquinas)
-    DEFAULT_SQUARE_SIZE_MM = 25.0  # Tamaño del cuadrado en mm
+    # TABLERO ESTÁNDAR FIJO: 8x8 cuadrados = 7x7 esquinas internas
+    DEFAULT_CHESSBOARD_ROWS = 7  # Filas internas (esquinas) - FIJO para tablero 8x8
+    DEFAULT_CHESSBOARD_COLS = 7  # Columnas internas (esquinas) - FIJO para tablero 8x8
+    DEFAULT_SQUARE_SIZE_MM = 30.0  # Tamaño típico del cuadrado en mm (usuario puede ajustar)
+    
+    # Presets comunes
+    BOARD_PRESETS = {
+        'estandar': {
+            'nombre': 'Ajedrez Estándar (8x8 cuadrados)',
+            'cols': 7,
+            'rows': 7,
+            'size_mm': 30.0
+        },
+        'profesional': {
+            'nombre': 'Calibración Profesional (10x7 cuadrados)',
+            'cols': 9,
+            'rows': 6,
+            'size_mm': 25.0
+        },
+        'grande': {
+            'nombre': 'Tablero Grande (12x9 cuadrados)',
+            'cols': 11,
+            'rows': 8,
+            'size_mm': 30.0
+        }
+    }
     
     # ==================== CAPTURA DE IMÁGENES ====================
     MIN_IMAGES = 15  # Mínimo de imágenes por cámara

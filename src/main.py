@@ -69,6 +69,7 @@ import fluidsynth
 from src.vision import video_thread, angles
 from src.vision.hand_detector import HandDetector
 from src.vision import keyboard_mapper as kbm
+from src.vision import load_depth_estimator
 from src.vision.stereo_config import StereoConfig
 
 # --- Calibration ---
@@ -689,6 +690,13 @@ def run_calibration_process(ui_helper, pixel_width, pixel_height, config):
                 print("\n" + "="*70)
                 print("✓ FASE 2 RE-CALIBRADA EXITOSAMENTE")
                 print("="*70)
+                print("   Datos guardados correctamente")
+                print("   Puedes cerrar esta ventana y ejecutar el piano")
+                print("="*70)
+                
+                # NO RETORNAR - Continuar para que el usuario vea el mensaje
+                # El usuario debe presionar una tecla para continuar
+                input("\nPresiona ENTER para cerrar...")
                 
                 return True
             
@@ -834,6 +842,28 @@ def main():
         cam_right.start()
 
         time.sleep(1)
+        
+        # Intentar cargar DepthEstimator si existe calibración completa
+        depth_estimator = None
+        use_stereo_calibration = False
+        try:
+            from src.calibration.calibration_config import CalibrationConfig
+            depth_estimator = load_depth_estimator(CalibrationConfig.CALIBRATION_FILE)
+            use_stereo_calibration = True
+            print("\n" + "="*70)
+            print("✓ CALIBRACIÓN ESTÉREO CARGADA")
+            print("="*70)
+            print(f"  Baseline: {depth_estimator.baseline_cm:.2f} cm")
+            print(f"  Modo: Triangulación precisa con rectificación")
+            print("="*70 + "\n")
+        except (FileNotFoundError, ValueError) as e:
+            print("\n" + "="*70)
+            print("⚠ CALIBRACIÓN ESTÉREO NO DISPONIBLE")
+            print("="*70)
+            print(f"  {e}")
+            print(f"  Modo: Triangulación basada en ángulos (menos preciso)")
+            print("="*70 + "\n")
+        
         if camera_in_front_of_you:
             main_window_name = 'In fron of you: rigth+left cam'
         else:
@@ -1045,29 +1075,59 @@ def main():
                 fingers_dist = []
                 finger_depths_dict = {}  # Dict para pasar profundidades a KeyboardMap
                 
+                # Rectificar imágenes si usamos calibración estéreo
+                if use_stereo_calibration and depth_estimator:
+                    frame_left_rect, frame_right_rect = depth_estimator.rectify_images(frame_left, frame_right)
+                else:
+                    frame_left_rect, frame_right_rect = frame_left, frame_right
+                
                 for finger_left, finger_right in \
                     zip(fingers_left_image, fingers_right_image):
-                    # print('finger_left:{}'.format(finger_left))
-                    # print('finger_right:{}'.format(finger_right))
-                    # get angles from camera centers
-                    xlangle, ylangle = angler.angles_from_center(
-                        x = finger_left[2], y = finger_left[3],
-                        top_left=True, degrees=True)
-                    xrangle, yrangle = angler.angles_from_center(
-                        x = finger_right[2], y = finger_right[3],
-                        top_left=True, degrees=True)
+                    
+                    if use_stereo_calibration and depth_estimator:
+                        # ========== MÉTODO PRECISO: Calibración Estéreo ==========
+                        try:
+                            # Obtener posiciones de dedos
+                            point_left = (finger_left[2], finger_left[3])
+                            point_right = (finger_right[2], finger_right[3])
+                            
+                            # Triangular con calibración completa
+                            result_3d = depth_estimator.triangulate_point(point_left, point_right)
+                            
+                            if result_3d is not None:
+                                X_local, Y_local, Z_local = result_3d
+                                D_local = Z_local  # Profundidad = coordenada Z
+                                depth_corrected = D_local
+                            else:
+                                # Fallback si falla triangulación
+                                X_local = Y_local = Z_local = D_local = 0
+                                depth_corrected = 0
+                        except Exception as e:
+                            print(f"⚠ Error en triangulación estéreo: {e}")
+                            X_local = Y_local = Z_local = D_local = 0
+                            depth_corrected = 0
+                    else:
+                        # ========== MÉTODO ANTIGUO: Triangulación por ángulos ==========
+                        # get angles from camera centers
+                        xlangle, ylangle = angler.angles_from_center(
+                            x = finger_left[2], y = finger_left[3],
+                            top_left=True, degrees=True)
+                        xrangle, yrangle = angler.angles_from_center(
+                            x = finger_right[2], y = finger_right[3],
+                            top_left=True, degrees=True)
 
-                    # triangulate
-                    X_local, Y_local, Z_local, D_local = angler.location(
-                        camera_separation,
-                        (xlangle, ylangle),
-                        (xrangle, yrangle),
-                        center=True,
-                        degrees=True)
-                    # angle normalization
-                    delta_y = 0.006509695290859 * X_local * X_local + \
-                        0.039473684210526 * -1 * X_local # + vkb_center_point_camera_dist
-                    depth_corrected = D_local - delta_y
+                        # triangulate
+                        X_local, Y_local, Z_local, D_local = angler.location(
+                            camera_separation,
+                            (xlangle, ylangle),
+                            (xrangle, yrangle),
+                            center=True,
+                            degrees=True)
+                        # angle normalization
+                        delta_y = 0.006509695290859 * X_local * X_local + \
+                            0.039473684210526 * -1 * X_local # + vkb_center_point_camera_dist
+                        depth_corrected = D_local - delta_y
+                    
                     fingers_dist.append(depth_corrected)
                     
                     # Guardar profundidad corregida para cada dedo

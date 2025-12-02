@@ -145,55 +145,68 @@ class StereoCalibrator:
         # Criterios de optimización
         criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 100, 1e-6)
         
-        # Ejecutar calibración estéreo
-        ret, K1, D1, K2, D2, R, T, E, F = cv2.stereoCalibrate(
-            self.obj_points,
-            self.img_points_left,
-            self.img_points_right,
-            self.K_left,
-            self.D_left,
-            self.K_right,
-            self.D_right,
-            self.image_size,
-            criteria=criteria,
-            flags=flags
-        )
-        
-        if not ret:
-            print("✗ Error durante la calibración estéreo")
+        try:
+            # Ejecutar calibración estéreo
+            ret, K1, D1, K2, D2, R, T, E, F = cv2.stereoCalibrate(
+                self.obj_points,
+                self.img_points_left,
+                self.img_points_right,
+                self.K_left,
+                self.D_left,
+                self.K_right,
+                self.D_right,
+                self.image_size,
+                criteria=criteria,
+                flags=flags
+            )
+            
+            print(f"[DEBUG] stereoCalibrate retornó: ret={ret}, type={type(ret)}")
+            
+            # ret es el error RMS, un float > 0 para calibración exitosa
+            if ret is None or ret <= 0:
+                print("✗ Error durante la calibración estéreo (ret inválido)")
+                return None
+            
+            # Guardar resultados
+            self.R = R
+            self.T = T
+            self.E = E
+            self.F = F
+            self.stereo_error = ret
+            
+            print(f"[DEBUG] Valores asignados: R shape={R.shape}, T shape={T.shape}")
+            print(f"[DEBUG] self.R es None: {self.R is None}")
+            
+            # Calcular baseline (distancia entre cámaras)
+            baseline = np.linalg.norm(T)
+            
+            # Mostrar resultados
+            print(f"✓ Calibración estéreo completada")
+            print(f"Error RMS: {ret:.6f}")
+            print(f"\n📏 PARÁMETROS EXTRÍNSECOS:")
+            print(f"Baseline (distancia entre cámaras): {baseline*100:.2f} cm")
+            print(f"\nMatriz de Rotación R:")
+            print(R)
+            print(f"\nVector de Traslación T (metros):")
+            print(T.ravel())
+            print(f"  T en cm: [{T[0][0]*100:.2f}, {T[1][0]*100:.2f}, {T[2][0]*100:.2f}]")
+            print(f"{'='*70}\n")
+            
+            return {
+                'rotation_matrix': R,
+                'translation_vector': T,
+                'essential_matrix': E,
+                'fundamental_matrix': F,
+                'rms_error': ret,
+                'baseline_cm': baseline * 100,
+                'num_pairs': len(self.obj_points)
+            }
+            
+        except Exception as e:
+            print(f"✗ Excepción durante calibración estéreo: {e}")
+            import traceback
+            traceback.print_exc()
             return None
-        
-        # Guardar resultados
-        self.R = R
-        self.T = T
-        self.E = E
-        self.F = F
-        self.stereo_error = ret
-        
-        # Calcular baseline (distancia entre cámaras)
-        baseline = np.linalg.norm(T)
-        
-        # Mostrar resultados
-        print(f"✓ Calibración estéreo completada")
-        print(f"Error RMS: {ret:.6f}")
-        print(f"\n📏 PARÁMETROS EXTRÍNSECOS:")
-        print(f"Baseline (distancia entre cámaras): {baseline*100:.2f} cm")
-        print(f"\nMatriz de Rotación R:")
-        print(R)
-        print(f"\nVector de Traslación T (metros):")
-        print(T.ravel())
-        print(f"  T en cm: [{T[0][0]*100:.2f}, {T[1][0]*100:.2f}, {T[2][0]*100:.2f}]")
-        print(f"{'='*70}\n")
-        
-        return {
-            'rotation_matrix': R,
-            'translation_vector': T,
-            'essential_matrix': E,
-            'fundamental_matrix': F,
-            'rms_error': ret,
-            'baseline_cm': baseline * 100,
-            'num_pairs': len(self.obj_points)
-        }
     
     def compute_rectification(self):
         """

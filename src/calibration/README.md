@@ -6,32 +6,37 @@
 src/calibration/
 ├── __init__.py                  # Exportaciones del módulo
 ├── calibration_config.py        # Configuración y constantes
-├── calibration_manager.py       # Gestor principal (orquestador)
+├── calibration_manager_v2.py    # Gestor principal (orquestador con Fase 2)
 ├── camera_calibrator.py         # Calibración individual de cámaras
-├── stereo_calibrator.py         # Calibración estéreo (Fase 2 - TODO)
+├── stereo_calibrator.py         # Calibración estéreo (Fase 2)
 ├── calibration_ui.py            # Interfaz visual
 └── run_calibration.py           # Script standalone
 ```
 
 ## 🎯 Características
 
-### ✅ Implementado (Fase 1)
+### ✅ Implementado
 
+**Fase 1 - Calibración Individual:**
 - **Calibración individual de cada cámara** usando método de tablero de ajedrez
 - **25 fotos estratégicamente distribuidas** en 4 categorías:
   - **A. Variar Distancia** (5 fotos): Información sobre focal y distorsión
   - **B. Variar Posición** (8 fotos): Estimación del centro óptico
   - **C. Variar Inclinación** (7 fotos): Modelar distorsiones angulares
   - **D. Variar Perspectiva** (5 fotos): Robustez en detección
+
+**Fase 2 - Calibración Estéreo:**
+- **Calibración estéreo completa** con `cv2.stereoCalibrate()`
+- **8-15 pares simultáneos** de imágenes
+- **Mapas de rectificación estéreo** con `stereoRectify()`
+- **Cálculo de baseline** y parámetros extrínsecos (R, T, E, F)
+- **Validación geométrica** del par estéreo
+
+**General:**
 - **Interfaz visual profesional** que guía paso a paso
+- **Sistema inteligente** que detecta fases completadas y permite reanudar
 - **Validación de calidad** con error de reproyección
 - **Guardado automático** de imágenes y parámetros
-
-### 🔜 Pendiente (Fase 2)
-
-- Calibración estéreo completa con `cv2.stereoCalibrate()`
-- Mapas de rectificación estéreo
-- Validación geométrica del par estéreo
 
 ## 📋 Requisitos Previos
 
@@ -152,7 +157,7 @@ camcalibration/
 
 ```json
 {
-    "version": "1.0",
+    "version": "2.0",
     "board_config": {
         "cols": 9,
         "rows": 6,

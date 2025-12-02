@@ -138,11 +138,17 @@ class CalibrationManager:
             print("✗ Calibración estéreo fallida")
             return False
         
+        print("\n[DEBUG] ✓ _calibrate_stereo_pair() completado exitosamente")
+        
         # Paso 5: Recopilar datos finales
+        print("[DEBUG] → Recopilando datos finales...")
         self._compile_calibration_data()
+        print("[DEBUG] ✓ Datos recopilados")
         
         # Paso 6: Guardar resultados
+        print("[DEBUG] → Guardando calibración...")
         self._save_calibration()
+        print("[DEBUG] ✓ Calibración guardada")
         
         print("\n" + "="*70)
         print("✓ CALIBRACION COMPLETADA EXITOSAMENTE")
@@ -231,6 +237,9 @@ class CalibrationManager:
             self.calibrator_left.camera_matrix = np.array(data['left_camera']['camera_matrix'])
             self.calibrator_left.distortion_coeffs = np.array(data['left_camera']['distortion_coeffs'])
             self.calibrator_left.reprojection_error = data['left_camera']['reprojection_error']
+            self.calibrator_left.image_size = (data['left_camera']['image_width'], data['left_camera']['image_height'])
+            # Crear obj_points dummy para que len() funcione
+            self.calibrator_left.obj_points = [None] * data['left_camera']['num_images']
             self.calibrator_left.is_calibrated = True
             
             # Calibrador derecho
@@ -243,6 +252,9 @@ class CalibrationManager:
             self.calibrator_right.camera_matrix = np.array(data['right_camera']['camera_matrix'])
             self.calibrator_right.distortion_coeffs = np.array(data['right_camera']['distortion_coeffs'])
             self.calibrator_right.reprojection_error = data['right_camera']['reprojection_error']
+            self.calibrator_right.image_size = (data['right_camera']['image_width'], data['right_camera']['image_height'])
+            # Crear obj_points dummy para que len() funcione
+            self.calibrator_right.obj_points = [None] * data['right_camera']['num_images']
             self.calibrator_right.is_calibrated = True
             
             print(f"  ✓ Cámara izquierda: error {self.calibrator_left.reprojection_error:.4f} px")
@@ -683,7 +695,9 @@ class CalibrationManager:
             print("⚠️  Advertencia: No se pudo calcular rectificación")
         
         # Mostrar estadísticas finales de Fase 2
+        print("[DEBUG] → Mostrando estadísticas de Fase 2...")
         self._show_phase2_statistics(stereo_result, pairs_count)
+        print("[DEBUG] ✓ Usuario cerró ventana de estadísticas")
         
         return True
     
@@ -796,15 +810,40 @@ class CalibrationManager:
             
             cv2.imshow(window_name, frame)
             
-            key = cv2.waitKey(1) & 0xFF
+            # Esperar indefinidamente hasta que se presione una tecla
+            key = cv2.waitKey(0) & 0xFF
             if key == 13:  # ENTER
+                print("[DEBUG] Usuario presionó ENTER en estadísticas")
+                break
+            elif key == 27:  # ESC
+                print("[DEBUG] Usuario presionó ESC en estadísticas")
+                break
+            else:
+                # Cualquier otra tecla también cierra
+                print(f"[DEBUG] Usuario presionó tecla {key} en estadísticas")
                 break
         
         cv2.destroyWindow(window_name)
+        print("[DEBUG] Ventana de estadísticas cerrada")
         print("\n✓ Continuando...\n")
     
     def _compile_calibration_data(self):
         """Recopila todos los datos de calibración en un diccionario"""
+        print("[DEBUG] _compile_calibration_data() iniciado")
+        print(f"[DEBUG] stereo_calibrator existe: {self.stereo_calibrator is not None}")
+        
+        stereo_data = None
+        if self.stereo_calibrator:
+            print(f"[DEBUG] stereo_calibrator.R es None: {self.stereo_calibrator.R is None}")
+            print(f"[DEBUG] stereo_calibrator.T es None: {self.stereo_calibrator.T is None}")
+            print(f"[DEBUG] stereo_calibrator.stereo_error: {self.stereo_calibrator.stereo_error}")
+            
+            stereo_data = self.stereo_calibrator.get_calibration_data()
+            print(f"[DEBUG] stereo_data es None: {stereo_data is None}")
+            if stereo_data:
+                print(f"[DEBUG] stereo_data tiene {len(stereo_data)} campos")
+                print(f"[DEBUG] stereo_data keys: {list(stereo_data.keys())}")
+        
         self.calibration_data = {
             'version': '2.0',
             'board_config': {
@@ -814,7 +853,7 @@ class CalibrationManager:
             },
             'left_camera': self.calibrator_left.get_calibration_data(),
             'right_camera': self.calibrator_right.get_calibration_data(),
-            'stereo': self.stereo_calibrator.get_calibration_data() if self.stereo_calibrator else None,
+            'stereo': stereo_data,
             'camera_ids': {
                 'left': self.cam_left_id,
                 'right': self.cam_right_id
@@ -824,15 +863,37 @@ class CalibrationManager:
                 'height': self.resolution[1]
             }
         }
+        
+        # Verificación final
+        print(f"[DEBUG] calibration_data['stereo'] es None: {self.calibration_data['stereo'] is None}")
     
     def _save_calibration(self):
         """Guarda los datos de calibración en formato JSON"""
         output_file = CalibrationConfig.CALIBRATION_FILE
         
+        # Debug: verificar contenido antes de guardar
+        print(f"[DEBUG] _save_calibration() - Verificando datos...")
+        print(f"[DEBUG] stereo en calibration_data: {'stereo' in self.calibration_data}")
+        if 'stereo' in self.calibration_data:
+            print(f"[DEBUG] stereo es None: {self.calibration_data['stereo'] is None}")
+            if self.calibration_data['stereo']:
+                print(f"[DEBUG] stereo keys: {list(self.calibration_data['stereo'].keys())}")
+        
         with open(output_file, 'w') as f:
             json.dump(self.calibration_data, f, indent=4)
         
         print(f"\n✓ Datos de calibración guardados en: {output_file}")
+        
+        # Verificar que se guardó correctamente
+        try:
+            with open(output_file, 'r') as f:
+                saved_data = json.load(f)
+            print(f"[DEBUG] Verificación post-guardado:")
+            print(f"[DEBUG] stereo guardado: {'stereo' in saved_data}")
+            if 'stereo' in saved_data:
+                print(f"[DEBUG] stereo es None: {saved_data['stereo'] is None}")
+        except Exception as e:
+            print(f"[DEBUG] Error verificando archivo guardado: {e}")
     
     @staticmethod
     def load_calibration():

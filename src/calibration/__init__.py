@@ -7,7 +7,6 @@ Fase 2: Calibración estéreo (8-15 pares simultáneos)
 Proceso continuo e integrado
 """
 
-# Importar el manager v2 que integra Fase 1 + Fase 2
 from .calibration_manager_v2 import CalibrationManager
 from .camera_calibrator import CameraCalibrator
 from .stereo_calibrator import StereoCalibrator

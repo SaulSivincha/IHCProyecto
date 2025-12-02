@@ -71,6 +71,9 @@ from src.vision.hand_detector import HandDetector
 from src.vision import keyboard_mapper as kbm
 from src.vision.stereo_config import StereoConfig
 
+# --- Calibration ---
+from src.calibration import CalibrationManager
+
 # --- Piano ---
 from src.piano import virtual_keyboard as vkb
 from src.piano.virtual_keyboard import VirtualKeyboard
@@ -106,11 +109,177 @@ def frame_add_crosshairs(frame,
 
     cv2.circle(frame, (x, y), r, cc, cw)
 
+def show_calibration_menu(ui_helper, pixel_width, pixel_height):
+    """Muestra menú de configuración inicial y retorna la opción seleccionada"""
+    window_name = 'Configuración Inicial'
+    cv2.namedWindow(window_name)
+    cv2.moveWindow(window_name, (pixel_width//2), (pixel_height//2))
+    
+    while True:
+        # Frame negro para el menú
+        menu_frame = np.zeros((pixel_height, pixel_width * 2, 3), dtype=np.uint8)
+        menu_frame = ui_helper.draw_setup_menu(menu_frame)
+        cv2.imshow(window_name, menu_frame)
+        
+        key = cv2.waitKey(1) & 0xFF
+        if key == ord('1'):
+            cv2.destroyWindow(window_name)
+            return 1  # Usar calibración guardada
+        elif key == ord('2'):
+            cv2.destroyWindow(window_name)
+            return 2  # Nueva calibración
+        elif key == ord('3'):
+            cv2.destroyWindow(window_name)
+            return 3  # Saltar (valores por defecto)
+        elif key == ord('q'):
+            cv2.destroyWindow(window_name)
+            return None  # Salir
+
+def run_calibration_process(ui_helper, pixel_width, pixel_height, config):
+    """Ejecuta el proceso de calibración con el nuevo sistema profesional"""
+    try:
+        # Crear gestor de calibración
+        calibration_manager = CalibrationManager(
+            cam_left_id=config.LEFT_CAMERA_SOURCE,
+            cam_right_id=config.RIGHT_CAMERA_SOURCE,
+            resolution=(pixel_width, pixel_height)
+        )
+        
+        # Ejecutar calibración completa (Fase 1)
+        success = calibration_manager.run_full_calibration()
+        
+        if not success:
+            print("✗ Calibración fallida o cancelada")
+            return False
+        
+        # Solicitar parámetros adicionales (separación y distancia del teclado)
+        window_name = 'Configuración Adicional'
+        cv2.namedWindow(window_name)
+        cv2.moveWindow(window_name, (pixel_width//2), (pixel_height//2))
+        
+        calib_frame = np.zeros((pixel_height, pixel_width * 2, 3), dtype=np.uint8)
+        
+        # Solicitar separación entre cámaras
+        input_value = ""
+        
+        while True:
+            display_frame = calib_frame.copy()
+            display_frame = ui_helper.draw_input_dialog(
+                display_frame,
+                "Distancia entre camaras (cm):",
+                input_value
+            )
+            cv2.imshow(window_name, display_frame)
+            
+            key = cv2.waitKey(1) & 0xFF
+            if key == 13:  # ENTER
+                try:
+                    separation = float(input_value)
+                    if 1 < separation < 50:
+                        config.CAMERA_SEPARATION = separation
+                        break
+                    else:
+                        input_value = ""
+                except ValueError:
+                    input_value = ""
+            elif key == 8 and len(input_value) > 0:  # BACKSPACE
+                input_value = input_value[:-1]
+            elif 48 <= key <= 57:  # Números 0-9
+                input_value += chr(key)
+            elif key == 46:  # Punto decimal
+                if '.' not in input_value:
+                    input_value += '.'
+            elif key == ord('q'):
+                cv2.destroyWindow(window_name)
+                return False
+        
+        # Solicitar distancia del teclado
+        input_value = ""
+        
+        while True:
+            display_frame = calib_frame.copy()
+            display_frame = ui_helper.draw_input_dialog(
+                display_frame,
+                "Distancia del teclado (cm):",
+                input_value
+            )
+            cv2.imshow(window_name, display_frame)
+            
+            key = cv2.waitKey(1) & 0xFF
+            if key == 13:  # ENTER
+                try:
+                    kb_distance = float(input_value)
+                    if 30 < kb_distance < 200:
+                        config.VKB_CENTER_DISTANCE = kb_distance
+                        break
+                    else:
+                        input_value = ""
+                except ValueError:
+                    input_value = ""
+            elif key == 8 and len(input_value) > 0:  # BACKSPACE
+                input_value = input_value[:-1]
+            elif 48 <= key <= 57:  # Números 0-9
+                input_value += chr(key)
+            elif key == 46:  # Punto decimal
+                if '.' not in input_value:
+                    input_value += '.'
+            elif key == ord('q'):
+                cv2.destroyWindow(window_name)
+                return False
+        
+        # Mensaje de éxito
+        calib_frame = ui_helper.draw_calibration_progress(
+            calib_frame,
+            "Configuracion completada!",
+            100
+        )
+        cv2.imshow(window_name, calib_frame)
+        cv2.waitKey(2000)
+        
+        cv2.destroyWindow(window_name)
+        return True
+        
+    except Exception as e:
+        print(f"✗ Error durante calibración: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
 def main():
 
     try:
         # Cargar configuración estéreo centralizada
         config = StereoConfig()
+        
+        # Dimensiones para la interfaz
+        pixel_width = config.PIXEL_WIDTH
+        pixel_height = config.PIXEL_HEIGHT
+        
+        # Inicializar UI Helper para menú de configuración
+        ui_helper_menu = UIHelper(pixel_width * 2, pixel_height)
+        ui_helper_menu.show_instructions = False  # No mostrar bienvenida aún
+        
+        # Mostrar menú de configuración
+        setup_option = show_calibration_menu(ui_helper_menu, pixel_width, pixel_height)
+        
+        if setup_option is None:
+            print("Saliendo...")
+            return
+        elif setup_option == 1:
+            # Usar calibración guardada
+            print("Cargando calibración guardada...")
+            loaded = config.load_calibration()
+            if not loaded:
+                print("⚠ No se pudo cargar calibración. Usando valores por defecto.")
+        elif setup_option == 2:
+            # Nueva calibración
+            print("Iniciando proceso de calibración...")
+            success = run_calibration_process(ui_helper_menu, pixel_width, pixel_height, config)
+            if not success:
+                print("⚠ Calibración cancelada. Usando valores por defecto.")
+        else:  # setup_option == 3
+            print("Usando valores por defecto (sin calibración)")
+        
         config.print_config()
 
         # ------------------------------

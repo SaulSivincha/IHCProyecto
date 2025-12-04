@@ -117,6 +117,7 @@ class UIHelper:
         # Controles
         controls = [
             "[G] Juego de ritmo",
+            "[N] Canciones",
             "[F] Modo libre",
             "[L] Aprender teoria",
             "[C] Configuracion",
@@ -173,7 +174,7 @@ class UIHelper:
         
         # Teclas disponibles
         if not game_mode:
-            help_text = "G: Juego | F: Libre | L: Teoria | C: Config | D: Dashboard | Q: Salir"
+            help_text = "G: Juego | N: Canciones | F: Libre | L: Teoria | C: Config | D: Dashboard | Q: Salir"
         else:
             help_text = "F: Salir del juego | D: Dashboard | Q: Salir"
         

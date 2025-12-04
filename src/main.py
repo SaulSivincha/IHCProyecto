@@ -89,6 +89,9 @@ from src.ui.ui_helper import UIHelper
 
 # --- Theory ---
 from src.theory import get_lesson_manager, TheoryUI
+# --- Songs ---
+from src.songs.sons_ui import SongsUI
+from src.songs.song_manager import get_all_songs
 
 # --- Config UI ---
 from src.ui.config_ui import ConfigUI
@@ -960,6 +963,12 @@ def main():
         current_lesson = None
         current_lesson_id = None
         
+        # Inicializar módulo de canciones (Modo Ritmo mejorado)
+        songs_ui = SongsUI(pixel_width * 2, pixel_height)
+        songs_mode = False  # False = otros modos, True = modo selección de canciones
+        in_song = False  # True cuando está dentro de una canción
+        current_song = None
+
         # Inicializar UI de configuración
         config_ui = ConfigUI(pixel_width * 2, pixel_height)
         config_mode = False  # False = otros modos, True = modo configuración
@@ -1366,7 +1375,86 @@ def main():
                     elif key != 255:  # Mostrar código de cualquier otra tecla para debug
                         print(f"Tecla presionada en menú teoría: código {key}")
                     continue  # Saltar el resto del loop principal
-            
+
+            # === MODO CANCIONES (RHYTH GAME CON MENU) ===
+            if songs_mode:
+                if in_song and current_song:
+                    # Ejecutar canción activa
+                    try:
+                        frame_left, frame_right, continue_song = current_song.run(
+                            frame_left, frame_right, vk_left, fs,
+                            left_detector, right_detector
+                        )
+                        
+                        if not continue_song:
+                            # Salir de la canción
+                            current_song.stop()
+                            in_song = False
+                            current_song = None
+                            print("Saliendo de la canción...")
+                    except Exception as e:
+                        print(f"Error durante la canción: {e}")
+                        in_song = False
+                        current_song = None
+                else:
+                    # Mostrar menú de canciones
+                    songs_dict = get_all_songs()
+                    if camera_in_front_of_you:
+                        h_frames = np.concatenate((frame_right, frame_left), axis=1)
+                    else:
+                        h_frames = np.concatenate((frame_left, frame_right), axis=1)
+                    
+                    h_frames = songs_ui.draw_song_menu(h_frames, songs_dict)
+                    cv2.imshow(main_window_name, h_frames)
+                    
+                    # Manejar teclas del menú (SIN hacer otro waitKey aquí)
+                    # Flecha arriba o W
+                    if key == 82 or key == ord('w') or key == ord('W'):
+                        songs_ui.navigate(-1, len(songs_dict))
+                        print(f"Navegando canción: {songs_ui.get_selected_index() + 1}/{len(songs_dict)}")
+                    # Flecha abajo o S
+                    elif key == 84 or key == ord('s') or key == ord('S'):
+                        songs_ui.navigate(1, len(songs_dict))
+                        print(f"Navegando canción: {songs_ui.get_selected_index() + 1}/{len(songs_dict)}")
+                    # Números 1-9 para selección directa
+                    elif 49 <= key <= 57:  # Teclas 1-9
+                        selected_idx = key - 49  # Convertir a índice (0-8)
+                        if 0 <= selected_idx < len(songs_dict):
+                            songs_list = list(songs_dict.values())
+                            current_song = songs_list[selected_idx]
+                            try:
+                                current_song.start()
+                                in_song = True
+                                print(f"Iniciando canción: {current_song.name}")
+                            except Exception as e:
+                                print(f"Error al iniciar canción: {e}")
+                    # ENTER
+                    elif key == 13:  # ENTER
+                        selected_idx = songs_ui.get_selected_index()
+                        songs_list = list(songs_dict.values())
+                        if 0 <= selected_idx < len(songs_list):
+                            current_song = songs_list[selected_idx]
+                            try:
+                                current_song.start()
+                                in_song = True
+                                print(f"Iniciando canción: {current_song.name}")
+                            except Exception as e:
+                                print(f"Error al iniciar canción: {e}")
+                
+                # Teclas globales que funcionan en songs_mode
+                if key == ord('q') or key == ord('Q') or key == 27:  # Q, q o ESC
+                    songs_mode = False
+                    game_mode = False
+                    theory_mode = False
+                    songs_ui.reset_selection()
+                    if in_song and current_song:
+                        current_song.stop()
+                        in_song = False
+                        current_song = None
+                    print("Volviendo al modo libre...")
+                
+                continue  # Saltar el resto del loop principal (sin duplicar waitKey)
+
             # Combinar frames antes de procesar UI
             if camera_in_front_of_you:
                 h_frames = np.concatenate((frame_right, frame_left), axis=1)
@@ -1465,6 +1553,14 @@ def main():
                     display_dashboard = False
                 else:
                     display_dashboard = True
+            elif key == ord('n') or key == ord('N'):  # ========== MODO CANCIONES (NEW) ==========
+                songs_mode = True
+                game_mode = False
+                theory_mode = False
+                if rhythm_game.is_playing:
+                    rhythm_game.stop_game()
+                songs_ui.reset_selection()
+                print("¡Modo Canciones activado! Selecciona una canción. Presiona Q para salir.")
             elif key == ord('g'):  # ========== NUEVA TECLA ==========
                 game_mode = True
                 rhythm_game.start_game(TUTORIAL_FACIL)

@@ -1,53 +1,135 @@
-virtenv/
+# ======================================================
+#        PYTHON – CACHE / COMPILED / VENV
+# ======================================================
+
+# Virtual environments
 venv/
 .venv/
 env/
 .env/
+venv*/
+env*/
 
+# Python cache
 __pycache__/
 *.py[cod]
 *$py.class
 
-.env
-.env.*
-*.env
-config.json
-secrets.json
-token.txt
-
-output/
-outputs/
-data/
-datasets/
-models/
-*.h5
-*.tflite
-*.pkl
-*.npz
-*.npy
-*.log
-*.tmp
-
-*.jpg
-*.jpeg
-*.png
-*.bmp
-*.gif
-*.mp4
-*.avi
-
-.DS_Store
-Thumbs.db
-
-.vscode/
-.history/
-*.code-workspace
-
-.ipynb_checkpoints/
-
+# Build artifacts
 build/
 dist/
 *.egg-info/
 *.so
 
+# ======================================================
+#        CONFIGURACIONES / SECRETOS
+# ======================================================
+
+# Environment variables
+.env
+.env.*
+*.env
+
+# Secret keys or tokens
+config.json
+secrets.json
+token.txt
+*secret*
+*password*
+
+# FluidSynth config files (si llegas a generarlos)
+*.sf3cfg
+*.soundfont.cfg
+
+# ======================================================
+#        DATOS PESADOS / MODELOS / SALIDAS
+# ======================================================
+
+# Output folders
+output/
+outputs/
+results/
+logs/
+log/
+*.log
+
+# Datasets pesados
+data/
+dataset/
+datasets/
+
+# Modelos y binarios
+models/
+*.h5
+*.tflite
+*.pb
+*.pkl
+*.npz
+*.npy
+*.ckpt
+
+# ======================================================
+#        ARCHIVOS MULTIMEDIA
+# ======================================================
+
+# Imágenes (si no quieres subirlas)
+*.jpg
+*.jpeg
+*.png
+*.bmp
+*.gif
+
+# Videos
+*.mp4
+*.avi
+*.mov
+*.mkv
+
+# Audio (opcional para tu proyecto si los soundfonts son pesados)
+*.wav
+*.mp3
+*.flac
+*.aiff
+*.ogg
+
+# SoundFonts grandes (si no deben subirse)
+*.sf2
+*.sf3
+
+# ======================================================
+#        SISTEMA Y EDITOR
+# ======================================================
+
+# Windows
+Thumbs.db
+Desktop.ini
+
+# macOS
+.DS_Store
+
+# VSCode
+.vscode/
+*.code-workspace
+.history/
+
+# PyCharm / IntelliJ
 .idea/
+
+# Jupyter
+.ipynb_checkpoints/
+
+vendsavenv/
+utils/**
+!utils/fluid/
+!utils/fluidsynth.h
+
+
+# ======================================================
+#        COSAS QUE SÍ DEBES SUBIR
+# (solo recordatorio, no se pone en gitignore)
+# ======================================================
+# src/
+# utils/fluidsynth/ (SIN los binarios si son muy pesados)
+# utils/fluid/ (si tiene soundfonts pequeños o licencia abierta)
+# camcalibration/
+# images/ (si realmente las usas, si no, ignóralas arriba)

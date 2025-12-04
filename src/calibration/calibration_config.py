@@ -213,13 +213,18 @@ class CalibrationConfig:
                 'error_right': data['right_camera'].get('reprojection_error', 'N/A'),
                 'imagenes_left': data['left_camera'].get('num_images', 'N/A'),
                 'imagenes_right': data['right_camera'].get('num_images', 'N/A'),
-                'tiene_estereo': 'stereo' in data and data['stereo'] is not None
+                'tiene_estereo': 'stereo' in data and data['stereo'] is not None,
+                'tiene_depth_correction': 'depth_correction' in data and data['depth_correction'] is not None
             }
             
             if summary['tiene_estereo']:
                 summary['baseline_cm'] = data['stereo'].get('baseline_cm', 'N/A')
                 summary['error_stereo'] = data['stereo'].get('rms_error', 'N/A')
                 summary['pares_stereo'] = data['stereo'].get('num_pairs', 'N/A')
+            
+            if summary['tiene_depth_correction']:
+                summary['depth_correction_factor'] = data['depth_correction'].get('factor', 'N/A')
+                summary['depth_correction_samples'] = data['depth_correction'].get('num_samples', 'N/A')
             
             return summary
             

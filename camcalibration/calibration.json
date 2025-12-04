@@ -363,5 +363,31 @@
     "resolution": {
         "width": 640,
         "height": 480
+    },
+    "depth_correction": {
+        "factor": 0.9556944510618026,
+        "measurements": [
+            {
+                "real_cm": 30,
+                "measured_cm": 32.51088559627533
+            },
+            {
+                "real_cm": 35,
+                "measured_cm": 36.98098659515381
+            },
+            {
+                "real_cm": 40,
+                "measured_cm": 44.299814105033875
+            },
+            {
+                "real_cm": 45,
+                "measured_cm": 46.21477425098419
+            },
+            {
+                "real_cm": 50,
+                "measured_cm": 48.420560359954834
+            }
+        ],
+        "num_samples": 5
     }
 }

@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 Script para verificar el estado de la calibración estéreo
-Muestra información detallada de Fase 1 y Fase 2
+Muestra información detallada de Fase 1, Fase 2 y Fase 3
 """
 
 import json
@@ -13,9 +13,20 @@ import numpy as np
 def check_calibration():
     """Verifica y muestra el estado de la calibración"""
     
-    calib_file = Path('camcalibration/calibration.json')
+    # Buscar el archivo en diferentes ubicaciones posibles
+    possible_paths = [
+        Path('camcalibration/calibration.json'),
+        Path('../camcalibration/calibration.json'),
+        Path(__file__).parent.parent / 'camcalibration' / 'calibration.json'
+    ]
     
-    if not calib_file.exists():
+    calib_file = None
+    for path in possible_paths:
+        if path.exists():
+            calib_file = path
+            break
+    
+    if calib_file is None:
         print("❌ No se encontró archivo de calibración: camcalibration/calibration.json")
         print("   Ejecuta la calibración completa primero: python -m src.main")
         return
@@ -122,6 +133,43 @@ def check_calibration():
             print("\n❌ Calibración Estéreo: NO COMPLETADA")
             print("   Ejecuta Fase 2: python -m src.main → [S]")
         
+        # FASE 3: Calibración de profundidad
+        print("\n" + "-"*70)
+        print("FASE 3: CALIBRACIÓN DE PROFUNDIDAD")
+        print("-"*70)
+        
+        has_phase3 = False
+        if 'depth_correction' in data and data['depth_correction'] is not None:
+            depth = data['depth_correction']
+            
+            print(f"\n✓ Calibración de Profundidad COMPLETA:")
+            print(f"  Factor de corrección: {depth['factor']:.4f}")
+            print(f"  Mediciones realizadas: {depth['num_samples']}")
+            
+            if 'measurements' in depth and len(depth['measurements']) > 0:
+                print(f"\n  Mediciones detalladas:")
+                for i, (real_cm, measured_cm) in enumerate(depth['measurements'], 1):
+                    error_cm = abs(real_cm - (measured_cm * depth['factor']))
+                    error_pct = (error_cm / real_cm) * 100
+                    print(f"    {i}. Real: {real_cm:.1f} cm | Medido: {measured_cm:.1f} cm | "
+                          f"Corregido: {measured_cm * depth['factor']:.1f} cm | "
+                          f"Error: {error_cm:.1f} cm ({error_pct:.1f}%)")
+                
+                # Estadísticas
+                errors = [abs(real - (measured * depth['factor'])) 
+                         for real, measured in depth['measurements']]
+                avg_error = np.mean(errors)
+                max_error = np.max(errors)
+                print(f"\n  Estadísticas de error:")
+                print(f"    Promedio: {avg_error:.2f} cm")
+                print(f"    Máximo: {max_error:.2f} cm")
+            
+            has_phase3 = True
+        else:
+            print("\n❌ Calibración de Profundidad: NO COMPLETADA")
+            print("   Se usará factor por defecto (0.74)")
+            print("   Para mejor precisión, ejecuta: python -m src.main → [P]")
+        
         # IDs de cámaras
         if 'camera_ids' in data:
             ids = data['camera_ids']
@@ -140,15 +188,24 @@ def check_calibration():
         print("RESUMEN")
         print("="*70)
         
-        if has_phase1 and has_phase2:
-            print("\n✅ CALIBRACIÓN COMPLETA")
+        if has_phase1 and has_phase2 and has_phase3:
+            print("\n✅ CALIBRACIÓN 100% COMPLETA")
             print("   Fase 1: ✓ Cámaras individuales calibradas")
             print("   Fase 2: ✓ Calibración estéreo completada")
-            print("\n   🎯 Sistema listo para detección 3D")
+            print("   Fase 3: ✓ Factor de corrección de profundidad calculado")
+            print("\n   🎯 Sistema completamente optimizado para detección 3D")
+        elif has_phase1 and has_phase2:
+            print("\n⚠️  CALIBRACIÓN FUNCIONAL (falta optimización)")
+            print("   Fase 1: ✓ Cámaras individuales calibradas")
+            print("   Fase 2: ✓ Calibración estéreo completada")
+            print("   Fase 3: ❌ Falta calibración de profundidad")
+            print("\n   📝 Para mayor precisión: python -m src.main → [P]")
+            print("   ℹ️  Sistema funcionará con factor por defecto (0.74)")
         elif has_phase1:
             print("\n⚠️  CALIBRACIÓN INCOMPLETA")
             print("   Fase 1: ✓ Cámaras individuales calibradas")
             print("   Fase 2: ❌ Falta calibración estéreo")
+            print("   Fase 3: ❌ Falta calibración de profundidad")
             print("\n   📝 Ejecuta: python -m src.main → [S]")
         else:
             print("\n❌ CALIBRACIÓN NO INICIADA")

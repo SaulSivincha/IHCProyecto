@@ -3,12 +3,13 @@
 """
 Created on Mon Aug 30 00:43:58 2021
 Actualizado para usar visión estereoscópica y profundidad 3D
+Con detección de velocidad para evitar toques accidentales
 
 @author: mherrera
 """
 import numpy as np
-from src.vision.stereo_config import StereoConfig
-from src.vision.stereo_config import StereoConfig
+from collections import deque
+from src.config.app_config import AppConfig
 
 
 class KeyboardMap:
@@ -18,18 +19,24 @@ class KeyboardMap:
         
         Args:
             depth_threshold: Profundidad máxima (cm) para detectar contacto con tecla.
-                            Si es None, usa StereoConfig.DEPTH_THRESHOLD
+                            Si es None, usa AppConfig.DEPTH_THRESHOLD
                             Valores típicos: 2-5 cm (ajustar según calibración)
         """
         self.prev_map = np.empty(0, dtype=bool)
-        self.depth_threshold = depth_threshold if depth_threshold is not None else StereoConfig.DEPTH_THRESHOLD
+        self.depth_threshold = depth_threshold if depth_threshold is not None else AppConfig.DEPTH_THRESHOLD
         self.finger_depths = {}  # Para rastrear profundidad de cada dedo
+        
+        # Sistema de detección de velocidad
+        self.finger_depth_history = {}  # {finger_id: deque([z1, z2, z3], maxlen=N)}
+        self.velocity_threshold = AppConfig.VELOCITY_THRESHOLD
+        self.velocity_enabled = AppConfig.VELOCITY_ENABLED
+        self.velocity_history_size = AppConfig.VELOCITY_HISTORY_SIZE
 
     def set_depth_threshold(self, threshold):
         """Ajusta dinámicamente el umbral de profundidad"""
         self.depth_threshold = threshold
-        # También actualizar en StereoConfig para consistencia
-        StereoConfig.DEPTH_THRESHOLD = threshold
+        # También actualizar en AppConfig para consistencia
+        AppConfig.DEPTH_THRESHOLD = threshold
 
     def get_kayboard_map(self,
                          virtual_keyboard,
@@ -74,13 +81,37 @@ class KeyboardMap:
                 key = virtual_keyboard.find_key(x_pos, y_pos)
                 
                 if key >= 0 and key < keyboard_n_key:
-                    # CAMBIO CLAVE: Usar profundidad 3D en lugar de contacto con mesa
-                    # Si tenemos información de profundidad, verificar si el dedo está
-                    # lo suficientemente cerca (presionando la tecla virtual)
+                    # CAMBIO CLAVE: Usar profundidad 3D + detección de velocidad
                     if finger_id in finger_depths:
                         depth = finger_depths[finger_id]
-                        # Profundidad cercana a 0 significa que está presionando
-                        if depth <= self.depth_threshold:
+                        
+                        # Actualizar historial de profundidad para este dedo
+                        if finger_id not in self.finger_depth_history:
+                            self.finger_depth_history[finger_id] = deque(maxlen=self.velocity_history_size)
+                        self.finger_depth_history[finger_id].append(depth)
+                        
+                        # Verificar condición de activación
+                        should_activate = False
+                        
+                        if self.velocity_enabled and len(self.finger_depth_history[finger_id]) >= 2:
+                            # MODO VELOCIDAD: Requiere movimiento descendente pronunciado
+                            history = list(self.finger_depth_history[finger_id])
+                            
+                            # Calcular velocidad (diferencia entre últimas posiciones)
+                            # Velocidad negativa = movimiento hacia abajo (acercamiento)
+                            velocity = history[-2] - history[-1]  # z_anterior - z_actual
+                            
+                            # Activar si:
+                            # 1. Está dentro del threshold de profundidad
+                            # 2. Tiene velocidad descendente suficiente
+                            if depth <= self.depth_threshold and velocity >= self.velocity_threshold:
+                                should_activate = True
+                        else:
+                            # MODO CLÁSICO: Solo threshold de profundidad
+                            if depth <= self.depth_threshold:
+                                should_activate = True
+                        
+                        if should_activate:
                             curr_map[key] = True
                     else:
                         # Fallback: si no hay profundidad, asumir que está presionando

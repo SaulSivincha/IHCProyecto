@@ -71,8 +71,8 @@ class VideoThread:
 
         # camera setup - usar configuración centralizada si está disponible
         try:
-            from src.vision.stereo_config import StereoConfig
-            self.video_init_wait_time = StereoConfig.CAMERA_INIT_WAIT
+            from src.config.app_config import AppConfig
+            self.video_init_wait_time = AppConfig.CAMERA_INIT_WAIT
         except ImportError:
             self.video_init_wait_time = 0.5  # Fallback
 

@@ -64,6 +64,7 @@ import traceback
 import cv2
 import numpy as np
 import fluidsynth
+from collections import deque
 
 # --- Vision ---
 from src.vision import video_thread, angles
@@ -88,6 +89,9 @@ from src.ui.ui_helper import UIHelper
 
 # --- Theory ---
 from src.theory import get_lesson_manager, TheoryUI
+
+# --- Config UI ---
+from src.ui.config_ui import ConfigUI
 
 # --- Common ---
 from src.common.toolbox import round_half_up
@@ -772,6 +776,7 @@ def main():
             loaded = config.load_calibration()
             if not loaded:
                 print("⚠ No se pudo cargar calibración. Usando valores por defecto.")
+            # NO RETORNAR - Continuar con el programa
         elif setup_option == 2:
             # Nueva calibración
             print("Iniciando proceso de calibración...")
@@ -954,6 +959,10 @@ def main():
         in_lesson = False  # True cuando está dentro de una lección
         current_lesson = None
         current_lesson_id = None
+        
+        # Inicializar UI de configuración
+        config_ui = ConfigUI(pixel_width * 2, pixel_height)
+        config_mode = False  # False = otros modos, True = modo configuración
 
         # ------------------------------
         # set up keyboards map
@@ -1048,26 +1057,41 @@ def main():
             hands_left_image = fingers_left_image = []
             hands_right_image = fingers_right_image = []
 
-            # Dibujar teclado siempre
-            vk_left.draw_virtual_keyboard(frame_left)
-            
-            # Detect Hands
-            if left_detector.findHands(frame_left):
-                left_detector.drawHands(frame_left)
-                left_detector.drawTips(frame_left)
-                
+            # Detect Hands PRIMERO (sin dibujar todavía)
+            hands_detected_left = left_detector.findHands(frame_left)
+            if hands_detected_left:
                 hands_left_image, fingers_left_image = \
                     left_detector.getFingerTipsPos()
             else:
                 hands_left_image = fingers_left_image = []
 
-            if right_detector.findHands(frame_right):
+            hands_detected_right = right_detector.findHands(frame_right)
+            if hands_detected_right:
+                hands_right_image, fingers_right_image = \
+                    right_detector.getFingerTipsPos()
+
+            # Dibujar teclado PRIMERO (debajo de las manos)
+            vk_left.draw_virtual_keyboard(frame_left)
+            
+            # En modo juego: dibujar notas cayendo DESPUÉS del teclado pero ANTES de las manos
+            if game_mode:
+                rhythm_game.update()
+                frame_left = rhythm_game.draw(
+                    frame_left, 
+                    vk_left.kb_x0, 
+                    vk_left.kb_x1,
+                    vk_left.white_key_width
+                )
+            
+            # Dibujar manos AL FINAL (encima del teclado y notas)
+            if hands_detected_left:
+                left_detector.drawHands(frame_left)
+                left_detector.drawTips(frame_left)
+
+            if hands_detected_right:
                 #vk_right.draw_virtual_keyboard(frame_right)
                 right_detector.drawHands(frame_right)
                 right_detector.drawTips(frame_right)
-
-                hands_right_image, fingers_right_image = \
-                    right_detector.getFingerTipsPos()
 
             # check 1: motion in both frames:
             if (len(fingers_left_image) > 0 and len(fingers_right_image) > 0):
@@ -1095,7 +1119,35 @@ def main():
                             result_3d = depth_estimator.triangulate_point(point_left, point_right)
                             
                             if result_3d is not None:
-                                X_local, Y_local, Z_local = result_3d
+                                X_raw, Y_raw, Z_raw = result_3d
+                                
+                                # APLICAR FACTOR DE CORRECCIÓN DE PROFUNDIDAD (0.74)
+                                # Basado en mediciones empíricas (43cm real / 58cm medido)
+                                DEPTH_CORRECTION_FACTOR = 0.74
+                                X_local = X_raw
+                                Y_local = Y_raw
+                                Z_local = Z_raw * DEPTH_CORRECTION_FACTOR
+                                
+                                # APLICAR SUAVIZADO TEMPORAL para reducir jitter
+                                # Obtener ID único del dedo
+                                finger_id = (finger_left[0], finger_left[1])
+                                
+                                # Inicializar buffer de suavizado si no existe
+                                if not hasattr(depth_estimator, 'finger_position_history'):
+                                    depth_estimator.finger_position_history = {}
+                                if finger_id not in depth_estimator.finger_position_history:
+                                    depth_estimator.finger_position_history[finger_id] = deque(maxlen=5)
+                                
+                                # Agregar posición actual al buffer
+                                depth_estimator.finger_position_history[finger_id].append(
+                                    (X_local, Y_local, Z_local)
+                                )
+                                
+                                # Calcular promedio de últimas 5 posiciones
+                                if len(depth_estimator.finger_position_history[finger_id]) > 0:
+                                    history = np.array(list(depth_estimator.finger_position_history[finger_id]))
+                                    X_local, Y_local, Z_local = np.mean(history, axis=0)
+                                
                                 D_local = Z_local  # Profundidad = coordenada Z
                                 depth_corrected = D_local
                             else:
@@ -1151,9 +1203,6 @@ def main():
                     keyboard_n_key=KEYBOARD_TOT_KEYS)
                 
                 if game_mode:
-                    # Actualizar juego ANTES de verificar hits para mejor sincronización
-                    rhythm_game.update()
-                    
                     # Verificar aciertos cuando se presiona una tecla - optimizado
                     # Solo verificar teclas que están activas (más eficiente)
                     active_keys = np.where(on_map)[0]
@@ -1167,13 +1216,7 @@ def main():
                                 key=vk_left.note_from_key(k_pos)+octave_base,
                                 vel=127*2//3)
                     
-                    # Dibujar el juego de ritmo sobre el frame
-                    frame_left = rhythm_game.draw(
-                        frame_left, 
-                        vk_left.kb_x0, 
-                        vk_left.kb_x1,
-                        vk_left.white_key_width
-                    )
+                    # NOTA: El dibujo del juego ya se hace arriba, antes de las manos
                 else:
                     # Modo libre: reproducir audio en todas las teclas
                     if np.any(on_map):
@@ -1198,6 +1241,64 @@ def main():
 
             # Actualizar UI Helper
             ui_helper.update()
+            
+            # === MODO CONFIGURACIÓN ===
+            if config_mode:
+                # Mostrar panel de configuración
+                if camera_in_front_of_you:
+                    h_frames = np.concatenate((frame_right, frame_left), axis=1)
+                else:
+                    h_frames = np.concatenate((frame_left, frame_right), axis=1)
+                
+                h_frames = config_ui.draw_config_panel(h_frames)
+                cv2.imshow(main_window_name, h_frames)
+                
+                # Manejar teclas del panel de configuración
+                key = cv2.waitKey(1) & 0xFF
+                
+                # Navegación
+                if key == 82 or key == ord('w') or key == ord('W'):  # Arriba
+                    config_ui.navigate_up()
+                elif key == 84 or key == ord('s') or key == ord('S'):  # Abajo
+                    config_ui.navigate_down()
+                
+                # Ajustar valores
+                elif key == 83 or key == ord('d') or key == ord('D'):  # Derecha (aumentar)
+                    config_ui.increase_value()
+                    # Aplicar cambios en tiempo real
+                    km.depth_threshold = AppConfig.DEPTH_THRESHOLD
+                    km.velocity_threshold = AppConfig.VELOCITY_THRESHOLD
+                    km.velocity_enabled = AppConfig.VELOCITY_ENABLED
+                    km.velocity_history_size = AppConfig.VELOCITY_HISTORY_SIZE
+                elif key == 81 or key == ord('a') or key == ord('A'):  # Izquierda (disminuir)
+                    config_ui.decrease_value()
+                    # Aplicar cambios en tiempo real
+                    km.depth_threshold = AppConfig.DEPTH_THRESHOLD
+                    km.velocity_threshold = AppConfig.VELOCITY_THRESHOLD
+                    km.velocity_enabled = AppConfig.VELOCITY_ENABLED
+                    km.velocity_history_size = AppConfig.VELOCITY_HISTORY_SIZE
+                
+                # Presets (teclas 1-4)
+                elif 49 <= key <= 52:  # Teclas 1-4
+                    preset_idx = key - 49
+                    if preset_idx < len(config_ui.presets):
+                        preset_key = config_ui.presets[preset_idx]['key']
+                        config_ui.apply_preset(preset_key)
+                        config_ui.selected_preset = preset_idx
+                        print(f"✓ Preset aplicado: {config_ui.presets[preset_idx]['name']}")
+                        # Aplicar cambios en tiempo real
+                        km.depth_threshold = AppConfig.DEPTH_THRESHOLD
+                        km.velocity_threshold = AppConfig.VELOCITY_THRESHOLD
+                        km.velocity_enabled = AppConfig.VELOCITY_ENABLED
+                        km.velocity_history_size = AppConfig.VELOCITY_HISTORY_SIZE
+                
+                # Salir
+                elif key == ord('q') or key == ord('Q') or key == 27:  # Q o ESC
+                    config_mode = False
+                    config_ui.reset_selection()
+                    print("Modo configuración desactivado")
+                
+                continue  # Saltar el resto del loop principal
             
             # === MODO TEORÍA ===
             if theory_mode:
@@ -1348,6 +1449,17 @@ def main():
                 break
             elif key == ord('q'):
                 break
+            elif key == ord('c') or key == ord('C'):  # ========== MODO CONFIGURACIÓN ==========
+                # Solo toggle si NO estamos en config_mode, theory_mode o game_mode
+                if not config_mode and not theory_mode and not game_mode:
+                    config_mode = True
+                    print("\n=== MODO CONFIGURACIÓN ACTIVADO ===")
+                    print("Controles:")
+                    print("  W/S o ↑/↓: Navegar parámetros")
+                    print("  A/D o ←/→: Disminuir/Aumentar valor")
+                    print("  1-4: Aplicar preset (Suave/Normal/Estricto/Clásico)")
+                    print("  Q/ESC: Salir")
+                    print("=====================================\n")
             elif key == ord('d'):
                 if display_dashboard:
                     display_dashboard = False

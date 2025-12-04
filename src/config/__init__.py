@@ -7,12 +7,10 @@ Importa todas las configuraciones del proyecto
 @author: mherrera
 """
 
-from .stereo_config import StereoConfig
 from .game_config import GameConfig
 from .app_config import AppConfig
 
 __all__ = [
-    'StereoConfig',
     'GameConfig',
     'AppConfig',
 ]
@@ -21,7 +19,6 @@ __all__ = [
 def print_all_configs():
     """Imprime todas las configuraciones del sistema"""
     AppConfig.print_config()
-    StereoConfig.print_config()
     GameConfig.print_config()
     AppConfig.print_controls()
 
@@ -29,9 +26,6 @@ def print_all_configs():
 def load_all_configurations():
     """Carga todas las configuraciones necesarias"""
     print("Cargando configuraciones...")
-    
-    # Cargar calibración estéreo
-    StereoConfig.load_calibration()
     
     # Asegurar directorios
     AppConfig.ensure_directories()

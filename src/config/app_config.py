@@ -62,6 +62,9 @@ class AppConfig:
     COLOR_INSTRUCTIONS_TEXT = (200, 220, 255)
     COLOR_DASHBOARD_TEXT = (0, 255, 0)
     
+    # ==================== CÁMARAS ====================
+    CAMERA_INIT_WAIT = 0.5                # Tiempo de espera para inicialización de cámaras (segundos)
+    
     # ==================== PERFORMANCE ====================
     TARGET_FPS = 30                       # FPS objetivo de la aplicación
     ENABLE_PERFORMANCE_STATS = False      # Mostrar estadísticas de rendimiento
@@ -95,6 +98,65 @@ class AppConfig:
     DEBUG_MODE = False                    # Modo debug (más logging)
     VERBOSE_HAND_DETECTION = False        # Logging detallado de detección
     
+    # ==================== DETECCIÓN DE TECLAS ====================
+    # Sistema de detección por profundidad y velocidad
+    DEPTH_THRESHOLD = 3.5                 # Umbral de profundidad para presión (cm)
+                                          # Rango recomendado: 2.0-5.0 cm
+                                          # Menor valor = más estricto
+    
+    # Sistema de detección de movimiento (velocity-based triggering)
+    VELOCITY_THRESHOLD = 1.5              # Velocidad mínima hacia abajo (cm/frame)
+                                          # para activar tecla
+                                          # Valores típicos: 1.0-3.0 cm/frame
+                                          # Mayor valor = requiere golpe más fuerte
+    
+    VELOCITY_ENABLED = False              # Activar detección por velocidad
+                                          # True = requiere movimiento descendente
+                                          # False = modo clásico (solo profundidad)
+    
+    VELOCITY_HISTORY_SIZE = 3             # Número de frames para calcular velocidad
+                                          # Valores típicos: 2-5 frames
+                                          # Más frames = más suave pero menos responsivo
+    
+    @staticmethod
+    def set_key_sensitivity(sensitivity='normal'):
+        """
+        Ajusta la sensibilidad de detección de teclas
+        
+        Args:
+            sensitivity: 'soft', 'normal', 'hard', 'classic'
+        """
+        if sensitivity == 'soft':
+            # Piano sensible (toques suaves)
+            AppConfig.DEPTH_THRESHOLD = 4.0
+            AppConfig.VELOCITY_THRESHOLD = 1.0
+            AppConfig.VELOCITY_ENABLED = True
+            print("✓ Sensibilidad: SUAVE (toques ligeros)")
+        
+        elif sensitivity == 'normal':
+            # Configuración balanceada (recomendado)
+            AppConfig.DEPTH_THRESHOLD = 3.5
+            AppConfig.VELOCITY_THRESHOLD = 1.5
+            AppConfig.VELOCITY_ENABLED = False
+            print("✓ Sensibilidad: NORMAL (balanceado - modo clásico)")
+        
+        elif sensitivity == 'hard':
+            # Requiere golpe fuerte
+            AppConfig.DEPTH_THRESHOLD = 2.5
+            AppConfig.VELOCITY_THRESHOLD = 2.5
+            AppConfig.VELOCITY_ENABLED = True
+            print("✓ Sensibilidad: FUERTE (golpes pronunciados)")
+        
+        elif sensitivity == 'classic':
+            # Modo clásico sin detección de velocidad
+            AppConfig.DEPTH_THRESHOLD = 4.5
+            AppConfig.VELOCITY_ENABLED = False
+            print("✓ Sensibilidad: CLÁSICA (sin detección de velocidad)")
+        
+        else:
+            print(f"⚠ Sensibilidad '{sensitivity}' no reconocida")
+            print("   Opciones: 'soft', 'normal', 'hard', 'classic'")
+    
     # ==================== MÉTODOS ====================
     
     @staticmethod
@@ -108,6 +170,11 @@ class AppConfig:
         print(f"Soundfont: {AppConfig.get_soundfont_path() or 'No encontrado'}")
         print(f"Target FPS: {AppConfig.TARGET_FPS}")
         print(f"Debug mode: {'On' if AppConfig.DEBUG_MODE else 'Off'}")
+        print(f"\nDetección de teclas:")
+        print(f"  Umbral profundidad: {AppConfig.DEPTH_THRESHOLD} cm")
+        print(f"  Detección por velocidad: {'On' if AppConfig.VELOCITY_ENABLED else 'Off'}")
+        if AppConfig.VELOCITY_ENABLED:
+            print(f"  Velocidad mínima: {AppConfig.VELOCITY_THRESHOLD} cm/frame")
         print("="*60 + "\n")
     
     @staticmethod

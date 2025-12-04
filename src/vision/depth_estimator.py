@@ -10,6 +10,7 @@ import numpy as np
 import json
 from pathlib import Path
 from scipy import linalg
+from collections import deque
 
 
 class DepthEstimator:
@@ -43,6 +44,15 @@ class DepthEstimator:
         self.T_world_left = None   # Traslación cámara izq respecto al mundo
         self.R_world_right = None  # Rotación cámara der respecto al mundo
         self.T_world_right = None  # Traslación cámara der respecto al mundo
+        
+        # Factor de corrección de profundidad (calibrado empíricamente)
+        # Basado en mediciones reales vs estimadas
+        self.DEPTH_CORRECTION_FACTOR = 0.74
+        
+        # Sistema de suavizado temporal (para reducir jitter)
+        self.smoothing_enabled = True
+        self.smoothing_window = 5  # Últimos N frames
+        self.position_history = {}  # {landmark_id: deque([(x,y,z), ...], maxlen=N)}
         
         # Parámetros de rectificación
         self.R1 = None
@@ -308,7 +318,10 @@ class DepthEstimator:
             Y_cm = Y * 100
             Z_cm = Z * 100
             
-            return (X_cm, Y_cm, Z_cm)
+            # Aplicar factor de corrección de profundidad
+            Z_cm_corrected = Z_cm * self.DEPTH_CORRECTION_FACTOR
+            
+            return (X_cm, Y_cm, Z_cm_corrected)
             
         except Exception as e:
             print(f"Error en triangulación DLT: {e}")
@@ -428,6 +441,60 @@ class DepthEstimator:
         y_rect = mapy[int(y), int(x)]
         
         return (x_rect, y_rect)
+    
+    def enable_smoothing(self, enabled=True, window_size=5):
+        """
+        Activa/desactiva el suavizado temporal de coordenadas 3D
+        
+        Args:
+            enabled: True para activar, False para desactivar
+            window_size: Número de frames a promediar (3-10 recomendado)
+        """
+        self.smoothing_enabled = enabled
+        self.smoothing_window = window_size
+        if not enabled:
+            self.position_history.clear()
+    
+    def smooth_position(self, position_3d, landmark_id=0):
+        """
+        Aplica suavizado temporal a una posición 3D usando media móvil
+        
+        Args:
+            position_3d: tuple (X, Y, Z) en cm
+            landmark_id: ID del landmark (para mantener historiales separados)
+        
+        Returns:
+            tuple: (X_smooth, Y_smooth, Z_smooth) coordenadas suavizadas
+        """
+        if not self.smoothing_enabled or position_3d is None:
+            return position_3d
+        
+        # Inicializar buffer para este landmark si no existe
+        if landmark_id not in self.position_history:
+            self.position_history[landmark_id] = deque(maxlen=self.smoothing_window)
+        
+        # Agregar nueva posición al buffer
+        self.position_history[landmark_id].append(position_3d)
+        
+        # Calcular promedio de las últimas N posiciones
+        history = np.array(list(self.position_history[landmark_id]))
+        smoothed = np.mean(history, axis=0)
+        
+        return tuple(smoothed)
+    
+    def reset_smoothing(self, landmark_id=None):
+        """
+        Limpia el historial de suavizado
+        
+        Args:
+            landmark_id: Si se especifica, limpia solo ese landmark. 
+                        Si es None, limpia todos.
+        """
+        if landmark_id is not None:
+            if landmark_id in self.position_history:
+                del self.position_history[landmark_id]
+        else:
+            self.position_history.clear()
 
 
 # Función auxiliar para cargar rápidamente

@@ -38,9 +38,15 @@ class StereoConfig:
     VKB_CENTER_DISTANCE = 71        # Distancia del teclado virtual (cm)
     
     # ==================== DETECCIÓN DE PROFUNDIDAD ====================
-    DEPTH_THRESHOLD = 3.5           # Umbral de profundidad para presión (cm)
-                                     # Aumentado para mejor detección de dedos
+    DEPTH_THRESHOLD = 2.5           # Umbral de profundidad para presión (cm)
                                      # Rango recomendado: 2.0-5.0 cm
+    
+    # Sistema de detección de movimiento (velocity-based triggering)
+    VELOCITY_THRESHOLD = 1.5        # Velocidad mínima hacia abajo (cm/frame) para activar tecla
+                                     # Valores típicos: 1.0-3.0 cm/frame
+                                     # Mayor valor = requiere golpe más fuerte
+    VELOCITY_ENABLED = True          # Activar detección por velocidad
+    VELOCITY_HISTORY_SIZE = 3        # Número de frames para calcular velocidad
     
     # ==================== PARÁMETROS DE DETECCIÓN ====================
     HAND_DETECTION_CONFIDENCE = 0.75  # Confianza para detectar mano
@@ -60,10 +66,11 @@ class StereoConfig:
     OCTAVE_BASE = 0                 # Octava base
     
     # Posición del teclado virtual (porcentajes del canvas)
-    KEYBOARD_X0_RATIO = 0.20        # Posición X inicial (20% del ancho)
-    KEYBOARD_Y0_RATIO = 0.35        # Posición Y inicial (35% del alto)
-    KEYBOARD_X1_RATIO = 0.80        # Posición X final (80% del ancho)
-    KEYBOARD_Y1_RATIO = 0.55        # Posición Y final (55% del alto)
+    # Ajustado +5% en todas dimensiones para mejor detección
+    KEYBOARD_X0_RATIO = 0.175       # Posición X inicial (17.5% del ancho, antes 20%)
+    KEYBOARD_Y0_RATIO = 0.325       # Posición Y inicial (32.5% del alto, antes 35%)
+    KEYBOARD_X1_RATIO = 0.825       # Posición X final (82.5% del ancho, antes 80%)
+    KEYBOARD_Y1_RATIO = 0.575       # Posición Y final (57.5% del alto, antes 55%)
     
     # Relaciones de tamaño de teclas (basado en piano real)
     BLACK_KEY_WIDTH_RATIO = 0.54    # Ancho tecla negra / ancho tecla blanca (13.7mm / 23.5mm)

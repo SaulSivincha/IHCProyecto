@@ -9,3 +9,4 @@ from .algorithms import AlgorithmManager, BaseAlgorithm
 __all__ = ['HandDetector', 'KeyboardMap', 'VideoThread', 
            'Frame_Angles', 'DepthEstimator', 'load_depth_estimator',
            'AlgorithmManager', 'BaseAlgorithm']
+

@@ -146,6 +146,17 @@ class DepthEstimator:
         self.P2 = np.array(rect['P2'], dtype=np.float32)
         self.Q = np.array(rect['Q'], dtype=np.float32)
         
+        # NUEVO: Cargar factor de corrección de profundidad si existe (Fase 3)
+        if 'depth_correction' in data:
+            depth_corr = data['depth_correction']
+            self.DEPTH_CORRECTION_FACTOR = depth_corr.get('factor', 0.74)
+            print(f"  ✓ Factor de corrección de profundidad cargado: {self.DEPTH_CORRECTION_FACTOR:.4f}")
+        else:
+            # Usar valor por defecto si no hay Fase 3
+            self.DEPTH_CORRECTION_FACTOR = 0.74
+            print(f"  ⚠ Factor de corrección no encontrado, usando por defecto: {self.DEPTH_CORRECTION_FACTOR:.4f}")
+            print("    Ejecuta Fase 3 (Calibración de Profundidad) para mejorar precisión")
+        
         print(f"✓ Calibración cargada desde: {self.calibration_file}")
         print(f"  Baseline: {self.baseline_cm:.2f} cm")
         print(f"  Resolución: {self.image_size[0]}x{self.image_size[1]}")

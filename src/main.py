@@ -140,6 +140,136 @@ def show_calibration_menu(ui_helper, pixel_width, pixel_height):
             cv2.destroyWindow(window_name)
             return None  # Salir
 
+def run_phase3_depth_calibration(config, pixel_width, pixel_height):
+    """
+    Ejecuta Fase 3: Calibración de profundidad
+    Calcula el factor de corrección específico del sistema
+    
+    Args:
+        config: Configuración estéreo
+        pixel_width: Ancho de imagen
+        pixel_height: Alto de imagen
+    
+    Returns:
+        bool: True si la calibración fue exitosa
+    """
+    from src.calibration.calibration_config import CalibrationConfig
+    from src.calibration.depth_calibrator import DepthCalibrator
+    from src.vision import video_thread
+    from src.vision.hand_detector import HandDetector
+    from src.vision.depth_estimator import load_depth_estimator
+    
+    print("\n[DEBUG] Iniciando run_phase3_depth_calibration...")
+    
+    try:
+        # Cargar DepthEstimator con calibración estéreo existente
+        print("[DEBUG] Cargando DepthEstimator...")
+        depth_estimator = load_depth_estimator(CalibrationConfig.CALIBRATION_FILE)
+        print("[DEBUG] DepthEstimator cargado exitosamente")
+        
+        if depth_estimator is None:
+            print("✗ Error: No se pudo cargar calibración estéreo (Fase 2)")
+            print("  Debes completar Fase 1 y Fase 2 antes de Fase 3")
+            return False
+        
+        # Iniciar cámaras
+        print("\n[DEBUG] Iniciando cámaras...")
+        print(f"  Cámara izquierda: {config.LEFT_CAMERA_SOURCE}")
+        print(f"  Cámara derecha: {config.RIGHT_CAMERA_SOURCE}")
+        
+        cam_left = video_thread.VideoThread(
+            video_source=config.LEFT_CAMERA_SOURCE,
+            video_width=pixel_width,
+            video_height=pixel_height,
+            video_frame_rate=30,
+            buffer_all=False,
+            try_to_reconnect=False
+        )
+        
+        cam_right = video_thread.VideoThread(
+            video_source=config.RIGHT_CAMERA_SOURCE,
+            video_width=pixel_width,
+            video_height=pixel_height,
+            video_frame_rate=30,
+            buffer_all=False,
+            try_to_reconnect=False
+        )
+        
+        print("[DEBUG] Iniciando threads de cámaras...")
+        cam_left.start()
+        cam_right.start()
+        
+        import time
+        time.sleep(1)
+        
+        # Verificar que las cámaras estén disponibles
+        print("[DEBUG] Verificando disponibilidad de cámaras...")
+        if not cam_left.is_available() or not cam_right.is_available():
+            print("✗ Error: No se pudieron iniciar las cámaras")
+            print(f"  Izquierda disponible: {cam_left.is_available()}")
+            print(f"  Derecha disponible: {cam_right.is_available()}")
+            cam_left.stop()
+            cam_right.stop()
+            return False
+        
+        print("[DEBUG] Ambas cámaras disponibles")
+        
+        # Crear detectores de manos
+        print("[DEBUG] Creando detectores de manos...")
+        hand_detector_left = HandDetector(
+            detectionCon=0.75,
+            trackCon=0.5,
+            img_width=pixel_width,
+            img_height=pixel_height
+        )
+        hand_detector_right = HandDetector(
+            detectionCon=0.75,
+            trackCon=0.5,
+            img_width=pixel_width,
+            img_height=pixel_height
+        )
+        print("[DEBUG] Detectores creados")
+        
+        # Crear calibrador de profundidad
+        print("[DEBUG] Creando DepthCalibrator...")
+        depth_calibrator = DepthCalibrator(
+            depth_estimator=depth_estimator,
+            width=pixel_width,
+            height=pixel_height
+        )
+        print("[DEBUG] DepthCalibrator creado, iniciando calibración...")
+        
+        # Ejecutar calibración de profundidad
+        correction_factor = depth_calibrator.run_depth_calibration(
+            cam_left, cam_right,
+            hand_detector_left, hand_detector_right
+        )
+        
+        print("[DEBUG] Calibración completada, deteniendo cámaras...")
+        
+        # Detener cámaras
+        cam_left.stop()
+        cam_right.stop()
+        
+        if correction_factor is not None:
+            # Actualizar el factor en depth_estimator
+            depth_estimator.DEPTH_CORRECTION_FACTOR = correction_factor
+            print(f"\n✓ Factor de corrección actualizado: {correction_factor:.4f}")
+            print("  Este factor será usado automáticamente por el sistema")
+            return True
+        else:
+            print("\n✗ No se pudo calcular el factor de corrección")
+            return False
+            
+    except Exception as e:
+        print(f"\n✗ Error durante Fase 3: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+        traceback.print_exc()
+        return False
+
+
 def run_calibration_process(ui_helper, pixel_width, pixel_height, config):
     """Ejecuta el proceso de calibración con el nuevo sistema profesional"""
     from src.calibration.calibration_config import CalibrationConfig
@@ -156,6 +286,7 @@ def run_calibration_process(ui_helper, pixel_width, pixel_height, config):
             summary = CalibrationConfig.get_calibration_summary()
             has_phase1 = summary is not None
             has_phase2 = summary.get('tiene_estereo', False) if summary else False
+            has_phase3 = summary.get('tiene_depth_correction', False) if summary else False
             
             # Debug: Mostrar datos de Fase 2
             if has_phase2 and summary:
@@ -164,7 +295,7 @@ def run_calibration_process(ui_helper, pixel_width, pixel_height, config):
                 print(f"  - Error RMS: {summary.get('error_stereo', 'N/A')}")
                 print(f"  - Pares: {summary.get('pares_stereo', 'N/A')}")
         
-        # ========== CASO 1: AMBAS FASES COMPLETAS ==========
+        # ========== CASO 1: FASES COMPLETAS (1, 2, y opcionalmente 3) ==========
         if has_phase1 and has_phase2 and not force_recalibration:
             # Mostrar interfaz detallada de calibración completa
             window_name = 'Calibracion Completa - Detalles'
@@ -321,6 +452,61 @@ def run_calibration_process(ui_helper, pixel_width, pixel_height, config):
                                (450, y_pos),
                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (100, 100, 100), 2)
                 
+                # ============ SECCIÓN FASE 3 ============
+                y_pos += 45
+                cv2.putText(display_frame, "FASE 3: CALIBRACION DE PROFUNDIDAD", 
+                           (20, y_pos),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 150, 0), 2)
+                
+                y_pos += 5
+                cv2.line(display_frame, (20, y_pos), (930, y_pos), (100, 100, 100), 2)
+                
+                # Factor de corrección
+                y_pos += 30
+                cv2.putText(display_frame, "Factor de correccion:", 
+                           (40, y_pos),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.65, (150, 200, 255), 2)
+                
+                depth_corr_val = summary.get('depth_correction_factor', None)
+                if depth_corr_val is not None and has_phase3:
+                    try:
+                        factor_float = float(depth_corr_val)
+                        cv2.putText(display_frame, f"{factor_float:.4f}", 
+                                   (450, y_pos),
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (100, 255, 100), 2)
+                        
+                        # Indicador de estado
+                        cv2.putText(display_frame, "COMPLETA", 
+                                   (650, y_pos),
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                        cv2.circle(display_frame, (850, y_pos-7), 7, (0, 255, 0), -1)
+                    except:
+                        cv2.putText(display_frame, str(depth_corr_val), 
+                                   (450, y_pos),
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (200, 200, 200), 2)
+                else:
+                    cv2.putText(display_frame, "No calibrado (usando 0.74)", 
+                               (450, y_pos),
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 165, 0), 2)
+                    cv2.putText(display_frame, "PENDIENTE", 
+                               (650, y_pos),
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 165, 0), 2)
+                    cv2.circle(display_frame, (850, y_pos-7), 7, (255, 165, 0), -1)
+                
+                # Número de mediciones
+                if has_phase3:
+                    y_pos += 30
+                    cv2.putText(display_frame, "Mediciones:", 
+                               (40, y_pos),
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.65, (150, 200, 255), 2)
+                    
+                    num_samples = summary.get('depth_correction_samples', 'N/A')
+                    if num_samples != 'N/A':
+                        cv2.putText(display_frame, f"{num_samples} distancias", 
+                                   (450, y_pos),
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (200, 200, 200), 2)
+
+                
                 # ============ CONFIGURACIÓN TABLERO ============
                 y_pos += 45
                 cv2.putText(display_frame, "CONFIGURACION TABLERO", 
@@ -366,6 +552,19 @@ def run_calibration_process(ui_helper, pixel_width, pixel_height, config):
                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
                 
                 y_pos += 35
+                # Cambiar texto según si Fase 3 está completa
+                if has_phase3:
+                    phase3_text = "[P] Re-calibrar profundidad (Fase 3)"
+                    phase3_color = (100, 200, 255)
+                else:
+                    phase3_text = "[P] Calibrar profundidad (Fase 3 - RECOMENDADO)"
+                    phase3_color = (255, 150, 0)
+                
+                cv2.putText(display_frame, phase3_text, 
+                           (130, y_pos),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.6, phase3_color, 1)
+                
+                y_pos += 35
                 cv2.putText(display_frame, "[S] Re-calibrar SOLO Fase 2 (mejorar baseline/error)", 
                            (130, y_pos),
                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 1)
@@ -388,6 +587,33 @@ def run_calibration_process(ui_helper, pixel_width, pixel_height, config):
                     cv2.destroyWindow(window_name)
                     print("\n✓ Usando calibración existente - Iniciando juego...")
                     return True
+                
+                elif key == ord('p') or key == ord('P'):  # ========== FASE 3: PROFUNDIDAD ==========
+                    cv2.destroyWindow(window_name)
+                    print("\n⚡ Iniciando FASE 3: Calibración de Profundidad...")
+                    
+                    # Ejecutar Fase 3
+                    success = run_phase3_depth_calibration(config, pixel_width, pixel_height)
+                    
+                    if success:
+                        print("\n✓ Fase 3 completada - Factor de corrección actualizado")
+                        # Recargar summary para actualizar has_phase3
+                        summary = CalibrationConfig.get_calibration_summary()
+                        has_phase3 = summary.get('tiene_depth_correction', False) if summary else False
+                        print(f"  Estado Fase 3: {has_phase3}")
+                        
+                        # Volver a mostrar el menú con los datos actualizados
+                        cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
+                        cv2.resizeWindow(window_name, 950, 700)
+                        cv2.moveWindow(window_name, 100, 50)
+                        continue
+                    else:
+                        print("\n⚠ Fase 3 cancelada o fallida - Usando factor por defecto")
+                        # Volver a mostrar el menú sin cambios
+                        cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
+                        cv2.resizeWindow(window_name, 950, 700)
+                        cv2.moveWindow(window_name, 100, 50)
+                        continue
                 
                 elif key == ord('s') or key == ord('S'):  # Re-calibrar SOLO Fase 2
                     cv2.destroyWindow(window_name)

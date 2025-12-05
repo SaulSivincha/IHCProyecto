@@ -86,9 +86,14 @@ from src.gameplay.song_chart import TUTORIAL_FACIL
 
 # --- UI ---
 from src.ui.ui_helper import UIHelper
+#from src.ui.qt_initial_menu import show_initial_menu
+from src.ui.qt_main_menu import show_main_menu
 
 # --- Theory ---
 from src.theory import get_lesson_manager, TheoryUI
+# --- Songs ---
+from src.songs.sons_ui import SongsUI
+from src.songs.song_manager import get_all_songs
 
 # --- Config UI ---
 from src.ui.config_ui import ConfigUI
@@ -115,160 +120,7 @@ def frame_add_crosshairs(frame,
     cv2.circle(frame, (x, y), r, cc, cw)
 
 def show_calibration_menu(ui_helper, pixel_width, pixel_height):
-    """Muestra menú de configuración inicial y retorna la opción seleccionada"""
-    window_name = 'Configuración Inicial'
-    cv2.namedWindow(window_name)
-    cv2.moveWindow(window_name, (pixel_width//2), (pixel_height//2))
-    
-    while True:
-        # Frame negro para el menú
-        menu_frame = np.zeros((pixel_height, pixel_width * 2, 3), dtype=np.uint8)
-        menu_frame = ui_helper.draw_setup_menu(menu_frame)
-        cv2.imshow(window_name, menu_frame)
-        
-        key = cv2.waitKey(1) & 0xFF
-        if key == ord('1'):
-            cv2.destroyWindow(window_name)
-            return 1  # Usar calibración guardada
-        elif key == ord('2'):
-            cv2.destroyWindow(window_name)
-            return 2  # Nueva calibración
-        elif key == ord('3'):
-            cv2.destroyWindow(window_name)
-            return 3  # Saltar (valores por defecto)
-        elif key == ord('q'):
-            cv2.destroyWindow(window_name)
-            return None  # Salir
-
-def run_phase3_depth_calibration(config, pixel_width, pixel_height):
-    """
-    Ejecuta Fase 3: Calibración de profundidad
-    Calcula el factor de corrección específico del sistema
-    
-    Args:
-        config: Configuración estéreo
-        pixel_width: Ancho de imagen
-        pixel_height: Alto de imagen
-    
-    Returns:
-        bool: True si la calibración fue exitosa
-    """
-    from src.calibration.calibration_config import CalibrationConfig
-    from src.calibration.depth_calibrator import DepthCalibrator
-    from src.vision import video_thread
-    from src.vision.hand_detector import HandDetector
-    from src.vision.depth_estimator import load_depth_estimator
-    
-    print("\n[DEBUG] Iniciando run_phase3_depth_calibration...")
-    
-    try:
-        # Cargar DepthEstimator con calibración estéreo existente
-        print("[DEBUG] Cargando DepthEstimator...")
-        depth_estimator = load_depth_estimator(CalibrationConfig.CALIBRATION_FILE)
-        print("[DEBUG] DepthEstimator cargado exitosamente")
-        
-        if depth_estimator is None:
-            print("✗ Error: No se pudo cargar calibración estéreo (Fase 2)")
-            print("  Debes completar Fase 1 y Fase 2 antes de Fase 3")
-            return False
-        
-        # Iniciar cámaras
-        print("\n[DEBUG] Iniciando cámaras...")
-        print(f"  Cámara izquierda: {config.LEFT_CAMERA_SOURCE}")
-        print(f"  Cámara derecha: {config.RIGHT_CAMERA_SOURCE}")
-        
-        cam_left = video_thread.VideoThread(
-            video_source=config.LEFT_CAMERA_SOURCE,
-            video_width=pixel_width,
-            video_height=pixel_height,
-            video_frame_rate=30,
-            buffer_all=False,
-            try_to_reconnect=False
-        )
-        
-        cam_right = video_thread.VideoThread(
-            video_source=config.RIGHT_CAMERA_SOURCE,
-            video_width=pixel_width,
-            video_height=pixel_height,
-            video_frame_rate=30,
-            buffer_all=False,
-            try_to_reconnect=False
-        )
-        
-        print("[DEBUG] Iniciando threads de cámaras...")
-        cam_left.start()
-        cam_right.start()
-        
-        import time
-        time.sleep(1)
-        
-        # Verificar que las cámaras estén disponibles
-        print("[DEBUG] Verificando disponibilidad de cámaras...")
-        if not cam_left.is_available() or not cam_right.is_available():
-            print("✗ Error: No se pudieron iniciar las cámaras")
-            print(f"  Izquierda disponible: {cam_left.is_available()}")
-            print(f"  Derecha disponible: {cam_right.is_available()}")
-            cam_left.stop()
-            cam_right.stop()
-            return False
-        
-        print("[DEBUG] Ambas cámaras disponibles")
-        
-        # Crear detectores de manos
-        print("[DEBUG] Creando detectores de manos...")
-        hand_detector_left = HandDetector(
-            detectionCon=0.75,
-            trackCon=0.5,
-            img_width=pixel_width,
-            img_height=pixel_height
-        )
-        hand_detector_right = HandDetector(
-            detectionCon=0.75,
-            trackCon=0.5,
-            img_width=pixel_width,
-            img_height=pixel_height
-        )
-        print("[DEBUG] Detectores creados")
-        
-        # Crear calibrador de profundidad
-        print("[DEBUG] Creando DepthCalibrator...")
-        depth_calibrator = DepthCalibrator(
-            depth_estimator=depth_estimator,
-            width=pixel_width,
-            height=pixel_height
-        )
-        print("[DEBUG] DepthCalibrator creado, iniciando calibración...")
-        
-        # Ejecutar calibración de profundidad
-        correction_factor = depth_calibrator.run_depth_calibration(
-            cam_left, cam_right,
-            hand_detector_left, hand_detector_right
-        )
-        
-        print("[DEBUG] Calibración completada, deteniendo cámaras...")
-        
-        # Detener cámaras
-        cam_left.stop()
-        cam_right.stop()
-        
-        if correction_factor is not None:
-            # Actualizar el factor en depth_estimator
-            depth_estimator.DEPTH_CORRECTION_FACTOR = correction_factor
-            print(f"\n✓ Factor de corrección actualizado: {correction_factor:.4f}")
-            print("  Este factor será usado automáticamente por el sistema")
-            return True
-        else:
-            print("\n✗ No se pudo calcular el factor de corrección")
-            return False
-            
-    except Exception as e:
-        print(f"\n✗ Error durante Fase 3: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
-        traceback.print_exc()
-        return False
-
+    return show_initial_menu()
 
 def run_calibration_process(ui_helper, pixel_width, pixel_height, config):
     """Ejecuta el proceso de calibración con el nuevo sistema profesional"""
@@ -286,7 +138,6 @@ def run_calibration_process(ui_helper, pixel_width, pixel_height, config):
             summary = CalibrationConfig.get_calibration_summary()
             has_phase1 = summary is not None
             has_phase2 = summary.get('tiene_estereo', False) if summary else False
-            has_phase3 = summary.get('tiene_depth_correction', False) if summary else False
             
             # Debug: Mostrar datos de Fase 2
             if has_phase2 and summary:
@@ -295,7 +146,7 @@ def run_calibration_process(ui_helper, pixel_width, pixel_height, config):
                 print(f"  - Error RMS: {summary.get('error_stereo', 'N/A')}")
                 print(f"  - Pares: {summary.get('pares_stereo', 'N/A')}")
         
-        # ========== CASO 1: FASES COMPLETAS (1, 2, y opcionalmente 3) ==========
+        # ========== CASO 1: AMBAS FASES COMPLETAS ==========
         if has_phase1 and has_phase2 and not force_recalibration:
             # Mostrar interfaz detallada de calibración completa
             window_name = 'Calibracion Completa - Detalles'
@@ -452,61 +303,6 @@ def run_calibration_process(ui_helper, pixel_width, pixel_height, config):
                                (450, y_pos),
                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (100, 100, 100), 2)
                 
-                # ============ SECCIÓN FASE 3 ============
-                y_pos += 45
-                cv2.putText(display_frame, "FASE 3: CALIBRACION DE PROFUNDIDAD", 
-                           (20, y_pos),
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 150, 0), 2)
-                
-                y_pos += 5
-                cv2.line(display_frame, (20, y_pos), (930, y_pos), (100, 100, 100), 2)
-                
-                # Factor de corrección
-                y_pos += 30
-                cv2.putText(display_frame, "Factor de correccion:", 
-                           (40, y_pos),
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.65, (150, 200, 255), 2)
-                
-                depth_corr_val = summary.get('depth_correction_factor', None)
-                if depth_corr_val is not None and has_phase3:
-                    try:
-                        factor_float = float(depth_corr_val)
-                        cv2.putText(display_frame, f"{factor_float:.4f}", 
-                                   (450, y_pos),
-                                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (100, 255, 100), 2)
-                        
-                        # Indicador de estado
-                        cv2.putText(display_frame, "COMPLETA", 
-                                   (650, y_pos),
-                                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-                        cv2.circle(display_frame, (850, y_pos-7), 7, (0, 255, 0), -1)
-                    except:
-                        cv2.putText(display_frame, str(depth_corr_val), 
-                                   (450, y_pos),
-                                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (200, 200, 200), 2)
-                else:
-                    cv2.putText(display_frame, "No calibrado (usando 0.74)", 
-                               (450, y_pos),
-                               cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 165, 0), 2)
-                    cv2.putText(display_frame, "PENDIENTE", 
-                               (650, y_pos),
-                               cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 165, 0), 2)
-                    cv2.circle(display_frame, (850, y_pos-7), 7, (255, 165, 0), -1)
-                
-                # Número de mediciones
-                if has_phase3:
-                    y_pos += 30
-                    cv2.putText(display_frame, "Mediciones:", 
-                               (40, y_pos),
-                               cv2.FONT_HERSHEY_SIMPLEX, 0.65, (150, 200, 255), 2)
-                    
-                    num_samples = summary.get('depth_correction_samples', 'N/A')
-                    if num_samples != 'N/A':
-                        cv2.putText(display_frame, f"{num_samples} distancias", 
-                                   (450, y_pos),
-                                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (200, 200, 200), 2)
-
-                
                 # ============ CONFIGURACIÓN TABLERO ============
                 y_pos += 45
                 cv2.putText(display_frame, "CONFIGURACION TABLERO", 
@@ -552,19 +348,6 @@ def run_calibration_process(ui_helper, pixel_width, pixel_height, config):
                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
                 
                 y_pos += 35
-                # Cambiar texto según si Fase 3 está completa
-                if has_phase3:
-                    phase3_text = "[P] Re-calibrar profundidad (Fase 3)"
-                    phase3_color = (100, 200, 255)
-                else:
-                    phase3_text = "[P] Calibrar profundidad (Fase 3 - RECOMENDADO)"
-                    phase3_color = (255, 150, 0)
-                
-                cv2.putText(display_frame, phase3_text, 
-                           (130, y_pos),
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.6, phase3_color, 1)
-                
-                y_pos += 35
                 cv2.putText(display_frame, "[S] Re-calibrar SOLO Fase 2 (mejorar baseline/error)", 
                            (130, y_pos),
                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 1)
@@ -587,33 +370,6 @@ def run_calibration_process(ui_helper, pixel_width, pixel_height, config):
                     cv2.destroyWindow(window_name)
                     print("\n✓ Usando calibración existente - Iniciando juego...")
                     return True
-                
-                elif key == ord('p') or key == ord('P'):  # ========== FASE 3: PROFUNDIDAD ==========
-                    cv2.destroyWindow(window_name)
-                    print("\n⚡ Iniciando FASE 3: Calibración de Profundidad...")
-                    
-                    # Ejecutar Fase 3
-                    success = run_phase3_depth_calibration(config, pixel_width, pixel_height)
-                    
-                    if success:
-                        print("\n✓ Fase 3 completada - Factor de corrección actualizado")
-                        # Recargar summary para actualizar has_phase3
-                        summary = CalibrationConfig.get_calibration_summary()
-                        has_phase3 = summary.get('tiene_depth_correction', False) if summary else False
-                        print(f"  Estado Fase 3: {has_phase3}")
-                        
-                        # Volver a mostrar el menú con los datos actualizados
-                        cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
-                        cv2.resizeWindow(window_name, 950, 700)
-                        cv2.moveWindow(window_name, 100, 50)
-                        continue
-                    else:
-                        print("\n⚠ Fase 3 cancelada o fallida - Usando factor por defecto")
-                        # Volver a mostrar el menú sin cambios
-                        cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
-                        cv2.resizeWindow(window_name, 950, 700)
-                        cv2.moveWindow(window_name, 100, 50)
-                        continue
                 
                 elif key == ord('s') or key == ord('S'):  # Re-calibrar SOLO Fase 2
                     cv2.destroyWindow(window_name)
@@ -977,198 +733,194 @@ def run_calibration_process(ui_helper, pixel_width, pixel_height, config):
         return False
 
 def main():
-
-    try:
-        # Cargar configuración estéreo centralizada
-        config = StereoConfig()
-        
-        # Dimensiones para la interfaz
-        pixel_width = config.PIXEL_WIDTH
-        pixel_height = config.PIXEL_HEIGHT
-        
-        # Inicializar UI Helper para menú de configuración
-        ui_helper_menu = UIHelper(pixel_width * 2, pixel_height)
-        ui_helper_menu.show_instructions = False  # No mostrar bienvenida aún
-        
-        # Mostrar menú de configuración
-        setup_option = show_calibration_menu(ui_helper_menu, pixel_width, pixel_height)
-        
-        if setup_option is None:
-            print("Saliendo...")
-            return
-        elif setup_option == 1:
-            # Usar calibración guardada
-            print("Cargando calibración guardada...")
-            loaded = config.load_calibration()
-            if not loaded:
-                print("⚠ No se pudo cargar calibración. Usando valores por defecto.")
-            # NO RETORNAR - Continuar con el programa
-        elif setup_option == 2:
-            # Nueva calibración
-            print("Iniciando proceso de calibración...")
-            success = run_calibration_process(ui_helper_menu, pixel_width, pixel_height, config)
-            if not success:
-                print("⚠ Calibración cancelada. Usando valores por defecto.")
-        else:  # setup_option == 3
-            print("Usando valores por defecto (sin calibración)")
-        
-        config.print_config()
-
-        # ------------------------------
-        # set up cameras
-        # ------------------------------
-
-        # cameras variables
-        left_camera_source = config.LEFT_CAMERA_SOURCE
-        right_camera_source = config.RIGHT_CAMERA_SOURCE
-        pixel_width = config.PIXEL_WIDTH
-        pixel_height = config.PIXEL_HEIGHT
-
-        # Logi C920s HD Pro Webcam - Calibración óptica
-        camera_hFoV = config.CAMERA_H_FOV
-        camera_vFoV = config.CAMERA_V_FOV
-        hFoV_angle_rectification = config.H_FOV_RECTIFICATION
-        vFoV_angle_rectification = config.V_FOV_RECTIFICATION
-
-        angle_width = config.ANGLE_WIDTH
-        angle_height = config.ANGLE_HEIGHT
-
-        # FPS
-        frame_rate = config.FRAME_RATE
-        camera_separation = config.CAMERA_SEPARATION
-
-        camera_in_front_of_you = config.CAMERA_IN_FRONT_OF_YOU
-
-        # Virtual Keyboard Center point distance (cms)
-        vkb_center_point_camera_dist = config.VKB_CENTER_DISTANCE
-
-            # cam_resource = video_thread.VideoThread(
-            #     video_source=c_id,
-            #     video_width=pixel_width,
-            #     video_height=pixel_height,
-            #     video_frame_rate=frame_rate,
-            #     buffer_all=False,
-            #     try_to_reconnect=False
-            # )
-        # left camera 1
-        cam_left = video_thread.VideoThread(
-            video_source=left_camera_source,
-            video_width=pixel_width,
-            video_height=pixel_height,
-            video_frame_rate=frame_rate,
-            buffer_all=False,
-            try_to_reconnect=False)
-
-        # right camera 2
-        cam_right = video_thread.VideoThread(
-            video_source=right_camera_source,
-            video_width=pixel_width,
-            video_height=pixel_height,
-            video_frame_rate=frame_rate,
-            buffer_all=False,
-            try_to_reconnect=False)
-
-        # start cameras
-        cam_left.start()
-        cam_right.start()
-
-        time.sleep(1)
-        
-        # Intentar cargar DepthEstimator si existe calibración completa
-        depth_estimator = None
-        use_stereo_calibration = False
+    while True:  # <--- 1. BUCLE GLOBAL AGREGADO
+        # Inicializar variables para limpieza segura
+        fs = None
+        cam_left = None
+        cam_right = None
         try:
-            from src.calibration.calibration_config import CalibrationConfig
-            depth_estimator = load_depth_estimator(CalibrationConfig.CALIBRATION_FILE)
-            use_stereo_calibration = True
-            print("\n" + "="*70)
-            print("✓ CALIBRACIÓN ESTÉREO CARGADA")
-            print("="*70)
-            print(f"  Baseline: {depth_estimator.baseline_cm:.2f} cm")
-            print(f"  Modo: Triangulación precisa con rectificación")
-            print("="*70 + "\n")
-        except (FileNotFoundError, ValueError) as e:
-            print("\n" + "="*70)
-            print("⚠ CALIBRACIÓN ESTÉREO NO DISPONIBLE")
-            print("="*70)
-            print(f"  {e}")
-            print(f"  Modo: Triangulación basada en ángulos (menos preciso)")
-            print("="*70 + "\n")
-        
-        if camera_in_front_of_you:
-            main_window_name = 'In fron of you: rigth+left cam'
-        else:
-            main_window_name = 'Same Point of View: left+rigth cam'
+            # Cargar configuración estéreo centralizada
+            config = StereoConfig()
+            
+            # Dimensiones para la interfaz
+            pixel_width = config.PIXEL_WIDTH
+            pixel_height = config.PIXEL_HEIGHT
+            
+            # Inicializar UI Helper para posibles pantallas de menú/calibración
+            ui_helper_menu = UIHelper(pixel_width * 2, pixel_height)
+            ui_helper_menu.show_instructions = False  # no mostrar instrucciones con OpenCV aquí
 
-        cv2.namedWindow(main_window_name)
-        cv2.moveWindow(main_window_name,
-                       (pixel_width//2),
-                       (pixel_height//2))        
-        
-        if cam_left.is_available():
-            print('Name:{}'.format(main_window_name))
-            print('cam_left.resource.get(cv2.CAP_PROP_AUTO_EXPOSURE:{}'.
-                  format(cam_left.resource.get(cv2.CAP_PROP_AUTO_EXPOSURE)))
-            print('cam_left.resource.get(cv2.CAP_PROP_EXPOSURE:{}'.
-                  format(cam_left.resource.get(cv2.CAP_PROP_EXPOSURE)))
-            print('cam_left.resource.get(cv2.CAP_PROP_AUTOFOCUS):{}'.
-                  format(cam_left.resource.get(cv2.CAP_PROP_AUTOFOCUS)))
-            print('cam_left.resource.get(cv2.CAP_PROP_BUFFERSIZE):{}'.
-                  format(cam_left.resource.get(cv2.CAP_PROP_BUFFERSIZE)))
-            print('cam_left.resource.get(cv2.CAP_PROP_CODEC_PIXEL_FORMAT):{}'.
-                  format(cam_left.resource.get(cv2.CAP_PROP_CODEC_PIXEL_FORMAT)))
-
-            print('cam_left.resource.get(cv2.CAP_PROP_HW_DEVICE):{}'.
-                  format(cam_left.resource.get(cv2.CAP_PROP_HW_DEVICE)))
-            print('cam_left.resource.get(cv2.CAP_PROP_FRAME_COUNT):{:03f}'.
-                  format(cam_left.resource.get(cv2.CAP_PROP_FRAME_COUNT)))
+            # MENÚ PRINCIPAL (PyQt6)
+            start_mode = show_main_menu()   # "rhythm", "free", "theory", "config", "exit"
+            
+            # Detectar si es una opción de teoría
+            if start_mode and start_mode.startswith("theory_"):
+                theory_mode = True
+                game_mode = False
                 
+                # Mapear la opción a la lección correspondiente
+                lesson_map = {
+                    "theory_chords": "Acordes Básicos",   # O el ID que uses en lesson_manager
+                    "theory_intervals": "Intervalos",
+                    "theory_rhythm": "Ritmo Básico",
+                    "theory_scales": "Escalas Mayores"
+                }
+                
+                selected_lesson_name = lesson_map.get(start_mode)
+                # Aquí añadirías la lógica para iniciar esa lección específica
+                # lesson_manager.start_lesson_by_name(selected_lesson_name)
+                print(f"Modo TEORÍA iniciado: {selected_lesson_name}")
 
-        if cam_right.is_available():
-            print('Name:{}'.format(main_window_name))
-            print('cam_right.resource.get(cv2.CAP_PROP_AUTO_EXPOSURE:{}'.
-                  format(cam_right.resource.get(cv2.CAP_PROP_AUTO_EXPOSURE)))
-            print('cam_right.resource.get(cv2.CAP_PROP_EXPOSURE:{}'.
-                  format(cam_right.resource.get(cv2.CAP_PROP_EXPOSURE)))
-            print('cam_right.resource.get(cv2.CAP_PROP_AUTOFOCUS):{}'.
-                  format(cam_right.resource.get(cv2.CAP_PROP_AUTOFOCUS)))
-            print('cam_right.resource.get(cv2.CAP_PROP_BUFFERSIZE):{}'.
-                  format(cam_right.resource.get(cv2.CAP_PROP_BUFFERSIZE)))
-            print('cam_right.resource.get(cv2.CAP_PROP_CODEC_PIXEL_FORMAT):{}'.
-                  format(cam_right.resource.get(cv2.CAP_PROP_CODEC_PIXEL_FORMAT)))
+            
+            if start_mode is None or start_mode == "exit":
+                print("Saliendo desde el menú principal...")
+                break
 
-            print('cam_right.resource.get(cv2.CAP_PROP_HW_DEVICE):{}'.
-                  format(cam_right.resource.get(cv2.CAP_PROP_HW_DEVICE)))
-            print('cam_right.resource.get(cv2.CAP_PROP_FRAME_COUNT):{:03f}'.
-                  format(cam_right.resource.get(cv2.CAP_PROP_FRAME_COUNT)))
+            # Modo inicial por defecto (rhythm / free / theory / config)
+            initial_mode = start_mode
 
+            # Si eligió opciones de configuración
+            if start_mode == "config_load":
+                print("Cargando calibración guardada...")
+                config.load_calibration()
+                game_mode = False # Inicia en modo libre
+                
+            elif start_mode == "config_new":
+                print("Iniciando proceso de calibración...")
+                run_calibration_process(ui_helper_menu, pixel_width, pixel_height, config)
+                game_mode = False
+                
+            elif start_mode == "config_skip":
+                print("Usando valores por defecto (sin calibración)")
+                game_mode = False
+            # ------------------------------
+            # set up cameras
+            # ------------------------------
 
-        # left_window_name = 'frame left'
-        # cv2.namedWindow(left_window_name)
-        # cv2.moveWindow(left_window_name,
-        #                (pixel_width//2),
-        #                (pixel_height//2))
+            # cameras variables
+            left_camera_source = config.LEFT_CAMERA_SOURCE
+            right_camera_source = config.RIGHT_CAMERA_SOURCE
+            pixel_width = config.PIXEL_WIDTH
+            pixel_height = config.PIXEL_HEIGHT
 
-        # right_window_name = 'frame right'
-        # cv2.namedWindow(right_window_name)
-        # cv2.moveWindow(right_window_name,
-        #                (pixel_width//2)+640,
-        #                (pixel_height//2))
+            # Logi C920s HD Pro Webcam - Calibración óptica
+            camera_hFoV = config.CAMERA_H_FOV
+            camera_vFoV = config.CAMERA_V_FOV
+            hFoV_angle_rectification = config.H_FOV_RECTIFICATION
+            vFoV_angle_rectification = config.V_FOV_RECTIFICATION
 
+            angle_width = config.ANGLE_WIDTH
+            angle_height = config.ANGLE_HEIGHT
 
+            # FPS
+            frame_rate = config.FRAME_RATE
+            camera_separation = config.CAMERA_SEPARATION
 
-        # ------------------------------
-        # set up virtual keyboards
-        # ------------------------------
+            camera_in_front_of_you = config.CAMERA_IN_FRONT_OF_YOU
 
-        N_BANK = 0
-        N_MAYOR_NOTES_X_BANK = 0
+            # Virtual Keyboard Center point distance (cms)
+            vkb_center_point_camera_dist = config.VKB_CENTER_DISTANCE
 
-        KEYBOARD_WHIITE_N_KEYS = config.KEYBOARD_WHITE_KEYS
+                # cam_resource = video_thread.VideoThread(
+                #     video_source=c_id,
+                #     video_width=pixel_width,
+                #     video_height=pixel_height,
+                #     video_frame_rate=frame_rate,
+                #     buffer_all=False,
+                #     try_to_reconnect=False
+                # )
+            # left camera 1
+            cam_left = video_thread.VideoThread(
+                video_source=left_camera_source,
+                video_width=pixel_width,
+                video_height=pixel_height,
+                video_frame_rate=frame_rate,
+                buffer_all=False,
+                try_to_reconnect=False)
 
-        KEYBOARD_TOT_KEYS = config.KEYBOARD_TOTAL_KEYS
-        print('KEYBOARD_TOT_KEYS:{}'.format(KEYBOARD_TOT_KEYS))
-        octave_base = config.OCTAVE_BASE
+            # right camera 2
+            cam_right = video_thread.VideoThread(
+                video_source=right_camera_source,
+                video_width=pixel_width,
+                video_height=pixel_height,
+                video_frame_rate=frame_rate,
+                buffer_all=False,
+                try_to_reconnect=False)
+
+            # start cameras
+            cam_left.start()
+            cam_right.start()
+
+            time.sleep(1)
+            
+            # Intentar cargar DepthEstimator si existe calibración completa
+            depth_estimator = None
+            use_stereo_calibration = False
+            try:
+                from src.calibration.calibration_config import CalibrationConfig
+                depth_estimator = load_depth_estimator(CalibrationConfig.CALIBRATION_FILE)
+                use_stereo_calibration = True
+                print("\n" + "="*70)
+                print("✓ CALIBRACIÓN ESTÉREO CARGADA")
+                print("="*70)
+                print(f"  Baseline: {depth_estimator.baseline_cm:.2f} cm")
+                print(f"  Modo: Triangulación precisa con rectificación")
+                print("="*70 + "\n")
+            except (FileNotFoundError, ValueError) as e:
+                print("\n" + "="*70)
+                print("⚠ CALIBRACIÓN ESTÉREO NO DISPONIBLE")
+                print("="*70)
+                print(f"  {e}")
+                print(f"  Modo: Triangulación basada en ángulos (menos preciso)")
+                print("="*70 + "\n")
+            
+            if camera_in_front_of_you:
+                main_window_name = 'In fron of you: rigth+left cam'
+            else:
+                main_window_name = 'Same Point of View: left+rigth cam'
+
+            cv2.namedWindow(main_window_name)
+            cv2.moveWindow(main_window_name,
+                        (pixel_width//2),
+                        (pixel_height//2))        
+            
+            if cam_left.is_available():
+                print('Name:{}'.format(main_window_name))
+                print('cam_left.resource.get(cv2.CAP_PROP_AUTO_EXPOSURE:{}'.
+                    format(cam_left.resource.get(cv2.CAP_PROP_AUTO_EXPOSURE)))
+                print('cam_left.resource.get(cv2.CAP_PROP_EXPOSURE:{}'.
+                    format(cam_left.resource.get(cv2.CAP_PROP_EXPOSURE)))
+                print('cam_left.resource.get(cv2.CAP_PROP_AUTOFOCUS):{}'.
+                    format(cam_left.resource.get(cv2.CAP_PROP_AUTOFOCUS)))
+                print('cam_left.resource.get(cv2.CAP_PROP_BUFFERSIZE):{}'.
+                    format(cam_left.resource.get(cv2.CAP_PROP_BUFFERSIZE)))
+                print('cam_left.resource.get(cv2.CAP_PROP_CODEC_PIXEL_FORMAT):{}'.
+                    format(cam_left.resource.get(cv2.CAP_PROP_CODEC_PIXEL_FORMAT)))
+
+                print('cam_left.resource.get(cv2.CAP_PROP_HW_DEVICE):{}'.
+                    format(cam_left.resource.get(cv2.CAP_PROP_HW_DEVICE)))
+                print('cam_left.resource.get(cv2.CAP_PROP_FRAME_COUNT):{:03f}'.
+                    format(cam_left.resource.get(cv2.CAP_PROP_FRAME_COUNT)))
+                    
+
+            if cam_right.is_available():
+                print('Name:{}'.format(main_window_name))
+                print('cam_right.resource.get(cv2.CAP_PROP_AUTO_EXPOSURE:{}'.
+                    format(cam_right.resource.get(cv2.CAP_PROP_AUTO_EXPOSURE)))
+                print('cam_right.resource.get(cv2.CAP_PROP_EXPOSURE:{}'.
+                    format(cam_right.resource.get(cv2.CAP_PROP_EXPOSURE)))
+                print('cam_right.resource.get(cv2.CAP_PROP_AUTOFOCUS):{}'.
+                    format(cam_right.resource.get(cv2.CAP_PROP_AUTOFOCUS)))
+                print('cam_right.resource.get(cv2.CAP_PROP_BUFFERSIZE):{}'.
+                    format(cam_right.resource.get(cv2.CAP_PROP_BUFFERSIZE)))
+                print('cam_right.resource.get(cv2.CAP_PROP_CODEC_PIXEL_FORMAT):{}'.
+                    format(cam_right.resource.get(cv2.CAP_PROP_CODEC_PIXEL_FORMAT)))
+
+                print('cam_right.resource.get(cv2.CAP_PROP_HW_DEVICE):{}'.
+                    format(cam_right.resource.get(cv2.CAP_PROP_HW_DEVICE)))
+                print('cam_right.resource.get(cv2.CAP_PROP_FRAME_COUNT):{:03f}'.
+                    format(cam_right.resource.get(cv2.CAP_PROP_FRAME_COUNT)))
+
 
         vk_left = vkb.VirtualKeyboard(pixel_width, pixel_height,
                                       KEYBOARD_WHIITE_N_KEYS)
@@ -1186,413 +938,522 @@ def main():
         current_lesson = None
         current_lesson_id = None
         
+        # Inicializar módulo de canciones (Modo Ritmo mejorado)
+        songs_ui = SongsUI(pixel_width * 2, pixel_height)
+        songs_mode = False  # False = otros modos, True = modo selección de canciones
+        in_song = False  # True cuando está dentro de una canción
+        current_song = None
+
         # Inicializar UI de configuración
         config_ui = ConfigUI(pixel_width * 2, pixel_height)
         config_mode = False  # False = otros modos, True = modo configuración
 
-        # ------------------------------
-        # set up keyboards map
-        # -----------------------------
-        km = kbm.KeyboardMap(depth_threshold=config.DEPTH_THRESHOLD)
-
-        # ------------------------------
-        # set up angles
-        # ------------------------------
-        # cameras are the same, so only 1 needed
-        angler = angles.Frame_Angles(pixel_width, pixel_height, angle_width,
-                                     angle_height)
-        angler.build_frame()
-
-        left_detector = HandDetector(staticImageMode=False,
-                                                  detectionCon=config.HAND_DETECTION_CONFIDENCE,
-                                                  trackCon=config.HAND_TRACKING_CONFIDENCE)
-        right_detector = HandDetector(staticImageMode=False,
-                                                   detectionCon=config.HAND_DETECTION_CONFIDENCE,
-                                                   trackCon=config.HAND_TRACKING_CONFIDENCE)
-
-        # ------------------------------
-        # set up synth
-        # ------------------------------
-
-        fs = fluidsynth.Synth()
-        fs.start(driver='dsound') # Windows
-        sfid = fs.sfload(config.SOUNDFONT_PATH)
+            # right_window_name = 'frame right'
+            # cv2.namedWindow(right_window_name)
+            # cv2.moveWindow(right_window_name,
+            #                (pixel_width//2)+640,
+            #                (pixel_height//2))
 
 
-        # 000-000 Yamaha Grand Piano
-        fs.program_select(chan=0, sfid=sfid, bank=0, preset=0)
 
-        # # 008-014 Church Bell
-        # fs.program_select(chan=0, sfid=sfid, bank=8, preset=14)
-        # # 008-026 Hawaiian Guitar
-        # fs.program_select(chan=0, sfid=sfid, bank=8, preset=26)
-        # # Standard
-        # fs.program_select(chan=0, sfid=sfid, bank=128, preset=0)
-        # # 000-103 Star Theme
-        # fs.program_select(chan=0, sfid=sfid, bank=0, preset=103)
+            # ------------------------------
+            # set up virtual keyboards
+            # ------------------------------
 
-        # ------------------------------
-        # stabilize
-        # ------------------------------
-        time.sleep(0.5)
+            N_BANK = 0
+            N_MAYOR_NOTES_X_BANK = 0
 
-        # variables
-        # ------------------------------
+            KEYBOARD_WHIITE_N_KEYS = config.KEYBOARD_WHITE_KEYS
 
-        # length of target queues, positive target frames required
-        # to reset set X,Y,Z,D
-        queue_len = 3
+            KEYBOARD_TOT_KEYS = config.KEYBOARD_TOTAL_KEYS
+            print('KEYBOARD_TOT_KEYS:{}'.format(KEYBOARD_TOT_KEYS))
+            octave_base = config.OCTAVE_BASE
 
-        # target queues
-        #fingers_left_queue, y1k = [], []
-        #fingers_right_queue, y2k = [], []
-        x_left_finger_screen_pos = 0
-        y_left_finger_screen_pos = 0
-        
-
-        # mean values to stabilize the coordinates
-        # x1m, y1m, x2m, y2m = 0, 0, 0, 0
-        # X1_left_hand_ref, Y1_left_hand_ref = 0, 0
-        
-        # last positive target
-        # from camera baseline midpoint
-        X, Y, Z, D, = 0, 0, 0, 0
-        delta_y = 0
-
-        cycles = 0
-        fps = 0
-        start = time.time()
-        display_dashboard = config.DISPLAY_DASHBOARD_DEFAULT
-        finger_depths_dict = {}  # Inicializar para evitar referencias no definidas
-        
-        # Inicializar UI Helper
-        ui_helper = UIHelper(pixel_width * 2, pixel_height)  # Ancho total de ambas cámaras
-        
-        # Optimización: cachear transformaciones de flip
-        while True:
-            cycles += 1
-            # get frames - reducir wait en modo juego para mejor respuesta
-            wait_time = 0.0 if game_mode else 0.1  # Sin delay en modo juego
-            finished_left, frame_left = cam_left.next(black=True, wait=wait_time)
-            finished_right, frame_right = cam_right.next(black=True, wait=wait_time)
-
-            # Aplicar flip una sola vez al principio (Selfie point of view)
-            frame_left = cv2.flip(frame_left, -1)
-            frame_right = cv2.flip(frame_right, -1)
-
-            hands_left_image = fingers_left_image = []
-            hands_right_image = fingers_right_image = []
-
-            # Detect Hands PRIMERO (sin dibujar todavía)
-            hands_detected_left = left_detector.findHands(frame_left)
-            if hands_detected_left:
-                hands_left_image, fingers_left_image = \
-                    left_detector.getFingerTipsPos()
-            else:
-                hands_left_image = fingers_left_image = []
-
-            hands_detected_right = right_detector.findHands(frame_right)
-            if hands_detected_right:
-                hands_right_image, fingers_right_image = \
-                    right_detector.getFingerTipsPos()
-
-            # Dibujar teclado PRIMERO (debajo de las manos)
-            vk_left.draw_virtual_keyboard(frame_left)
+            vk_left = vkb.VirtualKeyboard(pixel_width, pixel_height,
+                                        KEYBOARD_WHIITE_N_KEYS)
+            vk_right = vkb.VirtualKeyboard(pixel_width, pixel_height,
+                                        KEYBOARD_WHIITE_N_KEYS)
             
-            # En modo juego: dibujar notas cayendo DESPUÉS del teclado pero ANTES de las manos
-            if game_mode:
-                rhythm_game.update()
-                frame_left = rhythm_game.draw(
-                    frame_left, 
-                    vk_left.kb_x0, 
-                    vk_left.kb_x1,
-                    vk_left.white_key_width
-                )
+            # Inicializar sistemas
+            rhythm_game = RhythmGame(num_keys=KEYBOARD_TOT_KEYS)
+            lesson_manager = get_lesson_manager()
+            theory_ui = TheoryUI(pixel_width * 2, pixel_height)
+            config_ui = ConfigUI(pixel_width * 2, pixel_height)
+            km = kbm.KeyboardMap(depth_threshold=config.DEPTH_THRESHOLD)
+
+            # Variables de estado
+            game_mode = False
+            theory_mode = False
+            in_lesson = False
+            current_lesson = None
+            config_mode = False
             
-            # Dibujar manos AL FINAL (encima del teclado y notas)
-            if hands_detected_left:
-                left_detector.drawHands(frame_left)
-                left_detector.drawTips(frame_left)
+            # Inicializar módulo de teoría
+            lesson_manager = get_lesson_manager()
+            theory_ui = TheoryUI(pixel_width * 2, pixel_height)
+            theory_mode = False  # False = otros modos, True = modo teoría
+            in_lesson = False  # True cuando está dentro de una lección
+            current_lesson = None
+            current_lesson_id = None
+            
+            # Inicializar UI de configuración
+            config_ui = ConfigUI(pixel_width * 2, pixel_height)
+            config_mode = False  # False = otros modos, True = modo configuración
 
-            if hands_detected_right:
-                #vk_right.draw_virtual_keyboard(frame_right)
-                right_detector.drawHands(frame_right)
-                right_detector.drawTips(frame_right)
+            # ACTIVAR MODO INICIAL
 
-            # check 1: motion in both frames:
-            if (len(fingers_left_image) > 0 and len(fingers_right_image) > 0):
+            if initial_mode == "rhythm":
+                game_mode = True
+                theory_mode = False
+                print("Modo JUEGO DE RITMO iniciado desde el menú principal.")
+                rhythm_game.start_game(TUTORIAL_FACIL)
 
-                fingers_dist = []
-                finger_depths_dict = {}  # Dict para pasar profundidades a KeyboardMap
+            elif initial_mode == "free":
+                game_mode = False
+                theory_mode = False
+                print("Modo LIBRE iniciado desde el menú principal.")
+
+            elif initial_mode and initial_mode.startswith("theory_"):
+                theory_mode = True
+                game_mode = False
                 
-                # Rectificar imágenes si usamos calibración estéreo
-                if use_stereo_calibration and depth_estimator:
-                    frame_left_rect, frame_right_rect = depth_estimator.rectify_images(frame_left, frame_right)
+                # Extraer ID de la lección (ej: theory_chords -> chords)
+                # Esto asume que los archivos se llaman lesson_chords.py, lesson_intervals.py, etc.
+                target_lesson_id = initial_mode.replace("theory_", "")
+                
+                # Buscar la lección en el gestor
+                lesson = lesson_manager.get_lesson(target_lesson_id)
+                
+                if lesson:
+                    current_lesson = lesson
+                    current_lesson.start()
+                    in_lesson = True
+                    print(f"✓ Modo TEORÍA iniciado: Lección '{lesson.name}'")
                 else:
-                    frame_left_rect, frame_right_rect = frame_left, frame_right
+                    print(f"⚠ No se encontró la lección '{target_lesson_id}'. Mostrando menú general.")
+                    theory_ui.reset_selection()
+
+            elif initial_mode == "config":
+                game_mode = False
+                print("Configuración terminada. Iniciando en modo libre.")
+
+            # ------------------------------
+            # set up keyboards map
+            # -----------------------------
+            km = kbm.KeyboardMap(depth_threshold=config.DEPTH_THRESHOLD)
+
+            # ------------------------------
+            # set up angles
+            # ------------------------------
+            # cameras are the same, so only 1 needed
+            angler = angles.Frame_Angles(pixel_width, pixel_height, angle_width,
+                                        angle_height)
+            angler.build_frame()
+
+            left_detector = HandDetector(staticImageMode=False,
+                                                    detectionCon=config.HAND_DETECTION_CONFIDENCE,
+                                                    trackCon=config.HAND_TRACKING_CONFIDENCE)
+            right_detector = HandDetector(staticImageMode=False,
+                                                    detectionCon=config.HAND_DETECTION_CONFIDENCE,
+                                                    trackCon=config.HAND_TRACKING_CONFIDENCE)
+
+            # ------------------------------
+            # set up synth
+            # ------------------------------
+
+            fs = fluidsynth.Synth()
+            fs.start(driver='dsound') # Windows
+            sfid = fs.sfload(r"C:\Users\MI PC\OneDrive\Desktop\fluid\FluidR3_GM.sf2")
+
+
+            # 000-000 Yamaha Grand Piano
+            fs.program_select(chan=0, sfid=sfid, bank=0, preset=0)
+
+            # # 008-014 Church Bell
+            # fs.program_select(chan=0, sfid=sfid, bank=8, preset=14)
+            # # 008-026 Hawaiian Guitar
+            # fs.program_select(chan=0, sfid=sfid, bank=8, preset=26)
+            # # Standard
+            # fs.program_select(chan=0, sfid=sfid, bank=128, preset=0)
+            # # 000-103 Star Theme
+            # fs.program_select(chan=0, sfid=sfid, bank=0, preset=103)
+
+            # ------------------------------
+            # stabilize
+            # ------------------------------
+            time.sleep(0.5)
+
+            # variables
+            # ------------------------------
+
+            # length of target queues, positive target frames required
+            # to reset set X,Y,Z,D
+            queue_len = 3
+
+            # target queues
+            #fingers_left_queue, y1k = [], []
+            #fingers_right_queue, y2k = [], []
+            x_left_finger_screen_pos = 0
+            y_left_finger_screen_pos = 0
+            
+
+            # mean values to stabilize the coordinates
+            # x1m, y1m, x2m, y2m = 0, 0, 0, 0
+            # X1_left_hand_ref, Y1_left_hand_ref = 0, 0
+            
+            # last positive target
+            # from camera baseline midpoint
+            X, Y, Z, D, = 0, 0, 0, 0
+            delta_y = 0
+
+            cycles = 0
+            fps = 0
+            start = time.time()
+            display_dashboard = config.DISPLAY_DASHBOARD_DEFAULT
+            finger_depths_dict = {}  # Inicializar para evitar referencias no definidas
+            
+            # Inicializar UI Helper
+            ui_helper = UIHelper(pixel_width * 2, pixel_height)  # Ancho total de ambas cámaras
+            ui_helper.show_instructions = False
+
+            
+            # Optimización: cachear transformaciones de flip
+            while True:
+                cycles += 1
+                # get frames - reducir wait en modo juego para mejor respuesta
+                wait_time = 0.0 if game_mode else 0.1  # Sin delay en modo juego
+                finished_left, frame_left = cam_left.next(black=True, wait=wait_time)
+                finished_right, frame_right = cam_right.next(black=True, wait=wait_time)
+
+                # Aplicar flip una sola vez al principio (Selfie point of view)
+                frame_left = cv2.flip(frame_left, -1)
+                frame_right = cv2.flip(frame_right, -1)
+
+                hands_left_image = fingers_left_image = []
+                hands_right_image = fingers_right_image = []
+
+                # Detect Hands PRIMERO (sin dibujar todavía)
+                hands_detected_left = left_detector.findHands(frame_left)
+                if hands_detected_left:
+                    hands_left_image, fingers_left_image = \
+                        left_detector.getFingerTipsPos()
+                else:
+                    hands_left_image = fingers_left_image = []
+
+                hands_detected_right = right_detector.findHands(frame_right)
+                if hands_detected_right:
+                    hands_right_image, fingers_right_image = \
+                        right_detector.getFingerTipsPos()
+
+                # Dibujar teclado PRIMERO (debajo de las manos)
+                vk_left.draw_virtual_keyboard(frame_left)
                 
-                for finger_left, finger_right in \
-                    zip(fingers_left_image, fingers_right_image):
+                # En modo juego: dibujar notas cayendo DESPUÉS del teclado pero ANTES de las manos
+                if game_mode:
+                    rhythm_game.update()
+                    frame_left = rhythm_game.draw(
+                        frame_left, 
+                        vk_left.kb_x0, 
+                        vk_left.kb_x1,
+                        vk_left.white_key_width
+                    )
+                
+                # Dibujar manos AL FINAL (encima del teclado y notas)
+                if hands_detected_left:
+                    left_detector.drawHands(frame_left)
+                    left_detector.drawTips(frame_left)
+
+                if hands_detected_right:
+                    #vk_right.draw_virtual_keyboard(frame_right)
+                    right_detector.drawHands(frame_right)
+                    right_detector.drawTips(frame_right)
+
+                # check 1: motion in both frames:
+                if (len(fingers_left_image) > 0 and len(fingers_right_image) > 0):
+
+                    fingers_dist = []
+                    finger_depths_dict = {}  # Dict para pasar profundidades a KeyboardMap
                     
+                    # Rectificar imágenes si usamos calibración estéreo
                     if use_stereo_calibration and depth_estimator:
-                        # ========== MÉTODO PRECISO: Calibración Estéreo ==========
-                        try:
-                            # Obtener posiciones de dedos
-                            point_left = (finger_left[2], finger_left[3])
-                            point_right = (finger_right[2], finger_right[3])
-                            
-                            # Triangular con calibración completa
-                            result_3d = depth_estimator.triangulate_point(point_left, point_right)
-                            
-                            if result_3d is not None:
-                                X_raw, Y_raw, Z_raw = result_3d
+                        frame_left_rect, frame_right_rect = depth_estimator.rectify_images(frame_left, frame_right)
+                    else:
+                        frame_left_rect, frame_right_rect = frame_left, frame_right
+                    
+                    for finger_left, finger_right in \
+                        zip(fingers_left_image, fingers_right_image):
+                        
+                        if use_stereo_calibration and depth_estimator:
+                            # ========== MÉTODO PRECISO: Calibración Estéreo ==========
+                            try:
+                                # Obtener posiciones de dedos
+                                point_left = (finger_left[2], finger_left[3])
+                                point_right = (finger_right[2], finger_right[3])
                                 
-                                # APLICAR FACTOR DE CORRECCIÓN DE PROFUNDIDAD (0.74)
-                                # Basado en mediciones empíricas (43cm real / 58cm medido)
-                                DEPTH_CORRECTION_FACTOR = 0.74
-                                X_local = X_raw
-                                Y_local = Y_raw
-                                Z_local = Z_raw * DEPTH_CORRECTION_FACTOR
+                                # Triangular con calibración completa
+                                result_3d = depth_estimator.triangulate_point(point_left, point_right)
                                 
-                                # APLICAR SUAVIZADO TEMPORAL para reducir jitter
-                                # Obtener ID único del dedo
-                                finger_id = (finger_left[0], finger_left[1])
-                                
-                                # Inicializar buffer de suavizado si no existe
-                                if not hasattr(depth_estimator, 'finger_position_history'):
-                                    depth_estimator.finger_position_history = {}
-                                if finger_id not in depth_estimator.finger_position_history:
-                                    depth_estimator.finger_position_history[finger_id] = deque(maxlen=5)
-                                
-                                # Agregar posición actual al buffer
-                                depth_estimator.finger_position_history[finger_id].append(
-                                    (X_local, Y_local, Z_local)
-                                )
-                                
-                                # Calcular promedio de últimas 5 posiciones
-                                if len(depth_estimator.finger_position_history[finger_id]) > 0:
-                                    history = np.array(list(depth_estimator.finger_position_history[finger_id]))
-                                    X_local, Y_local, Z_local = np.mean(history, axis=0)
-                                
-                                D_local = Z_local  # Profundidad = coordenada Z
-                                depth_corrected = D_local
-                            else:
-                                # Fallback si falla triangulación
+                                if result_3d is not None:
+                                    X_raw, Y_raw, Z_raw = result_3d
+                                    
+                                    # APLICAR FACTOR DE CORRECCIÓN DE PROFUNDIDAD (0.74)
+                                    # Basado en mediciones empíricas (43cm real / 58cm medido)
+                                    DEPTH_CORRECTION_FACTOR = 0.74
+                                    X_local = X_raw
+                                    Y_local = Y_raw
+                                    Z_local = Z_raw * DEPTH_CORRECTION_FACTOR
+                                    
+                                    # APLICAR SUAVIZADO TEMPORAL para reducir jitter
+                                    # Obtener ID único del dedo
+                                    finger_id = (finger_left[0], finger_left[1])
+                                    
+                                    # Inicializar buffer de suavizado si no existe
+                                    if not hasattr(depth_estimator, 'finger_position_history'):
+                                        depth_estimator.finger_position_history = {}
+                                    if finger_id not in depth_estimator.finger_position_history:
+                                        depth_estimator.finger_position_history[finger_id] = deque(maxlen=5)
+                                    
+                                    # Agregar posición actual al buffer
+                                    depth_estimator.finger_position_history[finger_id].append(
+                                        (X_local, Y_local, Z_local)
+                                    )
+                                    
+                                    # Calcular promedio de últimas 5 posiciones
+                                    if len(depth_estimator.finger_position_history[finger_id]) > 0:
+                                        history = np.array(list(depth_estimator.finger_position_history[finger_id]))
+                                        X_local, Y_local, Z_local = np.mean(history, axis=0)
+                                    
+                                    D_local = Z_local  # Profundidad = coordenada Z
+                                    depth_corrected = D_local
+                                else:
+                                    # Fallback si falla triangulación
+                                    X_local = Y_local = Z_local = D_local = 0
+                                    depth_corrected = 0
+                            except Exception as e:
+                                print(f"⚠ Error en triangulación estéreo: {e}")
                                 X_local = Y_local = Z_local = D_local = 0
                                 depth_corrected = 0
-                        except Exception as e:
-                            print(f"⚠ Error en triangulación estéreo: {e}")
-                            X_local = Y_local = Z_local = D_local = 0
-                            depth_corrected = 0
-                    else:
-                        # ========== MÉTODO ANTIGUO: Triangulación por ángulos ==========
-                        # get angles from camera centers
-                        xlangle, ylangle = angler.angles_from_center(
-                            x = finger_left[2], y = finger_left[3],
-                            top_left=True, degrees=True)
-                        xrangle, yrangle = angler.angles_from_center(
-                            x = finger_right[2], y = finger_right[3],
-                            top_left=True, degrees=True)
+                        else:
+                            # ========== MÉTODO ANTIGUO: Triangulación por ángulos ==========
+                            # get angles from camera centers
+                            xlangle, ylangle = angler.angles_from_center(
+                                x = finger_left[2], y = finger_left[3],
+                                top_left=True, degrees=True)
+                            xrangle, yrangle = angler.angles_from_center(
+                                x = finger_right[2], y = finger_right[3],
+                                top_left=True, degrees=True)
 
-                        # triangulate
-                        X_local, Y_local, Z_local, D_local = angler.location(
-                            camera_separation,
-                            (xlangle, ylangle),
-                            (xrangle, yrangle),
-                            center=True,
-                            degrees=True)
-                        # angle normalization
-                        delta_y = 0.006509695290859 * X_local * X_local + \
-                            0.039473684210526 * -1 * X_local # + vkb_center_point_camera_dist
-                        depth_corrected = D_local - delta_y
-                    
-                    fingers_dist.append(depth_corrected)
-                    
-                    # Guardar profundidad corregida para cada dedo
-                    finger_id = (finger_left[0], finger_left[1])
-                    finger_depths_dict[finger_id] = depth_corrected
-                    
-                    # if finger_left[0] == 0 and 
-                    if finger_left[0] == 0 and finger_left[1] == left_detector.mpHands.HandLandmark.INDEX_FINGER_TIP:
-                        x_left_finger_screen_pos =  finger_left[2]
-                        y_left_finger_screen_pos = finger_left[3]
-                        X = X_local
-                        Y = Y_local
-                        Z = Z_local
-                        D = D_local
+                            # triangulate
+                            X_local, Y_local, Z_local, D_local = angler.location(
+                                camera_separation,
+                                (xlangle, ylangle),
+                                (xrangle, yrangle),
+                                center=True,
+                                degrees=True)
+                            # angle normalization
+                            delta_y = 0.006509695290859 * X_local * X_local + \
+                                0.039473684210526 * -1 * X_local # + vkb_center_point_camera_dist
+                            depth_corrected = D_local - delta_y
                         
+                        fingers_dist.append(depth_corrected)
+                        
+                        # Guardar profundidad corregida para cada dedo
+                        finger_id = (finger_left[0], finger_left[1])
+                        finger_depths_dict[finger_id] = depth_corrected
+                        
+                        # if finger_left[0] == 0 and 
+                        if finger_left[0] == 0 and finger_left[1] == left_detector.mpHands.HandLandmark.INDEX_FINGER_TIP:
+                            x_left_finger_screen_pos =  finger_left[2]
+                            y_left_finger_screen_pos = finger_left[3]
+                            X = X_local
+                            Y = Y_local
+                            Z = Z_local
+                            D = D_local
+                            
 
-                on_map, off_map = km.get_kayboard_map(
-                    virtual_keyboard=vk_left,
-                    fingertips_pos=fingers_left_image,
-                    finger_depths=finger_depths_dict,  # Pasar profundidades 3D
-                    keyboard_n_key=KEYBOARD_TOT_KEYS)
-                
-                if game_mode:
-                    # Verificar aciertos cuando se presiona una tecla - optimizado
-                    # Solo verificar teclas que están activas (más eficiente)
-                    active_keys = np.where(on_map)[0]
-                    for k_pos in active_keys:
-                        hit_result = rhythm_game.check_hit(k_pos)
-                        if hit_result:
-                            print(f"Tecla {k_pos}: {hit_result}")
-                            # Reproducir audio solo en modo juego
-                            fs.noteon(
-                                chan=0,
-                                key=vk_left.note_from_key(k_pos)+octave_base,
-                                vel=127*2//3)
+                    on_map, off_map = km.get_kayboard_map(
+                        virtual_keyboard=vk_left,
+                        fingertips_pos=fingers_left_image,
+                        finger_depths=finger_depths_dict,  # Pasar profundidades 3D
+                        keyboard_n_key=KEYBOARD_TOT_KEYS)
                     
-                    # NOTA: El dibujo del juego ya se hace arriba, antes de las manos
-                else:
-                    # Modo libre: reproducir audio en todas las teclas
-                    if np.any(on_map):
-                        for k_pos, on_key in enumerate(on_map):
-                            if on_key:
+                    if game_mode:
+                        # Verificar aciertos cuando se presiona una tecla - optimizado
+                        # Solo verificar teclas que están activas (más eficiente)
+                        active_keys = np.where(on_map)[0]
+                        for k_pos in active_keys:
+                            hit_result = rhythm_game.check_hit(k_pos)
+                            if hit_result:
+                                print(f"Tecla {k_pos}: {hit_result}")
+                                # Reproducir audio solo en modo juego
                                 fs.noteon(
                                     chan=0,
                                     key=vk_left.note_from_key(k_pos)+octave_base,
                                     vel=127*2//3)
+                        
+                        # NOTA: El dibujo del juego ya se hace arriba, antes de las manos
+                    else:
+                        # Modo libre: reproducir audio en todas las teclas
+                        if np.any(on_map):
+                            for k_pos, on_key in enumerate(on_map):
+                                if on_key:
+                                    fs.noteon(
+                                        chan=0,
+                                        key=vk_left.note_from_key(k_pos)+octave_base,
+                                        vel=127*2//3)
 
-                    if np.any(off_map):
-                        for k_pos, off_key in enumerate(off_map):
-                            if off_key:
-                                fs.noteoff(
-                                    chan=0,
-                                    key=vk_left.note_from_key(k_pos)+octave_base
-                                    )
+                        if np.any(off_map):
+                            for k_pos, off_key in enumerate(off_map):
+                                if off_key:
+                                    fs.noteoff(
+                                        chan=0,
+                                        key=vk_left.note_from_key(k_pos)+octave_base
+                                        )
 
-            # display camera centers
-            angler.frame_add_crosshairs(frame_left)
-            angler.frame_add_crosshairs(frame_right)
+                # display camera centers
+                angler.frame_add_crosshairs(frame_left)
+                angler.frame_add_crosshairs(frame_right)
 
-            # Actualizar UI Helper
-            ui_helper.update()
-            
-            # === MODO CONFIGURACIÓN ===
-            if config_mode:
-                # Mostrar panel de configuración
-                if camera_in_front_of_you:
-                    h_frames = np.concatenate((frame_right, frame_left), axis=1)
-                else:
-                    h_frames = np.concatenate((frame_left, frame_right), axis=1)
+                # Actualizar UI Helper
+                ui_helper.update()
                 
-                h_frames = config_ui.draw_config_panel(h_frames)
-                cv2.imshow(main_window_name, h_frames)
-                
-                # Manejar teclas del panel de configuración
-                key = cv2.waitKey(1) & 0xFF
-                
-                # Navegación
-                if key == 82 or key == ord('w') or key == ord('W'):  # Arriba
-                    config_ui.navigate_up()
-                elif key == 84 or key == ord('s') or key == ord('S'):  # Abajo
-                    config_ui.navigate_down()
-                
-                # Ajustar valores
-                elif key == 83 or key == ord('d') or key == ord('D'):  # Derecha (aumentar)
-                    config_ui.increase_value()
-                    # Aplicar cambios en tiempo real
-                    km.depth_threshold = AppConfig.DEPTH_THRESHOLD
-                    km.velocity_threshold = AppConfig.VELOCITY_THRESHOLD
-                    km.velocity_enabled = AppConfig.VELOCITY_ENABLED
-                    km.velocity_history_size = AppConfig.VELOCITY_HISTORY_SIZE
-                elif key == 81 or key == ord('a') or key == ord('A'):  # Izquierda (disminuir)
-                    config_ui.decrease_value()
-                    # Aplicar cambios en tiempo real
-                    km.depth_threshold = AppConfig.DEPTH_THRESHOLD
-                    km.velocity_threshold = AppConfig.VELOCITY_THRESHOLD
-                    km.velocity_enabled = AppConfig.VELOCITY_ENABLED
-                    km.velocity_history_size = AppConfig.VELOCITY_HISTORY_SIZE
-                
-                # Presets (teclas 1-4)
-                elif 49 <= key <= 52:  # Teclas 1-4
-                    preset_idx = key - 49
-                    if preset_idx < len(config_ui.presets):
-                        preset_key = config_ui.presets[preset_idx]['key']
-                        config_ui.apply_preset(preset_key)
-                        config_ui.selected_preset = preset_idx
-                        print(f"✓ Preset aplicado: {config_ui.presets[preset_idx]['name']}")
-                        # Aplicar cambios en tiempo real
-                        km.depth_threshold = AppConfig.DEPTH_THRESHOLD
-                        km.velocity_threshold = AppConfig.VELOCITY_THRESHOLD
-                        km.velocity_enabled = AppConfig.VELOCITY_ENABLED
-                        km.velocity_history_size = AppConfig.VELOCITY_HISTORY_SIZE
-                
-                # Salir
-                elif key == ord('q') or key == ord('Q') or key == 27:  # Q o ESC
-                    config_mode = False
-                    config_ui.reset_selection()
-                    print("Modo configuración desactivado")
-                
-                continue  # Saltar el resto del loop principal
-            
-            # === MODO TEORÍA ===
-            if theory_mode:
-                if in_lesson and current_lesson:
-                    # Ejecutar lección activa
-                    frame_left, frame_right, continue_lesson = current_lesson.run(
-                        frame_left, frame_right, vk_left, fs,
-                        left_detector, right_detector
-                    )
-                    
-                    if not continue_lesson:
-                        # Salir de la lección
-                        current_lesson.stop()
-                        in_lesson = False
-                        current_lesson = None
-                        print("Saliendo de la lección...")
-                else:
-                    # Mostrar menú de lecciones
-                    lessons = lesson_manager.get_all_lessons()
+                # === MODO CONFIGURACIÓN ===
+                if config_mode:
+                    # Mostrar panel de configuración
                     if camera_in_front_of_you:
                         h_frames = np.concatenate((frame_right, frame_left), axis=1)
                     else:
                         h_frames = np.concatenate((frame_left, frame_right), axis=1)
                     
-                    h_frames = theory_ui.draw_lesson_menu(h_frames, lessons)
+                    h_frames = config_ui.draw_config_panel(h_frames)
                     cv2.imshow(main_window_name, h_frames)
                     
-                    # Manejar teclas del menú
+                    # Manejar teclas del panel de configuración
                     key = cv2.waitKey(1) & 0xFF
-                    # Flecha arriba (múltiples códigos para compatibilidad)
-                    if key == 82 or key == ord('w') or key == ord('W'):  # Flecha arriba o W
-                        theory_ui.navigate_up(len(lessons))
-                        print(f"Navegando: lección {theory_ui.get_selected_index() + 1}/{len(lessons)}")
-                    # Flecha abajo
-                    elif key == 84 or key == ord('s') or key == ord('S'):  # Flecha abajo o S
-                        theory_ui.navigate_down(len(lessons))
-                        print(f"Navegando: lección {theory_ui.get_selected_index() + 1}/{len(lessons)}")
+                    
+                    # Navegación
+                    if key == 82 or key == ord('w') or key == ord('W'):  # Arriba
+                        config_ui.navigate_up()
+                    elif key == 84 or key == ord('s') or key == ord('S'):  # Abajo
+                        config_ui.navigate_down()
+                    
+                    # Ajustar valores
+                    elif key == 83 or key == ord('d') or key == ord('D'):  # Derecha (aumentar)
+                        config_ui.increase_value()
+                        # Aplicar cambios en tiempo real
+                        km.depth_threshold = AppConfig.DEPTH_THRESHOLD
+                        km.velocity_threshold = AppConfig.VELOCITY_THRESHOLD
+                        km.velocity_enabled = AppConfig.VELOCITY_ENABLED
+                        km.velocity_history_size = AppConfig.VELOCITY_HISTORY_SIZE
+                    elif key == 81 or key == ord('a') or key == ord('A'):  # Izquierda (disminuir)
+                        config_ui.decrease_value()
+                        # Aplicar cambios en tiempo real
+                        km.depth_threshold = AppConfig.DEPTH_THRESHOLD
+                        km.velocity_threshold = AppConfig.VELOCITY_THRESHOLD
+                        km.velocity_enabled = AppConfig.VELOCITY_ENABLED
+                        km.velocity_history_size = AppConfig.VELOCITY_HISTORY_SIZE
+                    
+                    # Presets (teclas 1-4)
+                    elif 49 <= key <= 52:  # Teclas 1-4
+                        preset_idx = key - 49
+                        if preset_idx < len(config_ui.presets):
+                            preset_key = config_ui.presets[preset_idx]['key']
+                            config_ui.apply_preset(preset_key)
+                            config_ui.selected_preset = preset_idx
+                            print(f"✓ Preset aplicado: {config_ui.presets[preset_idx]['name']}")
+                            # Aplicar cambios en tiempo real
+                            km.depth_threshold = AppConfig.DEPTH_THRESHOLD
+                            km.velocity_threshold = AppConfig.VELOCITY_THRESHOLD
+                            km.velocity_enabled = AppConfig.VELOCITY_ENABLED
+                            km.velocity_history_size = AppConfig.VELOCITY_HISTORY_SIZE
+                    
+                    # Salir
+                    elif key == ord('q') or key == ord('Q') or key == 27:  # Q o ESC
+                        config_mode = False
+                        config_ui.reset_selection()
+                        print("Modo configuración desactivado")
+                    
+                    continue  # Saltar el resto del loop principal
+
+            # === MODO CANCIONES (RHYTH GAME CON MENU) ===
+            if songs_mode:
+                if in_song and current_song:
+                    # Ejecutar canción activa
+                    try:
+                        frame_left, frame_right, continue_song = current_song.run(
+                            frame_left, frame_right, vk_left, fs,
+                            left_detector, right_detector
+                        )
+                        
+                        if not continue_song:
+                            # Salir de la canción
+                            current_song.stop()
+                            in_song = False
+                            current_song = None
+                            print("Saliendo de la canción...")
+                    except Exception as e:
+                        print(f"Error durante la canción: {e}")
+                        in_song = False
+                        current_song = None
+                else:
+                    # Mostrar menú de canciones
+                    songs_dict = get_all_songs()
+                    if camera_in_front_of_you:
+                        h_frames = np.concatenate((frame_right, frame_left), axis=1)
+                    else:
+                        h_frames = np.concatenate((frame_left, frame_right), axis=1)
+                    
+                    h_frames = songs_ui.draw_song_menu(h_frames, songs_dict)
+                    cv2.imshow(main_window_name, h_frames)
+                    
+                    # Manejar teclas del menú (SIN hacer otro waitKey aquí)
+                    # Flecha arriba o W
+                    if key == 82 or key == ord('w') or key == ord('W'):
+                        songs_ui.navigate(-1, len(songs_dict))
+                        print(f"Navegando canción: {songs_ui.get_selected_index() + 1}/{len(songs_dict)}")
+                    # Flecha abajo o S
+                    elif key == 84 or key == ord('s') or key == ord('S'):
+                        songs_ui.navigate(1, len(songs_dict))
+                        print(f"Navegando canción: {songs_ui.get_selected_index() + 1}/{len(songs_dict)}")
                     # Números 1-9 para selección directa
                     elif 49 <= key <= 57:  # Teclas 1-9
                         selected_idx = key - 49  # Convertir a índice (0-8)
-                        if 0 <= selected_idx < len(lessons):
-                            lesson_id, lesson = lessons[selected_idx]
-                            current_lesson = lesson
-                            current_lesson_id = lesson_id
-                            current_lesson.start()
-                            in_lesson = True
-                            print(f"Iniciando lección: {lesson.name}")
+                        if 0 <= selected_idx < len(songs_dict):
+                            songs_list = list(songs_dict.values())
+                            current_song = songs_list[selected_idx]
+                            try:
+                                current_song.start()
+                                in_song = True
+                                print(f"Iniciando canción: {current_song.name}")
+                            except Exception as e:
+                                print(f"Error al iniciar canción: {e}")
                     # ENTER
                     elif key == 13:  # ENTER
-                        selected_idx = theory_ui.get_selected_index()
-                        if 0 <= selected_idx < len(lessons):
-                            lesson_id, lesson = lessons[selected_idx]
-                            current_lesson = lesson
-                            current_lesson_id = lesson_id
-                            current_lesson.start()
-                            in_lesson = True
-                            print(f"Iniciando lección: {lesson.name}")
-                    elif key == ord('q') or key == ord('Q'):
-                        theory_mode = False
-                        theory_ui.reset_selection()
-                        print("Saliendo del modo teoría...")
-                    elif key == 27:  # ESC
-                        theory_mode = False
-                        theory_ui.reset_selection()
-                    elif key != 255:  # Mostrar código de cualquier otra tecla para debug
-                        print(f"Tecla presionada en menú teoría: código {key}")
-                    continue  # Saltar el resto del loop principal
-            
+                        selected_idx = songs_ui.get_selected_index()
+                        songs_list = list(songs_dict.values())
+                        if 0 <= selected_idx < len(songs_list):
+                            current_song = songs_list[selected_idx]
+                            try:
+                                current_song.start()
+                                in_song = True
+                                print(f"Iniciando canción: {current_song.name}")
+                            except Exception as e:
+                                print(f"Error al iniciar canción: {e}")
+                
+                # Teclas globales que funcionan en songs_mode
+                if key == ord('q') or key == ord('Q') or key == 27:  # Q, q o ESC
+                    songs_mode = False
+                    game_mode = False
+                    theory_mode = False
+                    songs_ui.reset_selection()
+                    if in_song and current_song:
+                        current_song.stop()
+                        in_song = False
+                        current_song = None
+                    print("Volviendo al modo libre...")
+                
+                continue  # Saltar el resto del loop principal (sin duplicar waitKey)
+
             # Combinar frames antes de procesar UI
             if camera_in_front_of_you:
                 h_frames = np.concatenate((frame_right, frame_left), axis=1)
@@ -1605,68 +1466,137 @@ def main():
                 welcome_frame = ui_helper.draw_welcome_screen(welcome_frame)
                 cv2.imshow(main_window_name, welcome_frame)
                 
-                # Esperar a que se presione una tecla para continuar
-                key = cv2.waitKey(1) & 0xFF
-                if key != 255:  # Cualquier tecla
-                    ui_helper.show_instructions = False
-                    ui_helper.frame_count = ui_helper.instructions_timeout  # No volver a mostrar
-                continue
-
-            if display_dashboard:
-                # Display dashboard data
-                fps1 = int(cam_left.current_frame_rate)
-                fps2 = int(cam_right.current_frame_rate)
-                cps_avg = int(round_half_up(fps))  # Average Cycles per second
-                text = 'X: {:3.1f}\nY: {:3.1f}\nZ: {:3.1f}\nD: {:3.1f}\nDr: {:3.1f}\nDepth Thr: {:.2f}\nFPS:{}/{}\nCPS:{}'.format(X, Y, Z, D, D-delta_y, km.depth_threshold, fps1, fps2, cps_avg)
-                lineloc = 0
-                lineheight = 30
-                for t in text.split('\n'):
-                    lineloc += lineheight
-                    cv2.putText(frame_left,
-                                t,
-                                (10, lineloc),              # location
-                                cv2.FONT_HERSHEY_PLAIN,     # font
-                                # cv2.FONT_HERSHEY_SIMPLEX, # font
-                                1.5,                        # size
-                                (0, 255, 0),                # color
-                                2,                          # line width
-                                cv2.LINE_AA,
-                                False)
+                # === MODO TEORÍA ===
+                if theory_mode:
+                    if in_lesson and current_lesson:
+                        # Ejecutar lección activa
+                        frame_left, frame_right, continue_lesson = current_lesson.run(
+                            frame_left, frame_right, vk_left, fs,
+                            left_detector, right_detector
+                        )
+                        
+                        if not continue_lesson:
+                            # Salir de la lección
+                            current_lesson.stop()
+                            in_lesson = False
+                            current_lesson = None
+                            print("Saliendo de la lección...")
+                    else:
+                        # Mostrar menú de lecciones
+                        lessons = lesson_manager.get_all_lessons()
+                        if camera_in_front_of_you:
+                            h_frames = np.concatenate((frame_right, frame_left), axis=1)
+                        else:
+                            h_frames = np.concatenate((frame_left, frame_right), axis=1)
+                        
+                        h_frames = theory_ui.draw_lesson_menu(h_frames, lessons)
+                        cv2.imshow(main_window_name, h_frames)
+                        
+                        # Manejar teclas del menú
+                        key = cv2.waitKey(1) & 0xFF
+                        # Flecha arriba (múltiples códigos para compatibilidad)
+                        if key == 82 or key == ord('w') or key == ord('W'):  # Flecha arriba o W
+                            theory_ui.navigate_up(len(lessons))
+                            print(f"Navegando: lección {theory_ui.get_selected_index() + 1}/{len(lessons)}")
+                        # Flecha abajo
+                        elif key == 84 or key == ord('s') or key == ord('S'):  # Flecha abajo o S
+                            theory_ui.navigate_down(len(lessons))
+                            print(f"Navegando: lección {theory_ui.get_selected_index() + 1}/{len(lessons)}")
+                        # Números 1-9 para selección directa
+                        elif 49 <= key <= 57:  # Teclas 1-9
+                            selected_idx = key - 49  # Convertir a índice (0-8)
+                            if 0 <= selected_idx < len(lessons):
+                                lesson_id, lesson = lessons[selected_idx]
+                                current_lesson = lesson
+                                current_lesson_id = lesson_id
+                                current_lesson.start()
+                                in_lesson = True
+                                print(f"Iniciando lección: {lesson.name}")
+                        # ENTER
+                        elif key == 13:  # ENTER
+                            selected_idx = theory_ui.get_selected_index()
+                            if 0 <= selected_idx < len(lessons):
+                                lesson_id, lesson = lessons[selected_idx]
+                                current_lesson = lesson
+                                current_lesson_id = lesson_id
+                                current_lesson.start()
+                                in_lesson = True
+                                print(f"Iniciando lección: {lesson.name}")
+                        elif key == ord('q') or key == ord('Q'):
+                            theory_mode = False
+                            theory_ui.reset_selection()
+                            print("Saliendo del modo teoría...")
+                        elif key == 27:  # ESC
+                            theory_mode = False
+                            theory_ui.reset_selection()
+                        elif key != 255:  # Mostrar código de cualquier otra tecla para debug
+                            print(f"Tecla presionada en menú teoría: código {key}")
+                        continue  # Saltar el resto del loop principal
                 
-                # Re-combinar frames después de actualizar el izquierdo
+                # Combinar frames antes de procesar UI
                 if camera_in_front_of_you:
                     h_frames = np.concatenate((frame_right, frame_left), axis=1)
                 else:
                     h_frames = np.concatenate((frame_left, frame_right), axis=1)
+                
+                # Mostrar pantalla de bienvenida si es necesario
+                if ui_helper.show_instructions:
+                    welcome_frame = np.zeros((pixel_height, pixel_width * 2, 3), dtype=np.uint8)
+                    welcome_frame = ui_helper.draw_welcome_screen(welcome_frame)
+                    cv2.imshow(main_window_name, welcome_frame)
+                    
+                    # Esperar a que se presione una tecla para continuar
+                    key = cv2.waitKey(1) & 0xFF
+                    if key != 255:  # Cualquier tecla
+                        ui_helper.show_instructions = False
+                        ui_helper.frame_count = ui_helper.instructions_timeout  # No volver a mostrar
+                    continue
 
-            # Display current target
-            # if fingers_left_queue:
-            #     frame_add_crosshairs(frame_left, x1m, y1m, 24)
-            #     frame_add_crosshairs(frame_right, x2m, y2m, 24)
+                if display_dashboard:
+                    # Display dashboard data
+                    fps1 = int(cam_left.current_frame_rate)
+                    fps2 = int(cam_right.current_frame_rate)
+                    cps_avg = int(round_half_up(fps))  # Average Cycles per second
+                    text = 'X: {:3.1f}\nY: {:3.1f}\nZ: {:3.1f}\nD: {:3.1f}\nDr: {:3.1f}\nDepth Thr: {:.2f}\nFPS:{}/{}\nCPS:{}'.format(X, Y, Z, D, D-delta_y, km.depth_threshold, fps1, fps2, cps_avg)
+                    lineloc = 0
+                    lineheight = 30
+                    for t in text.split('\n'):
+                        lineloc += lineheight
+                        cv2.putText(frame_left,
+                                    t,
+                                    (10, lineloc),              # location
+                                    cv2.FONT_HERSHEY_PLAIN,     # font
+                                    # cv2.FONT_HERSHEY_SIMPLEX, # font
+                                    1.5,                        # size
+                                    (0, 255, 0),                # color
+                                    2,                          # line width
+                                    cv2.LINE_AA,
+                                    False)
+                    
+                    # Re-combinar frames después de actualizar el izquierdo
+                    if camera_in_front_of_you:
+                        h_frames = np.concatenate((frame_right, frame_left), axis=1)
+                    else:
+                        h_frames = np.concatenate((frame_left, frame_right), axis=1)
 
-            # if fingers_left_queue:
-            #     frame_add_crosshairs(frame_left, x1m, y1m, 24)
-            #     frame_add_crosshairs(frame_right, x2m, y2m, 24)
-            # if X > 0 and Y > 0:
-            frame_add_crosshairs(frame_left, x_left_finger_screen_pos, y_left_finger_screen_pos, 24)
-            # Pendiente : ...frame_add_crosshairs(frame_right, x_left_finger_screen_pos, y_left_finger_screen_pos, 24)
+                # Display current target
+                # if fingers_left_queue:
+                #     frame_add_crosshairs(frame_left, x1m, y1m, 24)
+                #     frame_add_crosshairs(frame_right, x2m, y2m, 24)
+
+                # if fingers_left_queue:
+                #     frame_add_crosshairs(frame_left, x1m, y1m, 24)
+                #     frame_add_crosshairs(frame_right, x2m, y2m, 24)
+                # if X > 0 and Y > 0:
+                frame_add_crosshairs(frame_left, x_left_finger_screen_pos, y_left_finger_screen_pos, 24)
+                # Pendiente : ...frame_add_crosshairs(frame_right, x_left_finger_screen_pos, y_left_finger_screen_pos, 24)
 
 
 
-            # Display frames
-            cv2.imshow(main_window_name, h_frames)
+                # Display frames
+                cv2.imshow(main_window_name, h_frames)
 
 
-
-            if (cycles % 10 == 0):
-                # End time
-                end = time.time()
-                # Time elapsed
-                seconds = end - start
-                # print ("Time taken : {0} seconds".format(seconds))
-                # Calculate frames per second
-                fps = 10 / seconds
-                start = time.time()
 
             # Detect control keys
             key = cv2.waitKey(1) & 0xFF
@@ -1691,6 +1621,14 @@ def main():
                     display_dashboard = False
                 else:
                     display_dashboard = True
+            elif key == ord('n') or key == ord('N'):  # ========== MODO CANCIONES (NEW) ==========
+                songs_mode = True
+                game_mode = False
+                theory_mode = False
+                if rhythm_game.is_playing:
+                    rhythm_game.stop_game()
+                songs_ui.reset_selection()
+                print("¡Modo Canciones activado! Selecciona una canción. Presiona Q para salir.")
             elif key == ord('g'):  # ========== NUEVA TECLA ==========
                 game_mode = True
                 rhythm_game.start_game(TUTORIAL_FACIL)
@@ -1756,17 +1694,105 @@ def main():
     except Exception:
         pass
 
-    # close camera2
-    try:
-        cam_right.stop()
-    except Exception:
-        pass
+                # Detect control keys
+                key = cv2.waitKey(1) & 0xFF
+                if cv2.getWindowProperty(
+                    main_window_name, cv2.WND_PROP_VISIBLE) < 1:
+                    break
+                elif key == ord('q'):
+                    break
+                elif key == ord('c') or key == ord('C'):  # ========== MODO CONFIGURACIÓN ==========
+                    # Solo toggle si NO estamos en config_mode, theory_mode o game_mode
+                    if not config_mode and not theory_mode and not game_mode:
+                        config_mode = True
+                        print("\n=== MODO CONFIGURACIÓN ACTIVADO ===")
+                        print("Controles:")
+                        print("  W/S o ↑/↓: Navegar parámetros")
+                        print("  A/D o ←/→: Disminuir/Aumentar valor")
+                        print("  1-4: Aplicar preset (Suave/Normal/Estricto/Clásico)")
+                        print("  Q/ESC: Salir")
+                        print("=====================================\n")
+                elif key == ord('d'):
+                    if display_dashboard:
+                        display_dashboard = False
+                    else:
+                        display_dashboard = True
+                elif key == ord('g'):  # ========== NUEVA TECLA ==========
+                    game_mode = True
+                    rhythm_game.start_game(TUTORIAL_FACIL)
+                    print("¡Juego de ritmo iniciado! Presiona 'f' para volver al modo libre")
+                    ui_helper.reset_instructions()  # Mostrar instrucciones del juego
+                elif key == ord('f'):  # ========== NUEVA TECLA ==========
+                    # Detener juego si está activo
+                    if game_mode and rhythm_game.is_playing:
+                        rhythm_game.stop_game()
+                    game_mode = False
+                    theory_mode = False
+                    print("Modo libre activado")
+                    ui_helper.reset_instructions()  # Mostrar instrucciones del modo libre
+                elif key == ord('l'):  # ========== MODO TEORÍA ==========
+                    theory_mode = True
+                    game_mode = False
+                    if rhythm_game.is_playing:
+                        rhythm_game.stop_game()
+                    theory_ui.reset_selection()
+                    print("¡Modo Teoría activado! Selecciona una lección. Presiona Q para salir.")
+                elif key == ord('t'):  # Subir nivel de mesa (ESTÉREO: aumentar umbral de profundidad)
+                    new_threshold = km.depth_threshold + 0.2
+                    km.set_depth_threshold(new_threshold)
+                    print(f"Umbral de profundidad aumentado a: {new_threshold:.2f} cm")
+                elif key == ord('b'):  # Bajar nivel de mesa (ESTÉREO: disminuir umbral de profundidad)
+                    new_threshold = max(0.5, km.depth_threshold - 0.2)
+                    km.set_depth_threshold(new_threshold)
+                    print(f"Umbral de profundidad disminuido a: {new_threshold:.2f} cm")
+                elif key == ord('p'):  # Mostrar profundidades detectadas
+                    if display_dashboard:
+                        print(f"Profundidades detectadas (D - delta_y):")
+                        for fid, depth in finger_depths_dict.items():
+                            print(f"  Dedo {fid}: {depth:.2f} cm")
+                elif key == 27 and in_lesson:  # ESC dentro de lección
+                    if current_lesson:
+                        current_lesson.stop()
+                    in_lesson = False
+                    current_lesson = None
+                    print("Volviendo al menú de lecciones...")
+                elif in_lesson and current_lesson:  # Pasar teclas a la lección activa
+                    current_lesson.handle_key(key, fs, octave_base)
+                elif key != 255:
+                    print('KEY PRESS:', [chr(key)])
 
-    # kill frames
-    cv2.destroyAllWindows()
+        # ------------------------------
+        # full error catch
+        # ------------------------------
+        except Exception:
+            print(traceback.format_exc())
 
-    # done
-    print('DONE')
+        # ------------------------------
+        # close all
+        # ------------------------------
+
+        # Fluidsynth
+        try:
+            fs.delete()
+        except Exception:
+            pass
+        # close camera1
+        try:
+            cam_left.stop()
+        except Exception:
+            pass
+
+        # close camera2
+        try:
+            cam_right.stop()
+        except Exception:
+            pass
+
+        # kill frames
+        cv2.destroyAllWindows()
+
+        # done
+        print('DONE')
 
 
 # ------------------------------

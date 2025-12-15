@@ -10,18 +10,22 @@ Sistema limpio - Listo para agregar nuevos algoritmos
 # ==============================================================================
 
 ALGORITHMS_CONFIG = {
-    # Aquí se agregarán los nuevos algoritmos progresivamente
-    # Formato:
-    # 'Nombre Algoritmo': {
-    #     'enabled': False,
-    #     'params': { ... },
-    #     'description': '...'
-    # }
+    'Una Nota Por Acción': {
+        'enabled': True,
+        'params': {
+            # Calibración en MESA:
+            # 0 cm = Tocando (aprox)
+            # +5 cm = Aire
+            'profundidad_activacion': 2.0,   # Activa si está CERCA de la mesa (<= 2.0)
+            'profundidad_reset': 4.0         # Resetea si SUBE (>= 4.0)
+        },
+        'description': 'Evita múltiples activaciones durante un solo gesto. Solo permite tocar de nuevo después de alejarse.'
+    }
 }
 
-# Orden de ejecución de algoritmos (vacío por ahora)
+# Orden de ejecución de algoritmos
 EXECUTION_ORDER = [
-    # Se llenará conforme se agreguen algoritmos
+    'Una Nota Por Acción',  # Evita activaciones múltiples en un gesto
 ]
 
 

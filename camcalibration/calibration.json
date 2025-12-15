@@ -365,12 +365,12 @@
         "height": 720
     },
     "depth_correction": {
-        "keyboard_distance_cm": 35.0,
+        "keyboard_distance_cm": 45.0,
         "keyboard_samples": 5,
-        "correction_factor": 0.928793117533812,
-        "real_distance_cm": 35.0,
-        "measured_distance_cm": 37.683311104774475,
-        "error_cm": 2.683311104774475,
-        "error_percent": 7.6666031564985
+        "correction_factor": 1.046384696049024,
+        "real_distance_cm": 45.0,
+        "measured_distance_cm": 43.005216121673584,
+        "error_cm": 1.994783878326416,
+        "error_percent": 4.432853062947592
     }
 }

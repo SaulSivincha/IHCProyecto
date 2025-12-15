@@ -36,16 +36,17 @@ def get_algorithm_manager() -> AlgorithmManager:
 def _initialize_algorithms(manager: AlgorithmManager):
     """
     Inicializa todos los algoritmos y los registra en el manager.
-    Por ahora está vacío - se llenará conforme se agreguen algoritmos.
     """
-    # TODO: Importar y registrar algoritmos aquí
-    # Ejemplo:
-    # from .algo_mi_algoritmo import MiAlgoritmo
-    # algo = MiAlgoritmo(enabled=ALGORITHMS_CONFIG['Mi Algoritmo']['enabled'])
-    # algo.configure(**ALGORITHMS_CONFIG['Mi Algoritmo']['params'])
-    # manager.register_algorithm(algo)
+    # Importar algoritmos
+    from .algo_una_nota_por_accion import UnaNotaPorAccionAlgorithm
     
-    pass  # Sin algoritmos por ahora
+    # Registrar en orden de ejecución
+    for algo_name in ['Una Nota Por Acción']:
+        if algo_name == 'Una Nota Por Acción' and algo_name in ALGORITHMS_CONFIG:
+            config = ALGORITHMS_CONFIG[algo_name]
+            algo = UnaNotaPorAccionAlgorithm(enabled=config['enabled'])
+            algo.configure(**config['params'])
+            manager.register_algorithm(algo)
 
 
 def sync_algorithms_from_config():

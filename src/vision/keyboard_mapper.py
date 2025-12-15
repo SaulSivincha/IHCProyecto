@@ -158,15 +158,16 @@ class KeyboardMapModular:
         if has_active_algorithms:
             # Filtrar por profundidad (solo cuando hay algoritmos activos)
             filtered_by_depth = []
-            # SISTEMA INVERTIDO: depth negativo = tocando, depth positivo = aire
-            # Threshold: -10 significa "más negativo que -10" = más cerca tocando
-            activation_threshold = -10.0  # Activa si depth <= -10 (valores negativos)
+            # Calibración en MESA: 0=Tocar, +10=Aire
+            # Queremos pasar TODO lo que esté CERCA de la mesa (<= 2.0)
+            # Ojo: A veces se va un poco negativo (-1.0), lo incluimos
+            activation_threshold = 2.0  
             
             for detection in raw_detections:
                 finger_id, key, depth, velocity, x_pos, y_pos = detection
                 
-                # Sistema invertido: depth NEGATIVO = tocando
-                # Ejemplos: -19.7 (tocando) vs -5.0 (aire)
+                # Criterio: Estar cerca de la mesa (depth <= 2.0)
+                # Ejemplo: 0.5 (toca), -1.0 (toca fuerte), 10.0 (aire)
                 should_activate = (depth <= activation_threshold)
                 
                 if should_activate:

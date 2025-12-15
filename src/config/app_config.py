@@ -92,7 +92,7 @@ class AppConfig:
     
     # ==================== DETECCIÓN DE TECLAS ====================
     # Sistema de detección por profundidad y velocidad
-    DEPTH_THRESHOLD = 3.5                 # Umbral de profundidad para presión (cm)
+    DEPTH_THRESHOLD = 1.0                 # Umbral de profundidad para presión (cm) - reducido para mejor sensibilidad
                                           # Rango recomendado: 2.0-5.0 cm
                                           # Menor valor = más estricto
     

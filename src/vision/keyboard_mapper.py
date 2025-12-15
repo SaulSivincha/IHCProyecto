@@ -12,15 +12,8 @@ import numpy as np
 from collections import deque
 from src.config.app_config import AppConfig
 
-# Sistema modular de algoritmos
+# Sistema modular de algoritmos - solo importar lo necesario
 from src.vision.algorithms.algorithm_manager import AlgorithmManager
-from src.vision.algorithms.algo_antirebote import AntireboteAlgorithm
-from src.vision.algorithms.algo_histeresis import HisteresisAlgorithm
-from src.vision.algorithms.algo_suavizado import SuavizadoAlgorithm
-from src.vision.algorithms.algo_multinota import MultinotaAlgorithm
-from src.vision.algorithms.algo_filtro_espacial import FiltroEspacialAlgorithm
-from src.vision.algorithms.algo_zona_salida import ZonaSalidaAlgorithm
-from src.vision.algorithms.algorithms_config import ALGORITHMS_CONFIG, EXECUTION_ORDER
 
 
 class KeyboardMapModular:
@@ -52,44 +45,17 @@ class KeyboardMapModular:
         self.velocity_enabled = AppConfig.VELOCITY_ENABLED
         self.velocity_history_size = AppConfig.VELOCITY_HISTORY_SIZE
         
-        # NUEVO: Sistema modular de algoritmos
-        self.algorithm_manager = AlgorithmManager()
-        self._initialize_algorithms()
+        # NUEVO: Sistema modular de algoritmos - USAR SINGLETON GLOBAL
+        from src.vision.algorithms import get_algorithm_manager
+        self.algorithm_manager = get_algorithm_manager()
         
     def _initialize_algorithms(self):
         """Inicializa y registra todos los algoritmos según configuración."""
         
-        # Crear instancias de algoritmos
-        algorithms = {
-            'Antirebote': AntireboteAlgorithm(),
-            'Histéresis': HisteresisAlgorithm(),
-            'Suavizado': SuavizadoAlgorithm(),
-            'Multi-nota': MultinotaAlgorithm(),
-            'Filtro Espacial': FiltroEspacialAlgorithm(),
-            'Zona Salida': ZonaSalidaAlgorithm()
-        }
-        
-        # Registrar algoritmos en orden de ejecución
-        for algo_name in EXECUTION_ORDER:
-            if algo_name in algorithms:
-                algorithm = algorithms[algo_name]
-                
-                # Aplicar configuración desde algorithms_config.py
-                if algo_name in ALGORITHMS_CONFIG:
-                    config = ALGORITHMS_CONFIG[algo_name]
-                    
-                    # Activar/desactivar
-                    if config['enabled']:
-                        algorithm.enable()
-                    else:
-                        algorithm.disable()
-                    
-                    # Configurar parámetros
-                    if config['params']:
-                        algorithm.configure(**config['params'])
-                
-                # Registrar en el manager
-                self.algorithm_manager.register_algorithm(algorithm)
+        # NOTA: Este método ya no es necesario porque el manager global
+        # ya está inicializado por get_algorithm_manager()
+        # Se mantiene para compatibilidad pero no hace nada
+        pass
     
     def set_depth_threshold(self, threshold):
         """Actualiza el umbral de profundidad."""
@@ -120,7 +86,7 @@ class KeyboardMapModular:
         if finger_depths is None:
             finger_depths = {}
         
-        # FASE 1: Recolectar detecciones brutas
+        # FASE 1: Recolectar detecciones brutas (TODAS las intersecciones)
         raw_detections = []
         current_time = time.time()
         
@@ -142,6 +108,11 @@ class KeyboardMapModular:
                     if finger_id in finger_depths:
                         depth = finger_depths[finger_id]
                         
+                        # FILTRO: Ignorar valores de profundidad absurdos
+                        # Estos ocurren por errores de triangulación estéreo
+                        if depth < -100 or depth > 100:
+                            continue  # Saltar este dedo, valor no confiable
+                        
                         # Actualizar historial de profundidad
                         if finger_id not in self.finger_depth_history:
                             self.finger_depth_history[finger_id] = deque(maxlen=self.velocity_history_size)
@@ -153,24 +124,64 @@ class KeyboardMapModular:
                             history = list(self.finger_depth_history[finger_id])
                             velocity = history[-2] - history[-1]
                         
-                        # Verificar condición básica de activación
-                        # depth es profundidad RELATIVA: positivo = dedo más cerca que teclado
-                        should_activate = False
-                        
-                        if self.velocity_enabled and len(self.finger_depth_history[finger_id]) >= 2:
-                            # Modo velocidad: requiere profundidad Y velocidad descendente
-                            if depth >= self.depth_threshold and velocity >= self.velocity_threshold:
-                                should_activate = True
-                        else:
-                            # Modo clásico: solo requiere profundidad suficiente
-                            if depth >= self.depth_threshold:
-                                should_activate = True
-                        
-                        if should_activate:
-                            raw_detections.append((finger_id, key, depth, velocity, x_pos, y_pos))
+                        # AGREGAR SIEMPRE a raw_detections (sin filtrar por profundidad aún)
+                        raw_detections.append((finger_id, key, depth, velocity, x_pos, y_pos))
                     else:
                         # Fallback sin profundidad
                         raw_detections.append((finger_id, key, 0.0, 0.0, x_pos, y_pos))
+        
+        # DEBUG INICIAL: Mostrar cuántas intersecciones se detectaron
+        if not hasattr(self, '_debug_frame_count'):
+            self._debug_frame_count = 0
+        self._debug_frame_count += 1
+        
+        if len(raw_detections) > 0 and self._debug_frame_count % 30 == 0:
+            print(f"\n[DEBUG FASE 1] Intersecciones detectadas: {len(raw_detections)}")
+            for det in raw_detections[:3]:  # Mostrar primeras 3
+                finger_id, key, depth, velocity, x, y = det
+                print(f"  Dedo {finger_id}, Tecla {key}, Depth={depth:.1f}cm, Vel={velocity:.2f}")
+        
+        # FASE 1.5: Aplicar filtro de profundidad SOLO si hay algoritmos activos
+        has_active_algorithms = any(algo.is_enabled() for algo in self.algorithm_manager.algorithms)
+        
+        # DEBUG: Mostrar estado de filtrado
+        if not hasattr(self, '_filter_debug_shown'):
+            active_algos = [algo.name for algo in self.algorithm_manager.algorithms if algo.is_enabled()]
+            if has_active_algorithms:
+                print(f"\n[KEYBOARD_MAPPER] Algoritmos activos: {active_algos}")
+                print(f"[KEYBOARD_MAPPER] ✓ Filtro de profundidad ACTIVADO (umbral >= 10cm)")
+            else:
+                print(f"\n[KEYBOARD_MAPPER] No hay algoritmos activos")
+                print(f"[KEYBOARD_MAPPER] ✗ Filtro de profundidad DESACTIVADO")
+            self._filter_debug_shown = True
+        
+        if has_active_algorithms:
+            # Filtrar por profundidad (solo cuando hay algoritmos activos)
+            filtered_by_depth = []
+            # SISTEMA INVERTIDO: depth negativo = tocando, depth positivo = aire
+            # Threshold: -10 significa "más negativo que -10" = más cerca tocando
+            activation_threshold = -10.0  # Activa si depth <= -10 (valores negativos)
+            
+            for detection in raw_detections:
+                finger_id, key, depth, velocity, x_pos, y_pos = detection
+                
+                # Sistema invertido: depth NEGATIVO = tocando
+                # Ejemplos: -19.7 (tocando) vs -5.0 (aire)
+                should_activate = (depth <= activation_threshold)
+                
+                if should_activate:
+                    filtered_by_depth.append(detection)
+            
+            # DEBUG: Mostrar resultado del filtro
+            if self._debug_frame_count % 30 == 0 and len(raw_detections) > 0:
+                print(f"[DEBUG FILTRO] Antes: {len(raw_detections)}, Después: {len(filtered_by_depth)}")
+                if len(filtered_by_depth) == 0 and len(raw_detections) > 0:
+                    print(f"⚠️ TODAS filtradas! Depths: {[d[2] for d in raw_detections[:3]]}")
+            
+            raw_detections = filtered_by_depth
+        else:
+            if len(raw_detections) > 0 and self._debug_frame_count % 30 == 0:
+                print(f"[DEBUG] Pasando {len(raw_detections)} intersecciones SIN filtrar")
         
         # FASE 2: Procesar detecciones a través de algoritmos modulares
         context = {
@@ -181,6 +192,12 @@ class KeyboardMapModular:
         
         # Aplicar cadena de algoritmos
         filtered_detections = self.algorithm_manager.process_detections(raw_detections, context)
+        
+        # DEBUG: Mostrar resultado de algoritmos
+        if self._debug_frame_count % 30 == 0 and len(raw_detections) > 0:
+            print(f"[DEBUG ALGORITMOS] Antes: {len(raw_detections)}, Después: {len(filtered_detections)}")
+            if len(filtered_detections) == 0 and len(raw_detections) > 0:
+                print(f"⚠️ ALGORITMOS bloquearon todo!")
         
         # FASE 3: Aplicar detecciones filtradas al mapa
         for detection in filtered_detections:

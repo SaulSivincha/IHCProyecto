@@ -22,8 +22,9 @@ class HisteresisAlgorithm(BaseAlgorithm):
         super().__init__(name="Histéresis", enabled=enabled)
         
         # Parámetros configurables
-        self.press_threshold = 3.0  # cm (más bajo)
-        self.release_threshold = 4.0  # cm (más alto)
+        # SISTEMA INVERTIDO: depth negativo = tocando, más negativo = más cerca
+        self.press_threshold = -10.0   # Activa cuando depth <= -10 (ej: -15 activa)
+        self.release_threshold = -8.0  # Libera cuando depth > -8 (ej: -5 libera)
         
         # Estado interno
         self.key_pressed_state = {}  # {key_id: bool}
@@ -38,6 +39,10 @@ class HisteresisAlgorithm(BaseAlgorithm):
     def process(self, detections: List[Tuple], context: Dict[str, Any]) -> List[Tuple]:
         """
         Aplica umbrales diferentes según el estado actual de la tecla.
+        
+        IMPORTANTE: En el sistema actual, depth_relative es:
+        - Valor ALTO (15-25cm): dedo CERCA de cámaras (tocando teclado)
+        - Valor BAJO/NEGATIVO: dedo LEJOS (en el aire)
         
         Args:
             detections: [(finger_id, key, depth, velocity, x, y), ...]
@@ -59,21 +64,20 @@ class HisteresisAlgorithm(BaseAlgorithm):
             is_pressed = self.key_pressed_state.get(key, False)
             
             if is_pressed:
-                # Tecla ya presionada: usar umbral de liberación
-                # depth_relative: positivo = dedo más cerca que teclado
-                # Mantener si profundidad >= umbral de liberación (dedo sigue cerca)
-                if depth >= self.release_threshold:
-                    # Mantener presionada
+                # Tecla ya presionada: requiere subida significativa para liberar
+                # Sistema invertido: depth más POSITIVO = dedo se aleja
+                if depth <= self.release_threshold:
+                    # Mantener presionada (depth aún negativo = cerca)
                     filtered.append(detection)
                 else:
-                    # Liberar (dedo se alejó)
+                    # Liberar (depth subió hacia positivo = se alejó)
                     self.key_pressed_state[key] = False
                     self.stats['release_applied'] += 1
             else:
-                # Tecla no presionada: usar umbral de presión
-                # Activar si profundidad >= umbral de presión (dedo suficientemente cerca)
-                if depth >= self.press_threshold:
-                    # Activar
+                # Tecla no presionada: requiere bajada significativa para activar
+                # Sistema invertido: depth más NEGATIVO = dedo se acerca
+                if depth <= self.press_threshold:
+                    # Activar (depth bajó a negativo = se acercó)
                     self.key_pressed_state[key] = True
                     filtered.append(detection)
                     self.stats['press_applied'] += 1

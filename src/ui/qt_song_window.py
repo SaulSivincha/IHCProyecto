@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 Ventana PyQt6 para jugar canciones en modo ritmo
-Embebe feed de cámaras OpenCV y muestra UI del juego
+Diseno visual mejorado y coherente con la interfaz principal
 """
 
 import sys
@@ -12,18 +12,146 @@ import time
 from typing import Optional
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QLabel, QPushButton, QProgressBar, QFrame, QGridLayout
+    QLabel, QPushButton, QProgressBar, QFrame, QGridLayout, QDialog
 )
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QImage, QPixmap, QFont
 from src.piano.keyboard_processor import KeyboardProcessor
 
 
+class ResultsDialog(QDialog):
+    """Dialogo de resultados al finalizar la cancion"""
+    
+    def __init__(self, stats, song_name, parent=None):
+        super().__init__(parent)
+        self.result_action = 'menu'  # Por defecto volver al menu
+        
+        self.setWindowTitle("Resultados")
+        self.setModal(True)
+        self.setFixedSize(450, 500)
+        
+        self.setStyleSheet("""
+            QDialog {
+                background-color: #1a1a2e;
+                color: #ffffff;
+            }
+            QLabel {
+                color: #ffffff;
+            }
+            QPushButton {
+                background-color: #16213e;
+                color: #ffffff;
+                border: 2px solid #00c8ff;
+                border-radius: 8px;
+                padding: 12px 24px;
+                font-size: 14px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #0f3460;
+                border-color: #00ffff;
+            }
+            QPushButton#retry {
+                border-color: #00ff88;
+            }
+            QPushButton#retry:hover {
+                background-color: #004422;
+            }
+            QPushButton#songs {
+                border-color: #ffaa00;
+            }
+            QPushButton#songs:hover {
+                background-color: #443300;
+            }
+        """)
+        
+        self._build_ui(stats, song_name)
+    
+    def _build_ui(self, stats, song_name):
+        layout = QVBoxLayout(self)
+        layout.setSpacing(15)
+        layout.setContentsMargins(30, 30, 30, 30)
+        
+        # Titulo
+        title = QLabel("RESULTADOS")
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        title.setStyleSheet("font-size: 28px; font-weight: bold; color: #00c8ff;")
+        layout.addWidget(title)
+        
+        # Nombre de cancion
+        song_label = QLabel(song_name)
+        song_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        song_label.setStyleSheet("font-size: 16px; color: #aaaaaa;")
+        layout.addWidget(song_label)
+        
+        layout.addSpacing(20)
+        
+        # Calificacion
+        accuracy = stats.get('accuracy', 0)
+        if accuracy >= 95:
+            grade, grade_color = "S", "#ffd700"
+        elif accuracy >= 90:
+            grade, grade_color = "A", "#00ff88"
+        elif accuracy >= 80:
+            grade, grade_color = "B", "#00c8ff"
+        elif accuracy >= 70:
+            grade, grade_color = "C", "#ffaa00"
+        else:
+            grade, grade_color = "D", "#ff5555"
+        
+        grade_label = QLabel(grade)
+        grade_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        grade_label.setStyleSheet(f"font-size: 72px; font-weight: bold; color: {grade_color};")
+        layout.addWidget(grade_label)
+        
+        # Estadisticas
+        stats_widget = QWidget()
+        stats_layout = QGridLayout(stats_widget)
+        stats_layout.setSpacing(10)
+        
+        self._add_stat(stats_layout, 0, "Puntaje:", f"{stats.get('score', 0):,}", "#ffd700")
+        self._add_stat(stats_layout, 1, "Max Combo:", f"{stats.get('combo', 0)}x", "#00ffff")
+        self._add_stat(stats_layout, 2, "PERFECT:", str(stats.get('perfect', 0)), "#00ff88")
+        self._add_stat(stats_layout, 3, "GOOD:", str(stats.get('good', 0)), "#ffaa00")
+        self._add_stat(stats_layout, 4, "MISS:", str(stats.get('miss', 0)), "#ff5555")
+        self._add_stat(stats_layout, 5, "Precision:", f"{accuracy:.1f}%", grade_color)
+        
+        layout.addWidget(stats_widget)
+        
+        layout.addSpacing(20)
+        
+        # Botones
+        btn_layout = QHBoxLayout()
+        btn_layout.setSpacing(15)
+        
+        songs_btn = QPushButton("OTRA CANCION")
+        songs_btn.setObjectName("songs")
+        songs_btn.clicked.connect(lambda: self._select_action('songs'))
+        btn_layout.addWidget(songs_btn)
+        
+        menu_btn = QPushButton("REGRESAR")
+        menu_btn.clicked.connect(lambda: self._select_action('menu'))
+        btn_layout.addWidget(menu_btn)
+        
+        layout.addLayout(btn_layout)
+    
+    def _add_stat(self, layout, row, label, value, color):
+        lbl = QLabel(label)
+        lbl.setStyleSheet("font-size: 14px; color: #888888;")
+        layout.addWidget(lbl, row, 0)
+        
+        val = QLabel(value)
+        val.setStyleSheet(f"font-size: 16px; font-weight: bold; color: {color};")
+        val.setAlignment(Qt.AlignmentFlag.AlignRight)
+        layout.addWidget(val, row, 1)
+    
+    def _select_action(self, action):
+        self.result_action = action
+        self.accept()
+
+
 class SongWindow(QMainWindow):
-    """
-    Ventana principal para jugar canciones en modo ritmo.
-    Muestra el feed de las cámaras con las notas cayendo.
-    """
+    """Ventana principal para jugar canciones en modo ritmo"""
     
     def __init__(self, song, camera_left, camera_right, synth, 
                  virtual_keyboard, hand_detector_left=None, hand_detector_right=None,
@@ -38,9 +166,9 @@ class SongWindow(QMainWindow):
         self.virtual_keyboard = virtual_keyboard
         self.hand_detector_left = hand_detector_left
         self.hand_detector_right = hand_detector_right
-        self.keyboard_total_keys = keyboard_total_keys  # Guardar para usar en start()
+        self.keyboard_total_keys = keyboard_total_keys
         
-        # Crear procesador de teclado centralizado
+        # Crear procesador de teclado
         if keyboard_mapper and angler:
             self.keyboard_processor = KeyboardProcessor(
                 keyboard_mapper=keyboard_mapper,
@@ -55,67 +183,78 @@ class SongWindow(QMainWindow):
             self.keyboard_processor = None
         
         self.continue_song = True
+        self.result_action = 'menu'
+        self.game_ended = False
         self.timer = QTimer()
         
-        # Configuración de ventana
+        # Configuracion visual
         self.setWindowTitle(f"Modo Ritmo - {song.name}")
         self.setMinimumSize(1400, 800)
         
         self.setStyleSheet("""
-            QMainWindow {
-                background-color: #000000;
+            QMainWindow, QWidget {
+                background-color: #0d1117;
+            }
+            QLabel {
+                color: #c9d1d9;
             }
             QLabel#title {
-                color: #ffffff;
-                font-size: 18px;
+                color: #00c8ff;
+                font-size: 20px;
                 font-weight: bold;
-                padding: 8px;
-                background-color: #000000;
-            }
-            QLabel#info {
-                color: #ffffff;
-                font-size: 13px;
-                padding: 5px;
             }
             QLabel#score {
-                color: #00ff00;
+                color: #ffd700;
+                font-size: 32px;
+                font-weight: bold;
+            }
+            QLabel#combo {
+                color: #00ffff;
                 font-size: 24px;
                 font-weight: bold;
-                padding: 5px;
             }
+            QLabel#perfect { color: #00ff88; font-size: 14px; }
+            QLabel#good { color: #ffaa00; font-size: 14px; }
+            QLabel#miss { color: #ff5555; font-size: 14px; }
             QPushButton {
-                background-color: #333333;
-                color: #ffffff;
-                font-size: 13px;
-                font-weight: bold;
+                background-color: #21262d;
+                color: #c9d1d9;
+                border: 1px solid #30363d;
+                border-radius: 6px;
                 padding: 8px 16px;
-                border: 1px solid #ffffff;
+                font-weight: bold;
             }
             QPushButton:hover {
-                background-color: #555555;
+                background-color: #30363d;
+                border-color: #8b949e;
             }
-            QPushButton#exitButton {
-                background-color: #333333;
-                border: 1px solid #ff0000;
-                color: #ff0000;
+            QPushButton#exit {
+                border-color: #f85149;
+                color: #f85149;
             }
-            QPushButton#exitButton:hover {
-                background-color: #550000;
-                color: #ffffff;
+            QPushButton#exit:hover {
+                background-color: #3d1418;
             }
             QProgressBar {
-                border: 1px solid #ffffff;
+                border: 1px solid #30363d;
+                border-radius: 4px;
+                background-color: #21262d;
                 text-align: center;
-                background-color: #000000;
-                color: #ffffff;
-                max-height: 20px;
+                color: #c9d1d9;
             }
             QProgressBar::chunk {
-                background-color: #ffffff;
+                background-color: #00c8ff;
+                border-radius: 3px;
             }
-            QFrame#cameraFrame {
-                border: 1px solid #ffffff;
+            QFrame#camera {
+                border: 2px solid #30363d;
+                border-radius: 8px;
                 background-color: #000000;
+            }
+            QFrame#stats {
+                background-color: #161b22;
+                border: 1px solid #30363d;
+                border-radius: 8px;
             }
         """)
         
@@ -123,159 +262,157 @@ class SongWindow(QMainWindow):
         self._start_game()
     
     def _build_ui(self):
-        """Construye la interfaz de usuario (similar a modo Teoría)."""
-        central_widget = QWidget()
-        self.setCentralWidget(central_widget)
-
-        main_layout = QVBoxLayout(central_widget)
-        main_layout.setSpacing(10)
-        main_layout.setContentsMargins(15, 15, 15, 15)
-
-        # ========== ENCABEZADO ==========
-        header_layout = QHBoxLayout()
-
-        title_label = QLabel(self.song.name)
-        title_label.setObjectName("title")
-        header_layout.addWidget(title_label)
-
-        header_layout.addStretch()
-
-        subtitle_label = QLabel("Modo Ritmo")
-        subtitle_label.setObjectName("info")
-        header_layout.addWidget(subtitle_label)
-
-        main_layout.addLayout(header_layout)
-
-        # ========== CONTENIDO PRINCIPAL (Cámara + Panel derecho) ==========
-        content_layout = QHBoxLayout()
-
-        # --- Panel izquierdo: Cámara ---
-        camera_container = QVBoxLayout()
-
+        central = QWidget()
+        self.setCentralWidget(central)
+        main_layout = QVBoxLayout(central)
+        main_layout.setSpacing(15)
+        main_layout.setContentsMargins(20, 15, 20, 15)
+        
+        # Encabezado
+        header = QHBoxLayout()
+        title = QLabel(self.song.name)
+        title.setObjectName("title")
+        header.addWidget(title)
+        header.addStretch()
+        
+        mode_label = QLabel("MODO RITMO")
+        mode_label.setStyleSheet("color: #8b949e; font-size: 14px;")
+        header.addWidget(mode_label)
+        main_layout.addLayout(header)
+        
+        # Contenido
+        content = QHBoxLayout()
+        
+        # Camara
         camera_frame = QFrame()
-        camera_frame.setObjectName("cameraFrame")
-        camera_frame_layout = QVBoxLayout(camera_frame)
-
+        camera_frame.setObjectName("camera")
+        camera_layout = QVBoxLayout(camera_frame)
+        camera_layout.setContentsMargins(5, 5, 5, 5)
+        
         self.camera_label = QLabel()
         self.camera_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.camera_label.setMinimumSize(640, 480)
-        self.camera_label.setScaledContents(False)
-        camera_frame_layout.addWidget(self.camera_label)
-
-        camera_container.addWidget(camera_frame)
-        content_layout.addLayout(camera_container, 3)
-
-        # --- Panel derecho: Estadísticas de la canción ---
-        info_panel = QVBoxLayout()
-        info_panel.setSpacing(15)
-
-        stats_title = QLabel("Estadísticas de la canción")
-        stats_title.setObjectName("info")
-        stats_title.setStyleSheet("font-size: 16px; font-weight: bold; color: #ffffff;")
-        info_panel.addWidget(stats_title)
-
-        # Score grande
-        self.score_label = QLabel("Score: 0")
+        self.camera_label.setMinimumSize(800, 500)
+        camera_layout.addWidget(self.camera_label)
+        content.addWidget(camera_frame, 3)
+        
+        # Panel de estadisticas
+        stats_frame = QFrame()
+        stats_frame.setObjectName("stats")
+        stats_frame.setMaximumWidth(300)
+        stats_layout = QVBoxLayout(stats_frame)
+        stats_layout.setSpacing(15)
+        stats_layout.setContentsMargins(20, 20, 20, 20)
+        
+        # Score
+        score_title = QLabel("PUNTAJE")
+        score_title.setStyleSheet("color: #8b949e; font-size: 12px;")
+        stats_layout.addWidget(score_title)
+        
+        self.score_label = QLabel("0")
         self.score_label.setObjectName("score")
-        info_panel.addWidget(self.score_label)
-
+        stats_layout.addWidget(self.score_label)
+        
         # Combo
-        self.combo_label = QLabel("Combo: 0x")
-        self.combo_label.setObjectName("info")
-        self.combo_label.setStyleSheet("font-size: 16px; color: #00ffff;")
-        info_panel.addWidget(self.combo_label)
-
-        # Estadísticas detalladas (grid)
-        stats_grid = QGridLayout()
-        stats_grid.setSpacing(5)
-
+        combo_title = QLabel("COMBO")
+        combo_title.setStyleSheet("color: #8b949e; font-size: 12px;")
+        stats_layout.addWidget(combo_title)
+        
+        self.combo_label = QLabel("0x")
+        self.combo_label.setObjectName("combo")
+        stats_layout.addWidget(self.combo_label)
+        
+        # Separador
+        sep = QFrame()
+        sep.setFrameShape(QFrame.Shape.HLine)
+        sep.setStyleSheet("background-color: #30363d;")
+        stats_layout.addWidget(sep)
+        
+        # Estadisticas
         self.perfect_label = QLabel("PERFECT: 0")
-        self.perfect_label.setObjectName("info")
-        self.perfect_label.setStyleSheet("color: #00ff00;")
-        stats_grid.addWidget(self.perfect_label, 0, 0)
-
+        self.perfect_label.setObjectName("perfect")
+        stats_layout.addWidget(self.perfect_label)
+        
         self.good_label = QLabel("GOOD: 0")
-        self.good_label.setObjectName("info")
-        self.good_label.setStyleSheet("color: #ffff00;")
-        stats_grid.addWidget(self.good_label, 0, 1)
-
+        self.good_label.setObjectName("good")
+        stats_layout.addWidget(self.good_label)
+        
         self.miss_label = QLabel("MISS: 0")
-        self.miss_label.setObjectName("info")
-        self.miss_label.setStyleSheet("color: #ff0000;")
-        stats_grid.addWidget(self.miss_label, 1, 0)
-
-        self.accuracy_label = QLabel("Precisión: 0%")
-        self.accuracy_label.setObjectName("info")
-        self.accuracy_label.setStyleSheet("color: #ffffff;")
-        stats_grid.addWidget(self.accuracy_label, 1, 1)
-
-        info_panel.addLayout(stats_grid)
-
-        # Progreso de canción
-        progress_label = QLabel("Progreso de la canción:")
-        progress_label.setObjectName("info")
-        info_panel.addWidget(progress_label)
-
+        self.miss_label.setObjectName("miss")
+        stats_layout.addWidget(self.miss_label)
+        
+        # Precision
+        self.accuracy_label = QLabel("Precision: 0%")
+        self.accuracy_label.setStyleSheet("font-size: 16px; font-weight: bold;")
+        stats_layout.addWidget(self.accuracy_label)
+        
+        # Progreso
+        progress_title = QLabel("PROGRESO")
+        progress_title.setStyleSheet("color: #8b949e; font-size: 12px; margin-top: 10px;")
+        stats_layout.addWidget(progress_title)
+        
         self.progress_bar = QProgressBar()
         self.progress_bar.setMaximum(100)
         self.progress_bar.setValue(0)
-        info_panel.addWidget(self.progress_bar)
-
-        info_panel.addStretch()
-
-        # Botón salir
-        exit_btn = QPushButton("SALIR DEL MODO RITMO")
-        exit_btn.setObjectName("exitButton")
+        self.progress_bar.setTextVisible(True)
+        stats_layout.addWidget(self.progress_bar)
+        
+        stats_layout.addStretch()
+        
+        # Boton salir
+        exit_btn = QPushButton("SALIR")
+        exit_btn.setObjectName("exit")
         exit_btn.clicked.connect(self._exit_song)
-        info_panel.addWidget(exit_btn)
-
-        content_layout.addLayout(info_panel, 2)
-
-        main_layout.addLayout(content_layout)
-
-        # ========== PIE DE PÁGINA ==========
-        footer_label = QLabel("Presiona ESC o Q para salir | Toca las teclas cuando las notas lleguen al teclado")
-        footer_label.setObjectName("info")
-        footer_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        main_layout.addWidget(footer_label)
+        stats_layout.addWidget(exit_btn)
+        
+        content.addWidget(stats_frame)
+        main_layout.addLayout(content)
+        
+        # Footer
+        footer = QLabel("ESC para salir | Toca las teclas cuando las notas lleguen a la linea")
+        footer.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        footer.setStyleSheet("color: #484f58; font-size: 12px;")
+        main_layout.addWidget(footer)
     
     def _start_game(self):
-        """Inicia el juego"""
-        # Inicializar canción con teclado virtual y número de teclas
         self.song.start(
             virtual_keyboard=self.virtual_keyboard,
             num_keys=self.keyboard_total_keys
         )
         self.timer.timeout.connect(self._update_frame)
-        self.timer.start(30)  # ~33 FPS
+        self.timer.start(30)
     
     def _update_frame(self):
-        """Actualiza el frame de las cámaras y ejecuta la canción"""
-        if not self.continue_song or not self.song.running:
+        if not self.continue_song:
+            return
+        
+        # Verificar si termino el juego
+        if self.song.rhythm_game and self.song.rhythm_game.is_game_finished():
+            if not self.game_ended:
+                self.game_ended = True
+                self._show_results()
+            return
+        
+        if not self.song.running:
             self.close()
             return
         
-        # Obtener frames de las cámaras
-        finished_left, frame_left = self.camera_left.next(black=True, wait=1)
-        finished_right, frame_right = self.camera_right.next(black=True, wait=1)
+        # Obtener frames
+        _, frame_left = self.camera_left.next(black=True, wait=1)
+        _, frame_right = self.camera_right.next(black=True, wait=1)
         
         if frame_left is None or frame_right is None:
             return
         
-        # Importar configuración estéreo (compartida)
+        # Transformaciones
         from src.vision.stereo_config import StereoConfig
-
-        # Lógica de visualización unificada con los otros modos
-        # Aplicamos la misma transformación a AMBOS frames
         if getattr(StereoConfig, 'ROTATE_CAMERAS_180', False):
             frame_left = cv2.flip(frame_left, -1)
             frame_right = cv2.flip(frame_right, -1)
         elif getattr(StereoConfig, 'MIRROR_HORIZONTAL', False):
             frame_left = cv2.flip(frame_left, 1)
             frame_right = cv2.flip(frame_right, 1)
-
-        # Procesar teclado virtual con el procesador centralizado
-        # Ahora usa game_mode=True y pasa rhythm_game para dibujar notas
+        
+        # Procesar teclado
         if self.keyboard_processor and self.hand_detector_left and self.hand_detector_right:
             try:
                 frame_left, frame_right = self.keyboard_processor.process_and_play(
@@ -284,15 +421,13 @@ class SongWindow(QMainWindow):
                     virtual_keyboard=self.virtual_keyboard,
                     hand_detector_left=self.hand_detector_left,
                     hand_detector_right=self.hand_detector_right,
-                    game_mode=True,  # Modo juego de ritmo activado
+                    game_mode=True,
                     rhythm_game=self.song.rhythm_game if self.song.rhythm_game else None
                 )
             except Exception as e:
                 print(f"Error procesando teclado: {e}")
-                import traceback
-                traceback.print_exc()
         
-        # Ejecutar lógica de la canción (actualiza estado, NO dibuja)
+        # Ejecutar cancion
         try:
             frame_left, frame_right, continue_running = self.song.run(
                 frame_left, frame_right, self.virtual_keyboard, self.synth
@@ -300,90 +435,82 @@ class SongWindow(QMainWindow):
             
             if not continue_running:
                 self.continue_song = False
-                print("✓ Canción terminada")
             
-            # Actualizar UI usando get_song_state() (similar a get_lesson_state())
-            song_state = self.song.get_song_state()
-            stats = song_state.get('stats', {})
+            # Actualizar UI
+            state = self.song.get_song_state()
+            stats = state.get('stats', {})
             
-            # Actualizar score
-            self.score_label.setText(f"Score: {song_state['score']:,}")
-            
-            # Actualizar combo
-            self.combo_label.setText(f"Combo: {song_state['combo']}x")
-            
-            # Actualizar estadísticas detalladas
+            self.score_label.setText(f"{state['score']:,}")
+            self.combo_label.setText(f"{state['combo']}x")
             self.perfect_label.setText(f"PERFECT: {stats.get('perfect', 0)}")
             self.good_label.setText(f"GOOD: {stats.get('good', 0)}")
             self.miss_label.setText(f"MISS: {stats.get('miss', 0)}")
             
-            # Actualizar precisión con color según rendimiento
             accuracy = stats.get('accuracy', 0)
             if accuracy >= 90:
-                acc_color = "#00ff00"  # Verde
+                acc_color = "#00ff88"
             elif accuracy >= 70:
-                acc_color = "#ffff00"  # Amarillo
+                acc_color = "#ffaa00"
             else:
-                acc_color = "#ff0000"  # Rojo
+                acc_color = "#ff5555"
             
-            self.accuracy_label.setText(f"Precisión: {accuracy:.1f}%")
-            self.accuracy_label.setStyleSheet(f"color: {acc_color};")
+            self.accuracy_label.setText(f"Precision: {accuracy:.1f}%")
+            self.accuracy_label.setStyleSheet(f"font-size: 16px; font-weight: bold; color: {acc_color};")
             
-            # Actualizar progreso
-            self.progress_bar.setValue(song_state['progress'])
+            self.progress_bar.setValue(state['progress'])
             
         except Exception as e:
-            print(f"Error ejecutando canción: {e}")
-            import traceback
-            traceback.print_exc()
+            print(f"Error ejecutando cancion: {e}")
         
-        # Mostrar solo la cámara izquierda (principal) para evitar parpadeos y confusión
-        # No concatenamos frames.
-        
-        # Convertir a QPixmap y mostrar
         self._display_frame(frame_left)
     
     def _display_frame(self, frame):
-        """Convierte frame OpenCV a QPixmap y lo muestra"""
         try:
-            # Convertir BGR a RGB
-            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            h, w, ch = rgb_frame.shape
-            bytes_per_line = ch * w
+            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            rgb = np.ascontiguousarray(rgb)
+            h, w, ch = rgb.shape
             
-            # Crear QImage
-            q_img = QImage(rgb_frame.data, w, h, bytes_per_line, QImage.Format.Format_RGB888)
-            
-            # Escalar manteniendo aspect ratio
+            q_img = QImage(rgb.data, w, h, ch * w, QImage.Format.Format_RGB888).copy()
             pixmap = QPixmap.fromImage(q_img)
-            scaled_pixmap = pixmap.scaled(
+            
+            scaled = pixmap.scaled(
                 self.camera_label.size(),
                 Qt.AspectRatioMode.KeepAspectRatio,
-                Qt.TransformationMode.SmoothTransformation
+                Qt.TransformationMode.FastTransformation
             )
-            
-            self.camera_label.setPixmap(scaled_pixmap)
-            
+            self.camera_label.setPixmap(scaled)
         except Exception as e:
             print(f"Error mostrando frame: {e}")
     
-    def _exit_song(self):
-        """Maneja el botón de salir"""
+    def _show_results(self):
+        """Muestra el dialogo de resultados"""
+        self.timer.stop()
+        
+        # Obtener estadisticas finales
+        if self.song.rhythm_game:
+            stats = self.song.rhythm_game.get_final_score()
+        else:
+            stats = {}
+        
+        # Mostrar dialogo
+        dialog = ResultsDialog(stats, self.song.name, self)
+        dialog.exec()
+        
+        self.result_action = dialog.result_action
         self.continue_song = False
+        self.close()
+    
+    def _exit_song(self):
+        self.continue_song = False
+        self.result_action = 'menu'
         self.song.stop()
         self.close()
     
     def keyPressEvent(self, event):
-        """Maneja eventos de teclado"""
-        key = event.key()
-        
-        # ESC o Q para salir
-        if key in (Qt.Key.Key_Escape, Qt.Key.Key_Q):
+        if event.key() in (Qt.Key.Key_Escape, Qt.Key.Key_Q):
             self._exit_song()
-            return
     
     def closeEvent(self, event):
-        """Maneja el cierre de la ventana"""
         self.timer.stop()
         self.continue_song = False
         if self.song:
@@ -396,10 +523,10 @@ def show_song_window(song, camera_left, camera_right, synth,
                      keyboard_mapper=None, angler=None, depth_estimator=None, 
                      octave_base=60, keyboard_total_keys=24, camera_separation=9.07):
     """
-    Muestra la ventana de juego de canción y bloquea hasta que termine
+    Muestra la ventana de juego de cancion
     
     Returns:
-        bool: True si completó, False si salió
+        str: 'retry', 'songs', o 'menu'
     """
     app = QApplication.instance()
     owns_app = False
@@ -413,14 +540,10 @@ def show_song_window(song, camera_left, camera_right, synth,
                        keyboard_total_keys, camera_separation)
     window.show()
     
-    # Ejecutar hasta que se cierre la ventana
     if owns_app:
         app.exec()
     else:
-        # Si ya existe QApplication, usar un loop local
         while window.isVisible():
             app.processEvents()
     
-    result = window.continue_song
-    
-    return result
+    return window.result_action

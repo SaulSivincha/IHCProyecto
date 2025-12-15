@@ -188,12 +188,17 @@ class Frame_Angles:
     # Tertiary Functions
 
     def frame_add_crosshairs(self,frame):
-
-        # add crosshairs to frame to aid in aligning
-
+        """Agrega líneas de referencia al frame (si está habilitado en config)"""
+        # Verificar si está habilitado
+        try:
+            from .stereo_config import StereoConfig
+            if not StereoConfig.SHOW_CROSSHAIRS:
+                return
+        except:
+            pass
+        
         cv2.line(frame,(0,self.y_origin),(self.pixel_width,self.y_origin),(0,255,0),1)
         cv2.line(frame,(self.x_origin,0),(self.x_origin,self.pixel_height),(0,255,0),1)
-
         cv2.circle(frame,(self.x_origin,self.y_origin),int(round(self.y_origin/8,0)),(0,255,0),1)
 
     def frame_add_degrees(self,frame):

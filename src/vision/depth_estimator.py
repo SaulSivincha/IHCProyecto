@@ -155,7 +155,10 @@ class DepthEstimator:
             depth_corr = data['depth_correction']
             
             # Factor de corrección (opcional, default 1.0)
-            self.DEPTH_CORRECTION_FACTOR = depth_corr.get('factor', 1.0)
+            # Buscar 'correction_factor' primero, luego 'factor' para compatibilidad
+            self.DEPTH_CORRECTION_FACTOR = depth_corr.get('correction_factor', depth_corr.get('factor', 1.0))
+            if self.DEPTH_CORRECTION_FACTOR != 1.0:
+                print(f"  Factor de correccion: {self.DEPTH_CORRECTION_FACTOR:.4f}")
             
             # Distancia del teclado (IMPORTANTE - calculada en Fase 3)
             if 'keyboard_distance_cm' in depth_corr:
@@ -484,9 +487,17 @@ class DepthEstimator:
         else:
             mapx, mapy = self.mapx_right, self.mapy_right
         
+        # Validar límites del mapa
+        h, w = mapx.shape[:2]
+        ix, iy = int(x), int(y)
+        
+        # Clamp a límites válidos
+        ix = max(0, min(ix, w - 1))
+        iy = max(0, min(iy, h - 1))
+        
         # Obtener coordenadas rectificadas usando mapas
-        x_rect = mapx[int(y), int(x)]
-        y_rect = mapy[int(y), int(x)]
+        x_rect = mapx[iy, ix]
+        y_rect = mapy[iy, ix]
         
         return (x_rect, y_rect)
     

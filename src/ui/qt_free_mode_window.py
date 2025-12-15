@@ -144,8 +144,24 @@ class FreeModeWindow(QMainWindow):
         self.history_list.setFocusPolicy(Qt.FocusPolicy.NoFocus) # Para no robar foco del teclado
         info_layout.addWidget(self.history_list)
         
-        # 5. Botón Salir
+        # 5. Botón Algoritmos
         info_layout.addStretch()
+        btn_algo = QPushButton("ALGORITMOS")
+        btn_algo.setStyleSheet("""
+            QPushButton {
+                background-color: #FF9800; 
+                color: #000; 
+                font-weight: bold;
+                border-radius: 4px; 
+                padding: 10px;
+                font-size: 14px;
+            }
+            QPushButton:hover { background-color: #FFB74D; }
+        """)
+        btn_algo.clicked.connect(self._open_algorithm_config)
+        info_layout.addWidget(btn_algo)
+        
+        # 6. Botón Salir
         btn_exit = QPushButton("VOLVER AL MENÚ")
         btn_exit.setObjectName("ExitBtn")
         btn_exit.clicked.connect(self.close)
@@ -240,6 +256,27 @@ class FreeModeWindow(QMainWindow):
                                         # Profundidad relativa al teclado calibrado
                                         depth_relative = keyboard_distance - depth_absolute
                                         finger_depths_dict[(fl[0], fl[1])] = depth_relative
+                                        
+                                        # Filtrar valores absurdos de profundidad
+                                        if depth_relative < -100 or depth_relative > 100:
+                                            continue  # Saltar, valor no confiable
+                                        
+                                        # DEBUG: Mostrar info de profundidad
+                                        if not hasattr(self, '_debug_counter'):
+                                            self._debug_counter = 0
+                                            # Mostrar configuración al inicio
+                                            print(f"\n=== CONFIGURACIÓN DE DETECCIÓN ===")
+                                            print(f"Distancia calibrada (keyboard_distance): {keyboard_distance:.1f}cm")
+                                            print(f"Umbral de activación: >= 10.0cm (Relativo positivo alto)")
+                                            print(f"NOTA: Activa cuando Relativo >= 10cm (dedo cerca de cámaras)")
+                                            print(f"==================================\n")
+                                        self._debug_counter += 1
+                                        if self._debug_counter % 30 == 0:  # Cada 30 frames
+                                            # Lógica adaptada: activa cuando depth_relative >= 10
+                                            # (dedo cerca de cámaras = tocando teclado físico)
+                                            activation_threshold = 10.0
+                                            activate = "SI" if depth_relative >= activation_threshold else "NO"
+                                            print(f"[DEBUG] Dedo {fl[0]},{fl[1]}: Z={depth_absolute:.1f}cm, Relativo={depth_relative:.1f}cm, Activar={activate}")
 
                                 # Fallback a lógica antigua si no hay DepthEstimator
                                 elif self.angler and keyboard_distance:
@@ -294,15 +331,26 @@ class FreeModeWindow(QMainWindow):
         self._display_frame(frame_left)
 
     def _display_frame(self, frame):
-        """Convierte y muestra el frame de OpenCV en PyQt"""
+        """Convierte y muestra el frame de OpenCV en PyQt - Optimizado para evitar parpadeo"""
+        # Convertir BGR a RGB
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        
+        # Hacer copia contigua para evitar problemas de memoria
+        rgb_frame = np.ascontiguousarray(rgb_frame)
+        
         h, w, ch = rgb_frame.shape
         bytes_per_line = ch * w
-        q_img = QImage(rgb_frame.data, w, h, bytes_per_line, QImage.Format.Format_RGB888)
+        
+        # Crear QImage con copia de datos (evita parpadeo)
+        q_img = QImage(rgb_frame.data, w, h, bytes_per_line, QImage.Format.Format_RGB888).copy()
         pixmap = QPixmap.fromImage(q_img)
         
-        # Escalar manteniendo relación de aspecto
-        scaled = pixmap.scaled(self.camera_label.size(), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+        # Escalar con transformación rápida para mejor rendimiento
+        scaled = pixmap.scaled(
+            self.camera_label.size(), 
+            Qt.AspectRatioMode.KeepAspectRatio, 
+            Qt.TransformationMode.FastTransformation
+        )
         self.camera_label.setPixmap(scaled)
 
     def _on_note_played(self, key_index, midi_note):
@@ -371,6 +419,33 @@ class FreeModeWindow(QMainWindow):
             self.chord_display.setText(detected_chord)
         else:
             self.chord_display.setText("...")
+
+    def _open_algorithm_config(self):
+        """Abre el panel de configuración de algoritmos"""
+        # Pausar el timer mientras se configura
+        was_running = self.timer.isActive()
+        if was_running:
+            self.timer.stop()
+        
+        try:
+            from src.ui.qt_advanced_config import show_advanced_config
+            from src.vision.algorithms import sync_algorithms_from_config
+            
+            def on_config_change(new_config):
+                sync_algorithms_from_config()
+                # Reinicializar algoritmos en el keyboard_mapper
+                if self.keyboard_mapper:
+                    self.keyboard_mapper._initialize_algorithms()
+                print("✓ Algoritmos actualizados")
+            
+            show_advanced_config(on_config_change=on_config_change)
+            
+        except Exception as e:
+            print(f"Error abriendo configuración: {e}")
+        
+        # Reanudar el timer
+        if was_running:
+            self.timer.start(30)
 
     def closeEvent(self, event):
         self.is_running = False

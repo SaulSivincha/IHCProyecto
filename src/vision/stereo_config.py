@@ -16,8 +16,8 @@ class StereoConfig:
     """Clase de configuración para el sistema estéreo"""
     
     # ==================== CÁMARAS ====================
-    LEFT_CAMERA_SOURCE = 2          # ID de cámara izquierda
-    RIGHT_CAMERA_SOURCE = 1         # ID de cámara derecha
+    LEFT_CAMERA_SOURCE = 1          # ID de cámara izquierda
+    RIGHT_CAMERA_SOURCE =  2         # ID de cámara derecha
     PIXEL_WIDTH = 640               # Ancho en píxeles
     PIXEL_HEIGHT = 480              # Alto en píxeles
     FRAME_RATE = 30                 # FPS objetivo
@@ -50,7 +50,7 @@ class StereoConfig:
     VKB_CENTER_DISTANCE = 71        # Distancia del teclado virtual (cm)
     
     # ==================== DETECCIÓN DE PROFUNDIDAD ====================
-    DEPTH_THRESHOLD = 2.5           # Umbral de profundidad para presión (cm)
+    DEPTH_THRESHOLD = 1.0           # Umbral de profundidad para presión (cm) - reducido
                                      # Rango recomendado: 2.0-5.0 cm
     DEPTH_CORRECTION_FACTOR = 1.0   # Factor de corrección de profundidad (calculado en Fase 3)
     
@@ -118,6 +118,7 @@ class StereoConfig:
     
     # ==================== UI ====================
     INSTRUCTIONS_TIMEOUT = 300      # Frames antes de ocultar instrucciones (10s a 30fps)
+    SHOW_CROSSHAIRS = False         # Mostrar líneas de referencia (desactivado por defecto)
     CROSSHAIR_RADIUS = 24           # Radio de las cruces de referencia
     CROSSHAIR_LINE_WIDTH = 2        # Grosor de líneas de cruces
     CROSSHAIR_CIRCLE_WIDTH = 1      # Grosor de círculo de cruces

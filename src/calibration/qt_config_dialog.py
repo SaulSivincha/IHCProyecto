@@ -212,7 +212,7 @@ class CalibrationConfigDialog(QDialog):
         """Actualiza el valor interno cuando cambia el spinbox"""
         print(f"[DEBUG] Tamaño de cuadro cambiado a: {value}")
         self.size_mm = value
-    
+        
     def accept_values(self):
         """Guarda los valores y acepta el diálogo"""
         print(f"[DEBUG] accept_values() llamado")

@@ -51,6 +51,17 @@ class CameraCalibrator:
         self.distortion_coeffs = None
         self.reprojection_error = None
         self.is_calibrated = False
+    
+    def reset(self):
+        """Resetea los datos de calibración para reintentar"""
+        self.obj_points = []
+        self.img_points = []
+        self.images_captured = []
+        self.camera_matrix = None
+        self.distortion_coeffs = None
+        self.reprojection_error = None
+        self.is_calibrated = False
+        print(f"🔄 Calibrador {self.camera_name} reseteado")
         
     def detect_chessboard(self, frame):
         """

@@ -23,6 +23,7 @@ class CalibrationWindow(QMainWindow):
     capture_requested = pyqtSignal()  # Usuario presionó capturar
     cancel_requested = pyqtSignal()   # Usuario presionó cancelar
     continue_requested = pyqtSignal() # Usuario presionó continuar
+    retry_requested = pyqtSignal()    # Usuario presionó reintentar
     
     def __init__(self, width=1280, height=720):
         super().__init__()
@@ -177,6 +178,24 @@ class CalibrationWindow(QMainWindow):
         self.continue_button.setVisible(False)
         button_layout.addWidget(self.continue_button)
         
+        self.retry_button = QPushButton("REINTENTAR [R]")
+        self.retry_button.setStyleSheet("""
+            QPushButton {
+                background-color: #FFA500;
+                color: #000000;
+                font-size: 16px;
+                font-weight: bold;
+                padding: 10px;
+                border-radius: 5px;
+            }
+            QPushButton:hover {
+                background-color: #DD9000;
+            }
+        """)
+        self.retry_button.clicked.connect(self._on_retry_clicked)
+        self.retry_button.setVisible(False)
+        button_layout.addWidget(self.retry_button)
+        
         self.cancel_button = QPushButton("CANCELAR [ESC]")
         self.cancel_button.setStyleSheet("""
             QPushButton {
@@ -208,6 +227,8 @@ class CalibrationWindow(QMainWindow):
             self._on_capture_clicked()
         elif key == Qt.Key.Key_Return and self.continue_button.isVisible():
             self._on_continue_clicked()
+        elif (key == Qt.Key.Key_R) and self.retry_button.isVisible():
+            self._on_retry_clicked()
         elif key == Qt.Key.Key_Escape:
             self._on_cancel_clicked()
     
@@ -222,6 +243,10 @@ class CalibrationWindow(QMainWindow):
     def _on_cancel_clicked(self):
         """Emite señal de cancelar"""
         self.cancel_requested.emit()
+    
+    def _on_retry_clicked(self):
+        """Emite señal de reintentar"""
+        self.retry_requested.emit()
     
     def set_phase(self, phase_name, title=None):
         """
@@ -324,6 +349,10 @@ class CalibrationWindow(QMainWindow):
         """Muestra/oculta el botón de continuar"""
         self.continue_button.setVisible(show)
         self.capture_button.setVisible(not show)
+    
+    def show_retry_button(self, show=True):
+        """Muestra/oculta el botón de reintentar"""
+        self.retry_button.setVisible(show)
     
     def show_intro_screen(self, phase_title, instructions):
         """

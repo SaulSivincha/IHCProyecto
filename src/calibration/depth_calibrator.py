@@ -61,9 +61,26 @@ class DepthCalibrator:
         self.keyboard_distance = None
         self.keyboard_distance_samples = []  # Para promediar múltiples muestras
         
+        # Distancia real ingresada por el usuario (para corrección)
+        self.real_distance_cm = None
+        
         # Buffer para filtro de suavizado (media móvil)
         self.depth_buffer = []
         self.smoothed_depth = None
+    
+    def set_real_distance(self, distance_cm: float):
+        """
+        Establece la distancia real medida manualmente por el usuario.
+        
+        Args:
+            distance_cm: Distancia real en centímetros
+        """
+        self.real_distance_cm = distance_cm
+        print(f"")
+        print(f"========================================")
+        print(f"[Fase 3] DISTANCIA REAL: {distance_cm} cm")
+        print(f"========================================")
+        print(f"")
         
     def calculate_depth(self, landmarks_left, landmarks_right):
         """
@@ -220,24 +237,58 @@ class DepthCalibrator:
     
     def calculate_keyboard_distance(self):
         """
-        Calcula la distancia del teclado promediando las muestras
+        Calcula la distancia del teclado promediando las muestras.
+        Si hay una distancia real establecida, calcula el factor de corrección.
         
         Returns:
-            float: Distancia promedio del teclado en cm, o None si no hay muestras
+            float: Distancia final del teclado en cm, o None si no hay muestras
         """
         if not self.keyboard_distance_samples:
             return None
         
-        # Usar mediana para ser robusto a outliers
-        self.keyboard_distance = float(np.median(self.keyboard_distance_samples))
-        print(f"✓ Distancia del teclado calculada: {self.keyboard_distance:.2f} cm")
+        # Distancia medida por el sistema (mediana para robustez)
+        measured_distance = float(np.median(self.keyboard_distance_samples))
+        print(f"  Distancia medida por el sistema: {measured_distance:.2f} cm")
+        
+        # Si hay distancia real, calcular factor de corrección
+        if self.real_distance_cm is not None and self.real_distance_cm > 0:
+            # Factor = real / medido
+            self.correction_factor = self.real_distance_cm / measured_distance
+            
+            # La distancia final es la real (la que el usuario midió)
+            self.keyboard_distance = self.real_distance_cm
+            
+            # Calcular el error
+            error_cm = abs(measured_distance - self.real_distance_cm)
+            error_percent = (error_cm / self.real_distance_cm) * 100
+            
+            print(f"  Distancia real (usuario): {self.real_distance_cm:.2f} cm")
+            print(f"  Factor de correccion: {self.correction_factor:.4f}")
+            print(f"  Error de medicion: {error_cm:.2f} cm ({error_percent:.1f}%)")
+            print(f"  Distancia del teclado (corregida): {self.keyboard_distance:.2f} cm")
+        else:
+            # Sin distancia real, usar la medida directamente
+            self.keyboard_distance = measured_distance
+            self.correction_factor = 1.0
+            print(f"  Distancia del teclado: {self.keyboard_distance:.2f} cm (sin correccion)")
+        
         return self.keyboard_distance
     
     def save_keyboard_distance_only(self):
-        """Guarda solo la distancia del teclado (sin factor de corrección)"""
+        """Guarda la distancia del teclado y el factor de corrección"""
         if self.keyboard_distance is None:
-            print("⚠ No hay distancia de teclado calculada")
+            print("No hay distancia de teclado calculada")
             return False
+        
+        # DEBUG: Mostrar valores antes de guardar
+        print(f"")
+        print(f"======== GUARDANDO CALIBRACION ========")
+        print(f"  keyboard_distance: {self.keyboard_distance}")
+        print(f"  correction_factor: {self.correction_factor}")
+        print(f"  real_distance_cm: {self.real_distance_cm}")
+        print(f"  samples: {self.keyboard_distance_samples}")
+        print(f"========================================")
+        print(f"")
             
         try:
             calib_file = CalibrationConfig.CALIBRATION_FILE
@@ -252,14 +303,28 @@ class DepthCalibrator:
             
             calib_data['depth_correction']['keyboard_distance_cm'] = self.keyboard_distance
             calib_data['depth_correction']['keyboard_samples'] = len(self.keyboard_distance_samples)
+            calib_data['depth_correction']['correction_factor'] = self.correction_factor
+            
+            # Si hay distancia real, guardarla también
+            if self.real_distance_cm is not None:
+                calib_data['depth_correction']['real_distance_cm'] = self.real_distance_cm
+                calib_data['depth_correction']['measured_distance_cm'] = float(np.median(self.keyboard_distance_samples))
+                
+                # Calcular y guardar error
+                measured = float(np.median(self.keyboard_distance_samples))
+                error_cm = abs(measured - self.real_distance_cm)
+                error_percent = (error_cm / self.real_distance_cm) * 100
+                calib_data['depth_correction']['error_cm'] = error_cm
+                calib_data['depth_correction']['error_percent'] = error_percent
             
             # Guardar
             with open(calib_file, 'w') as f:
                 json.dump(calib_data, f, indent=4)
             
-            print(f"✓ Distancia del teclado guardada: {self.keyboard_distance:.2f} cm")
+            print(f"Distancia del teclado guardada: {self.keyboard_distance:.2f} cm")
+            print(f"Factor de correccion guardado: {self.correction_factor:.4f}")
             return True
             
         except Exception as e:
-            print(f"⚠ Error al guardar distancia del teclado: {e}")
+            print(f"Error al guardar distancia del teclado: {e}")
             return False

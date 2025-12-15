@@ -21,6 +21,13 @@ from .depth_calibrator import DepthCalibrator
 from .qt_calibration_window import CalibrationWindow
 from .qt_config_dialog import CalibrationConfigDialog
 
+# Importar recursos persistentes para reutilizar cámaras
+try:
+    from src.core.persistent_resources import get_resources
+    PERSISTENT_RESOURCES_AVAILABLE = True
+except ImportError:
+    PERSISTENT_RESOURCES_AVAILABLE = False
+
 # Importaciones de visión (ajustar rutas según estructura)
 try:
     from ..vision.hand_detector import HandDetector
@@ -70,6 +77,7 @@ class QtCalibrationManager(QObject):
         # Cámaras
         self.cap_left = None
         self.cap_right = None
+        self._using_persistent_cameras = False  # Flag para no cerrar cámaras persistentes
         
         # Estado
         self.current_phase = "intro"
@@ -91,9 +99,53 @@ class QtCalibrationManager(QObject):
         self.window.capture_requested.connect(self._on_capture)
         self.window.cancel_requested.connect(self._on_cancel)
         self.window.continue_requested.connect(self._on_continue)
+        self.window.retry_requested.connect(self._on_retry)
         
         # Asegurar directorios
         CalibrationConfig.ensure_directories()
+    
+    def _get_or_create_camera(self, camera_name):
+        """
+        Obtiene una cámara, intentando reusar las persistentes primero.
+        
+        Args:
+            camera_name: 'left' o 'right'
+            
+        Returns:
+            cv2.VideoCapture o similar
+        """
+        # Intentar usar cámaras persistentes
+        if PERSISTENT_RESOURCES_AVAILABLE:
+            try:
+                resources = get_resources()
+                if resources.is_ready():
+                    cam_left, cam_right = resources.get_cameras()
+                    if camera_name == "left" and cam_left and cam_left.is_available():
+                        print(f"  ✓ Reutilizando cámara {camera_name} persistente")
+                        self._using_persistent_cameras = True
+                        # Retornar el recurso de OpenCV directamente
+                        return cam_left.resource
+                    elif camera_name == "right" and cam_right and cam_right.is_available():
+                        print(f"  ✓ Reutilizando cámara {camera_name} persistente")
+                        self._using_persistent_cameras = True
+                        return cam_right.resource
+            except Exception as e:
+                print(f"  ⚠ No se pudieron usar cámaras persistentes: {e}")
+        
+        # Fallback: crear nueva cámara
+        print(f"  📷 Abriendo cámara {camera_name} nueva...")
+        camera_id = self.cam_left_id if camera_name == "left" else self.cam_right_id
+        cap = cv2.VideoCapture(camera_id)
+        
+        if cap.isOpened():
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.resolution[0])
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.resolution[1])
+            cap.set(cv2.CAP_PROP_AUTOFOCUS, 0)
+            # Warmup rápido
+            for _ in range(3):
+                cap.read()
+        
+        return cap
     
     def run_calibration(self, start_phase=None):
         """
@@ -116,8 +168,8 @@ class QtCalibrationManager(QObject):
                 has_left = 'left_camera' in prev_data and 'camera_matrix' in prev_data['left_camera']
                 has_right = 'right_camera' in prev_data and 'camera_matrix' in prev_data['right_camera']
                 has_phase1 = has_left and has_right
-                # Verifica que existan datos de Fase 2
-                has_phase2 = 'stereo_config' in prev_data and prev_data['stereo_config'] is not None
+                # Verifica que existan datos de Fase 2 (el campo es 'stereo', no 'stereo_config')
+                has_phase2 = 'stereo' in prev_data and prev_data['stereo'] is not None
             except Exception as e:
                 print(f"[DEBUG] Error leyendo calibración previa: {e}")
         print(f"[DEBUG] Archivo existe: {file_exists}, has_phase1: {has_phase1}, has_phase2: {has_phase2}")
@@ -170,7 +222,8 @@ class QtCalibrationManager(QObject):
                     print(f"[DEBUG] No se pudo leer calibración previa: {e}")
 
             # Si el usuario cambió filas, columnas o tamaño de casilla, forzar recalibración completa
-            if prev_config:
+            # SOLO verificar si se selecciona Fase 1 (recalibración desde cero)
+            if prev_config and selected_phase == 1:
                 prev_rows = prev_config.get('rows')
                 prev_cols = prev_config.get('cols')
                 prev_size = prev_config.get('square_size_mm')
@@ -198,6 +251,12 @@ class QtCalibrationManager(QObject):
                     # Resetear flags
                     has_phase1 = False
                     has_phase2 = False
+            elif selected_phase in [2, 3] and prev_config:
+                # Para fase 2 o 3, usar la configuración guardada (no verificar cambios)
+                self.board_rows = prev_config.get('rows', new_rows)
+                self.board_cols = prev_config.get('cols', new_cols)
+                self.square_size_mm = prev_config.get('square_size_mm', new_size_mm)
+                print(f"[DEBUG] Usando configuración guardada: {self.board_cols}x{self.board_rows}, {self.square_size_mm}mm")
 
             self.board_rows = new_rows
             self.board_cols = new_cols
@@ -237,6 +296,20 @@ class QtCalibrationManager(QObject):
                 self._start_intro()
         elif selected_phase == 2:
             print("\n✓ Iniciando directamente en Fase 2...")
+            
+            # Primero, limpiar solo la parte estéreo del archivo (mantener Fase 1)
+            if CalibrationConfig.CALIBRATION_FILE.exists():
+                try:
+                    with open(CalibrationConfig.CALIBRATION_FILE, 'r') as f:
+                        calib_data = json.load(f)
+                    # Solo borrar la sección stereo, mantener Fase 1
+                    calib_data['stereo'] = None
+                    with open(CalibrationConfig.CALIBRATION_FILE, 'w') as f:
+                        json.dump(calib_data, f, indent=4)
+                    print("[DEBUG] Sección estéreo limpiada, Fase 1 mantenida")
+                except Exception as e:
+                    print(f"[DEBUG] Error limpiando stereo: {e}")
+            
             phase1_ok = self._load_phase1_calibration()
             if phase1_ok:
                 # Verificar que los calibradores están correctamente inicializados
@@ -284,6 +357,9 @@ class QtCalibrationManager(QObject):
     
     def _on_continue(self):
         """Maneja el botón de continuar"""
+        # Ocultar botón de reintentar al continuar
+        self.window.show_retry_button(False)
+        
         if self.current_phase == "intro":
             self._start_camera_calibration("left")
         elif self.current_phase == "left_complete":
@@ -298,6 +374,72 @@ class QtCalibrationManager(QObject):
             self._start_depth_capture()
         elif self.current_phase == "phase3_complete":
             self._finish_calibration(True)
+    
+    def _on_retry(self):
+        """
+        Maneja el botón de reintentar.
+        Reinicia la fase actual manteniendo los parámetros de configuración.
+        """
+        print(f"🔄 Reintentando fase: {self.current_phase}")
+        
+        # Detener timer si está activo
+        if self.timer.isActive():
+            self.timer.stop()
+        
+        # Ocultar botón de reintentar mientras se procesa
+        self.window.show_retry_button(False)
+        
+        # Determinar qué fase reiniciar basándose en el estado actual
+        if self.current_phase in ["capture_left", "left_complete"]:
+            # Reiniciar calibración de cámara izquierda
+            print("  → Reiniciando calibración cámara IZQUIERDA")
+            self._reset_camera_calibration("left")
+            self._start_camera_calibration("left")
+            
+        elif self.current_phase in ["capture_right", "right_complete"]:
+            # Reiniciar calibración de cámara derecha
+            print("  → Reiniciando calibración cámara DERECHA")
+            self._reset_camera_calibration("right")
+            self._start_camera_calibration("right")
+            
+        elif self.current_phase in ["stereo_capture", "stereo_intro", "phase2_complete"]:
+            # Reiniciar calibración estéreo
+            print("  → Reiniciando calibración ESTÉREO")
+            self._reset_stereo_calibration()
+            self._start_phase2()
+            
+        elif self.current_phase in ["depth_capture", "depth_intro", "phase3_complete"]:
+            # Reiniciar calibración de profundidad
+            print("  → Reiniciando calibración de PROFUNDIDAD")
+            self._reset_depth_calibration()
+            self._start_phase3()
+    
+    def _reset_camera_calibration(self, camera_name):
+        """Resetea los datos de calibración de una cámara"""
+        if camera_name == "left":
+            if self.calibrator_left:
+                self.calibrator_left.reset()
+        elif camera_name == "right":
+            if self.calibrator_right:
+                self.calibrator_right.reset()
+        
+        self.photo_count = 0
+        self.detection_frames = 0
+    
+    def _reset_stereo_calibration(self):
+        """Resetea los datos de calibración estéreo"""
+        if self.stereo_calibrator:
+            self.stereo_calibrator = None
+        self.pair_count = 0
+        self.detection_frames = 0
+    
+    def _reset_depth_calibration(self):
+        """Resetea los datos de calibración de profundidad"""
+        if self.depth_calibrator:
+            self.depth_calibrator = None
+        if hasattr(self, 'keyboard_samples_collected'):
+            self.keyboard_samples_collected = 0
+        self.detection_frames = 0
     
     def _start_camera_calibration(self, camera_name):
         """
@@ -335,21 +477,18 @@ class QtCalibrationManager(QObject):
         self.window.set_status(f"Iniciando cámara {display_name}...", "#FFA500")
         QApplication.processEvents()
         
-        # Abrir cámara
-        cap = cv2.VideoCapture(camera_id)
-        if not cap.isOpened():
+        # Obtener cámara (reutiliza persistente si está disponible)
+        cap = self._get_or_create_camera(camera_name)
+        if cap is None or not cap.isOpened():
             print(f"✗ No se pudo abrir la cámara {camera_id}")
             self._finish_calibration(False)
             return
         
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.resolution[0])
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.resolution[1])
-        cap.set(cv2.CAP_PROP_AUTOFOCUS, 0)
-        
-        # Warmup: Leer algunos frames para estabilizar
-        for _ in range(5):
-            cap.read()
-            QApplication.processEvents()
+        # Warmup mínimo si es cámara nueva
+        if not self._using_persistent_cameras:
+            for _ in range(3):
+                cap.read()
+                QApplication.processEvents()
         
         if camera_name == "left":
             self.cap_left = cap
@@ -365,6 +504,10 @@ class QtCalibrationManager(QObject):
         cat_title, specific_instr, objective = CalibrationConfig.get_instruction_for_photo(0)
         self.window.show_capture_instructions(
             cat_title, specific_instr, objective, 0, self.total_photos
+        )
+        
+        # Mostrar botón de reintentar
+        self.window.show_retry_button(True
         )
         
         # Iniciar actualización de frames
@@ -460,12 +603,17 @@ class QtCalibrationManager(QObject):
         """Procesa la calibración de la cámara actual"""
         self.timer.stop()
         
-        # Cerrar cámara
-        if self.current_camera == "left" and self.cap_left:
-            self.cap_left.release()
+        # Cerrar cámara solo si NO es persistente
+        if not self._using_persistent_cameras:
+            if self.current_camera == "left" and self.cap_left:
+                self.cap_left.release()
+            elif self.current_camera == "right" and self.cap_right:
+                self.cap_right.release()
+        
+        # Limpiar referencias
+        if self.current_camera == "left":
             self.cap_left = None
-        elif self.current_camera == "right" and self.cap_right:
-            self.cap_right.release()
+        else:
             self.cap_right = None
         
         # Ejecutar calibración
@@ -493,6 +641,7 @@ class QtCalibrationManager(QObject):
         self.window.set_instructions(summary_html)
         self.window.set_status("✓ Calibración completada", "#00FF00")
         self.window.show_continue_button(True)
+        self.window.show_retry_button(True)  # Permitir reintentar si el resultado no es satisfactorio
         
         # Actualizar fase
         if self.current_camera == "left":
@@ -530,29 +679,31 @@ class QtCalibrationManager(QObject):
         self.window.set_status("Iniciando cámaras estéreo...", "#FFA500")
         QApplication.processEvents()
         
-        # Abrir ambas cámaras
-        self.cap_left = cv2.VideoCapture(self.cam_left_id)
-        self.cap_right = cv2.VideoCapture(self.cam_right_id)
+        # Obtener ambas cámaras (reutiliza persistentes si están disponibles)
+        self.cap_left = self._get_or_create_camera("left")
+        self.cap_right = self._get_or_create_camera("right")
         
-        if not self.cap_left.isOpened() or not self.cap_right.isOpened():
+        if not self.cap_left or not self.cap_left.isOpened() or \
+           not self.cap_right or not self.cap_right.isOpened():
             print("✗ Error al abrir las cámaras")
             self._finish_calibration(False)
             return
         
-        # Configurar resolución y warmup
-        for cap in [self.cap_left, self.cap_right]:
-            cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.resolution[0])
-            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.resolution[1])
-            # Warmup
-            for _ in range(5):
-                cap.read()
-                QApplication.processEvents()
+        # Warmup mínimo solo si no son persistentes
+        if not self._using_persistent_cameras:
+            for cap in [self.cap_left, self.cap_right]:
+                for _ in range(3):
+                    cap.read()
+                    QApplication.processEvents()
         
         # Actualizar UI
         self.current_phase = "stereo_capture"
         self.window.set_phase(self.current_phase, "FASE 2 - CALIBRACIÓN ESTÉREO")
         self.pair_count = 0
-        self.window.show_stereo_instructions(0, 10)
+        self.window.show_stereo_instructions(0, 20)
+        
+        # Mostrar botón de reintentar
+        self.window.show_retry_button(True)
         
         # Iniciar timer
         self.timer.start(33)
@@ -628,27 +779,30 @@ class QtCalibrationManager(QObject):
         print(f"✓ Par {self.pair_count} capturado")
         
         # Actualizar progreso
-        self.window.show_stereo_instructions(self.pair_count, 10)
+        self.window.show_stereo_instructions(self.pair_count, 20)
         
         # Resetear detección
         self.detection_frames = 0
         self.last_capture_time = time.time()
         
         # Si tenemos suficientes pares, finalizar automáticamente
-        if self.pair_count >= 10:
+        if self.pair_count >= 20:
             self._on_stereo_complete()
     
     def _on_stereo_complete(self):
         """Procesa la calibración estéreo"""
         self.timer.stop()
         
-        # Cerrar cámaras
-        if self.cap_left:
-            self.cap_left.release()
-            self.cap_left = None
-        if self.cap_right:
-            self.cap_right.release()
-            self.cap_right = None
+        # Cerrar cámaras solo si NO son persistentes
+        if not self._using_persistent_cameras:
+            if self.cap_left:
+                self.cap_left.release()
+            if self.cap_right:
+                self.cap_right.release()
+        
+        # Limpiar referencias
+        self.cap_left = None
+        self.cap_right = None
         
         # Ejecutar calibración estéreo
         print("\n⏳ Procesando calibración estéreo...")
@@ -679,22 +833,182 @@ class QtCalibrationManager(QObject):
         }
         
         self.window.show_summary_screen(summary_data)
+        self.window.show_retry_button(True)  # Permitir reintentar si el resultado no es satisfactorio
         self.current_phase = "phase2_complete"
 
     def _start_phase3(self):
         """Inicia la Fase 3: calibración de profundidad"""
         self.current_phase = "depth_intro"
         
-        instructions = [
-            "Finalmente, calibraremos la <b>distancia del teclado</b>",
-            "Pon tu <b>mano</b> en el lugar donde tocarás las teclas",
-            "Mantén la mano <b>apoyada</b> sobre el teclado/mesa",
-            "El sistema medirá la distancia automáticamente",
-            "Capturaremos <b>5 muestras</b> para mayor precisión"
-        ]
+        # Pedir la distancia real al usuario
+        self._ask_real_distance()
+    
+    def _ask_real_distance(self):
+        """Muestra un diálogo para que el usuario ingrese la distancia real"""
+        from PyQt6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QDoubleSpinBox, QPushButton, QFrame
+        from PyQt6.QtCore import Qt
+        
+        dialog = QDialog(self.window)
+        dialog.setWindowTitle("Distancia Real del Teclado")
+        dialog.setModal(True)
+        dialog.setFixedSize(450, 320)
+        dialog.setStyleSheet("""
+            QDialog {
+                background-color: #2b2b2b;
+            }
+            QLabel {
+                color: #ffffff;
+                font-size: 13px;
+            }
+            QLabel#title {
+                color: #00C8FF;
+                font-size: 18px;
+                font-weight: bold;
+            }
+            QLabel#info {
+                color: #888888;
+                font-size: 11px;
+            }
+            QDoubleSpinBox {
+                background-color: #3b3b3b;
+                color: #ffffff;
+                border: 2px solid #00C8FF;
+                border-radius: 4px;
+                padding: 8px;
+                font-size: 20px;
+                font-weight: bold;
+            }
+            QPushButton {
+                background-color: #00C8FF;
+                color: #000000;
+                font-size: 14px;
+                font-weight: bold;
+                border: none;
+                border-radius: 4px;
+                padding: 10px 24px;
+            }
+            QPushButton:hover {
+                background-color: #33D6FF;
+            }
+            QPushButton#skipBtn {
+                background-color: #555555;
+                color: #ffffff;
+            }
+            QPushButton#skipBtn:hover {
+                background-color: #666666;
+            }
+        """)
+        
+        layout = QVBoxLayout(dialog)
+        layout.setSpacing(12)
+        layout.setContentsMargins(24, 24, 24, 24)
+        
+        # Título
+        title = QLabel("Medicion de Distancia Real")
+        title.setObjectName("title")
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(title)
+        
+        # Instrucciones
+        instructions = QLabel(
+            "Mide con una regla o cinta metrica la distancia\n"
+            "desde las CAMARAS hasta el TECLADO/MESA.\n\n"
+            "Esto permite calcular el error de medicion\n"
+            "y corregir la profundidad automaticamente."
+        )
+        instructions.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(instructions)
+        
+        layout.addSpacing(8)
+        
+        # Input de distancia
+        input_layout = QHBoxLayout()
+        input_layout.addStretch()
+        
+        input_label = QLabel("Distancia real:")
+        input_layout.addWidget(input_label)
+        
+        self.distance_spinbox = QDoubleSpinBox()
+        self.distance_spinbox.setRange(10, 200)
+        self.distance_spinbox.setValue(35)  # Valor por defecto más realista
+        self.distance_spinbox.setSuffix(" cm")
+        self.distance_spinbox.setDecimals(1)
+        self.distance_spinbox.setSingleStep(1)
+        self.distance_spinbox.setFixedWidth(140)
+        input_layout.addWidget(self.distance_spinbox)
+        
+        # Guardar referencia al diálogo para poder acceder al spinbox después
+        self._distance_dialog = dialog
+        
+        input_layout.addStretch()
+        layout.addLayout(input_layout)
+        
+        # Info adicional
+        info = QLabel("Tip: Mide desde el lente de la camara hasta la superficie donde tocaras")
+        info.setObjectName("info")
+        info.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        info.setWordWrap(True)
+        layout.addWidget(info)
+        
+        layout.addSpacing(12)
+        
+        # Botones
+        buttons_layout = QHBoxLayout()
+        buttons_layout.addStretch()
+        
+        skip_btn = QPushButton("Omitir")
+        skip_btn.setObjectName("skipBtn")
+        skip_btn.clicked.connect(lambda: self._on_distance_entered(dialog, skip=True))
+        buttons_layout.addWidget(skip_btn)
+        
+        buttons_layout.addSpacing(12)
+        
+        confirm_btn = QPushButton("Continuar")
+        confirm_btn.clicked.connect(lambda: self._on_distance_entered(dialog, skip=False))
+        buttons_layout.addWidget(confirm_btn)
+        
+        buttons_layout.addStretch()
+        layout.addLayout(buttons_layout)
+        
+        dialog.exec()
+    
+    def _on_distance_entered(self, dialog, skip=False):
+        """Procesa la distancia ingresada y continúa con la Fase 3"""
+        # IMPORTANTE: Leer el valor ANTES de cerrar el diálogo
+        if skip:
+            self.real_distance_cm = None
+            print("[Fase 3] Omitiendo medicion de distancia real")
+        else:
+            # Leer valor del spinbox antes de cerrar
+            self.real_distance_cm = self.distance_spinbox.value()
+            print(f"")
+            print(f"========================================")
+            print(f"[Fase 3] DISTANCIA REAL INGRESADA: {self.real_distance_cm} cm")
+            print(f"========================================")
+            print(f"")
+        
+        # Ahora sí cerrar el diálogo
+        dialog.accept()
+        
+        # Mostrar instrucciones de la Fase 3
+        if self.real_distance_cm:
+            instructions = [
+                f"Distancia real configurada: <b>{self.real_distance_cm} cm</b>",
+                "Ahora pon tu <b>mano</b> en el lugar donde tocaras las teclas",
+                "Manten la mano <b>apoyada</b> sobre el teclado/mesa",
+                "El sistema medira y calculara el <b>factor de correccion</b>",
+                "Capturaremos <b>5 muestras</b> para mayor precision"
+            ]
+        else:
+            instructions = [
+                "Pon tu <b>mano</b> en el lugar donde tocaras las teclas",
+                "Manten la mano <b>apoyada</b> sobre el teclado/mesa",
+                "El sistema medira la distancia automaticamente",
+                "Capturaremos <b>5 muestras</b> para mayor precision"
+            ]
         
         self.window.show_intro_screen(
-            "FASE 3 - CALIBRACIÓN DE DISTANCIA",
+            "FASE 3 - CALIBRACION DE DISTANCIA",
             instructions
         )
     
@@ -716,6 +1030,15 @@ class QtCalibrationManager(QObject):
             # Inicializar calibrador de profundidad
             self.depth_calibrator = DepthCalibrator(self.depth_estimator)
             
+            # Pasar la distancia real si fue ingresada
+            print(f"[DEBUG] hasattr real_distance_cm: {hasattr(self, 'real_distance_cm')}")
+            print(f"[DEBUG] real_distance_cm value: {getattr(self, 'real_distance_cm', 'NO EXISTE')}")
+            
+            if hasattr(self, 'real_distance_cm') and self.real_distance_cm is not None:
+                self.depth_calibrator.set_real_distance(self.real_distance_cm)
+            else:
+                print("[DEBUG] NO se paso distancia real al calibrador!")
+            
             # Configurar número de muestras (simplificado)
             self.keyboard_samples_needed = 5
             self.keyboard_samples_collected = 0
@@ -724,26 +1047,15 @@ class QtCalibrationManager(QObject):
             self.window.set_status("Iniciando cámaras...", "#FFA500")
             QApplication.processEvents()
             
-            # Abrir cámaras si están cerradas
+            # Obtener cámaras si están cerradas (reutiliza persistentes)
             if self.cap_left is None:
-                self.cap_left = cv2.VideoCapture(self.cam_left_id)
-                self.cap_left.set(cv2.CAP_PROP_FRAME_WIDTH, self.resolution[0])
-                self.cap_left.set(cv2.CAP_PROP_FRAME_HEIGHT, self.resolution[1])
-                # Warmup
-                for _ in range(5):
-                    self.cap_left.read()
-                    QApplication.processEvents()
+                self.cap_left = self._get_or_create_camera("left")
                 
             if self.cap_right is None:
-                self.cap_right = cv2.VideoCapture(self.cam_right_id)
-                self.cap_right.set(cv2.CAP_PROP_FRAME_WIDTH, self.resolution[0])
-                self.cap_right.set(cv2.CAP_PROP_FRAME_HEIGHT, self.resolution[1])
-                # Warmup
-                for _ in range(5):
-                    self.cap_right.read()
-                    QApplication.processEvents()
+                self.cap_right = self._get_or_create_camera("right")
                 
-            if not self.cap_left.isOpened() or not self.cap_right.isOpened():
+            if not self.cap_left or not self.cap_left.isOpened() or \
+               not self.cap_right or not self.cap_right.isOpened():
                 print("✗ Error al abrir las cámaras para profundidad")
                 self._finish_calibration(False)
                 return
@@ -759,6 +1071,9 @@ class QtCalibrationManager(QObject):
             )
             self.window.show_continue_button(False)  # Mostrar botón de captura, no continuar
             self.window.enable_capture(True)  # Habilitar captura desde el inicio
+            
+            # Mostrar botón de reintentar
+            self.window.show_retry_button(True)
             
             # Iniciar timer
             if not self.timer.isActive():
@@ -875,15 +1190,15 @@ class QtCalibrationManager(QObject):
         """Finaliza la Fase 3"""
         self.timer.stop()
         
-        # Calcular distancia del teclado
+        # Calcular distancia del teclado (y factor de corrección si hay distancia real)
         keyboard_distance = self.depth_calibrator.calculate_keyboard_distance()
         
         if keyboard_distance is None:
-            print("✗ Error en calibración de distancia")
+            print("Error en calibracion de distancia")
             self._finish_calibration(False)
             return
         
-        # Guardar la distancia del teclado
+        # Guardar la distancia del teclado y factor de corrección
         self.depth_calibrator.save_keyboard_distance_only()
             
         # Recopilar datos para el resumen
@@ -891,8 +1206,20 @@ class QtCalibrationManager(QObject):
             'board_config': f"{self.board_cols}x{self.board_rows} ({self.square_size_mm}mm)",
             'left_error': self.calibrator_left.reprojection_error if self.calibrator_left else 'N/A',
             'right_error': self.calibrator_right.reprojection_error if self.calibrator_right else 'N/A',
-            'keyboard_distance': keyboard_distance
+            'keyboard_distance': keyboard_distance,
+            'correction_factor': self.depth_calibrator.correction_factor
         }
+        
+        # Agregar datos de corrección si hay distancia real
+        if self.depth_calibrator.real_distance_cm is not None:
+            measured = float(np.median(self.depth_calibrator.keyboard_distance_samples))
+            error_cm = abs(measured - self.depth_calibrator.real_distance_cm)
+            error_percent = (error_cm / self.depth_calibrator.real_distance_cm) * 100
+            
+            summary_data['real_distance_cm'] = self.depth_calibrator.real_distance_cm
+            summary_data['measured_distance_cm'] = measured
+            summary_data['depth_error_cm'] = error_cm
+            summary_data['depth_error_percent'] = error_percent
         
         # Agregar datos estéreo si existen
         if self.stereo_calibrator:
@@ -906,6 +1233,7 @@ class QtCalibrationManager(QObject):
         
         # Mostrar pantalla de resumen
         self.window.show_summary_screen(summary_data)
+        self.window.show_retry_button(True)  # Permitir reintentar si el resultado no es satisfactorio
         self.current_phase = "phase3_complete"
     
     def _on_cancel(self):
@@ -930,13 +1258,16 @@ class QtCalibrationManager(QObject):
         if self.timer.isActive():
             self.timer.stop()
         
-        if self.cap_left:
-            self.cap_left.release()
-            self.cap_left = None
+        # Solo cerrar cámaras si NO son persistentes
+        if not self._using_persistent_cameras:
+            if self.cap_left:
+                self.cap_left.release()
+            if self.cap_right:
+                self.cap_right.release()
         
-        if self.cap_right:
-            self.cap_right.release()
-            self.cap_right = None
+        # Limpiar referencias (pero no cerrar si son persistentes)
+        self.cap_left = None
+        self.cap_right = None
     
     # Métodos auxiliares (verificación, carga, guardado)
     

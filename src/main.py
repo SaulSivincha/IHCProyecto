@@ -16,6 +16,9 @@ from src.vision import keyboard_mapper as kbm
 from src.vision import load_depth_estimator
 from src.vision.stereo_config import StereoConfig
 
+# --- Core (Recursos Persistentes) ---
+from src.core.persistent_resources import get_resources, initialize_resources, cleanup_resources
+
 # --- Calibration ---
 from src.calibration import run_qt_calibration
 from src.calibration.calibration_config import CalibrationConfig
@@ -670,24 +673,37 @@ def main():
     if qt_app is None:
         qt_app = QApplication(sys.argv)
     
-    while True:  # <--- 1. BUCLE GLOBAL AGREGADO
-        # Inicializar variables para limpieza segura
-        fs = None
-        cam_left = None
-        cam_right = None
+    # Cargar configuración estéreo centralizada (UNA VEZ)
+    config = StereoConfig()
+    
+    # Dimensiones para la interfaz
+    pixel_width = config.PIXEL_WIDTH
+    pixel_height = config.PIXEL_HEIGHT
+    
+    # Inicializar UI Helper
+    ui_helper_menu = UIHelper(pixel_width * 2, pixel_height)
+    ui_helper_menu.show_instructions = False
+    
+    # ====== INICIALIZAR RECURSOS PERSISTENTES ANTES DEL MENÚ ======
+    print("\n" + "="*60)
+    print("🎹 PIANO VIRTUAL - INICIANDO")
+    print("="*60)
+    
+    resources = get_resources()
+    
+    # Intentar inicializar recursos ANTES de mostrar el menú
+    resources_initialized = initialize_resources(config)
+    
+    if not resources_initialized:
+        print("\nADVERTENCIA: Algunos recursos no estan disponibles")
+        print("   Puedes ir a Configuracion > Camaras para ajustar")
+        print("   El programa continuara con funcionalidad limitada\n")
+    else:
+        print("\nSistema listo. Abriendo menu principal...\n")
+    
+    while True:  # <--- BUCLE GLOBAL
         try:
-            # Cargar configuración estéreo centralizada
-            config = StereoConfig()
-            
-            # Dimensiones para la interfaz
-            pixel_width = config.PIXEL_WIDTH
-            pixel_height = config.PIXEL_HEIGHT
-            
-            # Inicializar UI Helper para posibles pantallas de menú/calibración
-            ui_helper_menu = UIHelper(pixel_width * 2, pixel_height)
-            ui_helper_menu.show_instructions = False  # no mostrar instrucciones con OpenCV aquí
-
-            print("--- DEBUG: Iniciando Menú Principal ---")
+            print("\n--- Menú Principal ---")
             # MENÚ PRINCIPAL (PyQt6)
             start_mode = show_main_menu()   # "rhythm", "free", "theory", "config", "exit"
             print(f"--- DEBUG: Modo seleccionado: {start_mode} ---")
@@ -769,45 +785,36 @@ def main():
             initial_mode = start_mode
 
             # Si eligió opciones de configuración
-            if start_mode == "config_load":
-                print("Cargando calibración guardada...")
-                config.load_calibration()
-                print("✓ Calibración cargada. Volviendo al menú principal.")
-                continue
-                
-            elif start_mode == "config_new":
-                print("Iniciando proceso de calibración...")
-                # Forzar recalibración para mostrar directamente el diálogo de configuración
-                success = run_calibration_process(ui_helper_menu, pixel_width, pixel_height, config, force_recalibration=True)
-                
-                if success:
-                    print("✓ Calibración completada. Volviendo al menú principal.")
-                else:
-                    print("Calibración cancelada. Volviendo al menú principal.")
-                
-                # Volver al menú principal para seleccionar modo de juego
-                continue
-                
-            elif start_mode == "config_view":
-                print("Mostrando datos de calibración...")
+            if start_mode == "config_calibration":
+                print("Abriendo calibracion...")
                 from src.calibration.calibration_config import CalibrationConfig
                 from src.calibration.qt_calibration_summary import CalibrationSummaryDialog, show_calibration_summary
                 
                 if CalibrationConfig.calibration_exists():
+                    # Hay calibración existente: mostrar resumen
                     summary = CalibrationConfig.get_calibration_summary()
-                    # Capturar acción de retorno
                     action = show_calibration_summary(summary)
                     
                     if action == CalibrationSummaryDialog.ACTION_RECALIBRATE_ALL:
-                        print("Iniciando re-calibración desde vista de datos...")
+                        print("Iniciando re-calibracion...")
                         success = run_calibration_process(ui_helper_menu, pixel_width, pixel_height, config, force_recalibration=True)
                         if success:
-                            print("✓ Calibración completada.")
+                            print("Calibracion completada. Recargando estimador de profundidad...")
+                            if resources_initialized:
+                                resources.reload_depth_estimator()
                         else:
-                            print("Calibración cancelada.")
+                            print("Calibracion cancelada.")
                 else:
-                    print("⚠ No hay datos de calibración guardados.")
-                    # Podríamos mostrar un mensaje emergente aquí si fuera necesario
+                    # No hay calibración: iniciar proceso de calibración
+                    print("No hay calibracion guardada. Iniciando proceso...")
+                    success = run_calibration_process(ui_helper_menu, pixel_width, pixel_height, config, force_recalibration=True)
+                    
+                    if success:
+                        print("Calibracion completada. Recargando estimador de profundidad...")
+                        if resources_initialized:
+                            resources.reload_depth_estimator()
+                    else:
+                        print("Calibracion cancelada.")
                 
                 # Volver al menú principal
                 continue
@@ -815,86 +822,51 @@ def main():
             elif start_mode == "config_skip":
                 print("Usando valores por defecto (sin calibración)")
                 continue
+                
+            elif start_mode == "config_advanced":
+                print("Abriendo configuración avanzada de algoritmos...")
+                from src.ui.qt_advanced_config import show_advanced_config
+                from src.vision.algorithms import sync_algorithms_from_config
+                
+                # Callback para sincronizar cambios
+                def on_algo_config_change(new_config):
+                    sync_algorithms_from_config()
+                    print("Configuracion de algoritmos actualizada")
+                
+                show_advanced_config(on_config_change=on_algo_config_change)
+                continue
+            
+            elif start_mode == "config_cameras":
+                print("Abriendo configuracion de camaras...")
+                from src.ui.qt_camera_config import show_camera_config
+                
+                if show_camera_config():
+                    # Recargar la configuración desde calibration.json
+                    StereoConfig.load_calibration()
+                    print(f"Camaras: LEFT={StereoConfig.LEFT_CAMERA_SOURCE}, RIGHT={StereoConfig.RIGHT_CAMERA_SOURCE}")
+                    
+                    # Reiniciar las cámaras con la nueva configuración
+                    if resources_initialized:
+                        print("Reiniciando camaras con nueva configuracion...")
+                        resources.restart_cameras(config)
+                        print("OK Camaras reiniciadas")
+                continue
+                
             # ------------------------------
-            # set up cameras
+            # OBTENER RECURSOS PERSISTENTES (ya inicializados)
             # ------------------------------
-
-            # cameras variables
-            left_camera_source = config.LEFT_CAMERA_SOURCE
-            right_camera_source = config.RIGHT_CAMERA_SOURCE
-            pixel_width = config.PIXEL_WIDTH
-            pixel_height = config.PIXEL_HEIGHT
-
-            # Logi C920s HD Pro Webcam - Calibración óptica
-            camera_hFoV = config.CAMERA_H_FOV
-            camera_vFoV = config.CAMERA_V_FOV
-            hFoV_angle_rectification = config.H_FOV_RECTIFICATION
-            vFoV_angle_rectification = config.V_FOV_RECTIFICATION
-
+            cam_left, cam_right = resources.get_cameras()
+            left_detector, right_detector = resources.get_detectors()
+            fs = resources.get_synth()
+            depth_estimator = resources.depth_estimator
+            use_stereo_calibration = resources.use_stereo_calibration
+            
+            # Configuración de cámaras
+            camera_separation = config.CAMERA_SEPARATION
+            camera_in_front_of_you = config.CAMERA_IN_FRONT_OF_YOU
+            vkb_center_point_camera_dist = config.VKB_CENTER_DISTANCE
             angle_width = config.ANGLE_WIDTH
             angle_height = config.ANGLE_HEIGHT
-
-            # FPS
-            frame_rate = config.FRAME_RATE
-            camera_separation = config.CAMERA_SEPARATION
-
-            camera_in_front_of_you = config.CAMERA_IN_FRONT_OF_YOU
-
-            # Virtual Keyboard Center point distance (cms)
-            vkb_center_point_camera_dist = config.VKB_CENTER_DISTANCE
-
-                # cam_resource = video_thread.VideoThread(
-                #     video_source=c_id,
-                #     video_width=pixel_width,
-                #     video_height=pixel_height,
-                #     video_frame_rate=frame_rate,
-                #     buffer_all=False,
-                #     try_to_reconnect=False
-                # )
-            # left camera 1
-            cam_left = video_thread.VideoThread(
-                video_source=left_camera_source,
-                video_width=pixel_width,
-                video_height=pixel_height,
-                video_frame_rate=frame_rate,
-                buffer_all=False,
-                try_to_reconnect=False)
-
-            # right camera 2
-            cam_right = video_thread.VideoThread(
-                video_source=right_camera_source,
-                video_width=pixel_width,
-                video_height=pixel_height,
-                video_frame_rate=frame_rate,
-                buffer_all=False,
-                try_to_reconnect=False)
-
-            # start cameras
-            cam_left.start()
-            cam_right.start()
-
-            time.sleep(1)
-            
-            # Intentar cargar DepthEstimator si existe calibración completa
-            depth_estimator = None
-            use_stereo_calibration = False
-            try:
-                from src.calibration.calibration_config import CalibrationConfig
-                depth_estimator = load_depth_estimator(CalibrationConfig.CALIBRATION_FILE)
-                use_stereo_calibration = True
-                print("\n" + "="*70)
-                print("✓ CALIBRACIÓN ESTÉREO CARGADA")
-                print("="*70)
-                print(f"  Baseline: {depth_estimator.baseline_cm:.2f} cm")
-                print(f"  Modo: Triangulación precisa con rectificación")
-                print("="*70 + "\n")
-            except (FileNotFoundError, ValueError) as e:
-                print("\n" + "="*70)
-                print("⚠ CALIBRACIÓN ESTÉREO NO DISPONIBLE")
-                print("="*70)
-                print(f"  {e}")
-                print(f"  Modo: Triangulación basada en ángulos (menos preciso)")
-                print("="*70 + "\n")
             
             if camera_in_front_of_you:
                 main_window_name = 'In fron of you: rigth+left cam'
@@ -902,52 +874,7 @@ def main():
                 main_window_name = 'Same Point of View: left+rigth cam'
 
             cv2.namedWindow(main_window_name)
-            cv2.moveWindow(main_window_name,
-                        (pixel_width//2),
-                        (pixel_height//2))        
-            
-            if cam_left.is_available():
-                print('Name:{}'.format(main_window_name))
-                print('cam_left.resource.get(cv2.CAP_PROP_AUTO_EXPOSURE:{}'.
-                    format(cam_left.resource.get(cv2.CAP_PROP_AUTO_EXPOSURE)))
-                print('cam_left.resource.get(cv2.CAP_PROP_EXPOSURE:{}'.
-                    format(cam_left.resource.get(cv2.CAP_PROP_EXPOSURE)))
-                print('cam_left.resource.get(cv2.CAP_PROP_AUTOFOCUS):{}'.
-                    format(cam_left.resource.get(cv2.CAP_PROP_AUTOFOCUS)))
-                print('cam_left.resource.get(cv2.CAP_PROP_BUFFERSIZE):{}'.
-                    format(cam_left.resource.get(cv2.CAP_PROP_BUFFERSIZE)))
-                print('cam_left.resource.get(cv2.CAP_PROP_CODEC_PIXEL_FORMAT):{}'.
-                    format(cam_left.resource.get(cv2.CAP_PROP_CODEC_PIXEL_FORMAT)))
-
-                print('cam_left.resource.get(cv2.CAP_PROP_HW_DEVICE):{}'.
-                    format(cam_left.resource.get(cv2.CAP_PROP_HW_DEVICE)))
-                print('cam_left.resource.get(cv2.CAP_PROP_FRAME_COUNT):{:03f}'.
-                    format(cam_left.resource.get(cv2.CAP_PROP_FRAME_COUNT)))
-                    
-
-            if cam_right.is_available():
-                print('Name:{}'.format(main_window_name))
-                print('cam_right.resource.get(cv2.CAP_PROP_AUTO_EXPOSURE:{}'.
-                    format(cam_right.resource.get(cv2.CAP_PROP_AUTO_EXPOSURE)))
-                print('cam_right.resource.get(cv2.CAP_PROP_EXPOSURE:{}'.
-                    format(cam_right.resource.get(cv2.CAP_PROP_EXPOSURE)))
-                print('cam_right.resource.get(cv2.CAP_PROP_AUTOFOCUS):{}'.
-                    format(cam_right.resource.get(cv2.CAP_PROP_AUTOFOCUS)))
-                print('cam_right.resource.get(cv2.CAP_PROP_BUFFERSIZE):{}'.
-                    format(cam_right.resource.get(cv2.CAP_PROP_BUFFERSIZE)))
-                print('cam_right.resource.get(cv2.CAP_PROP_CODEC_PIXEL_FORMAT):{}'.
-                    format(cam_right.resource.get(cv2.CAP_PROP_CODEC_PIXEL_FORMAT)))
-
-                print('cam_right.resource.get(cv2.CAP_PROP_HW_DEVICE):{}'.
-                    format(cam_right.resource.get(cv2.CAP_PROP_HW_DEVICE)))
-                print('cam_right.resource.get(cv2.CAP_PROP_FRAME_COUNT):{:03f}'.
-                    format(cam_right.resource.get(cv2.CAP_PROP_FRAME_COUNT)))
-
-            # right_window_name = 'frame right'
-            # cv2.namedWindow(right_window_name)
-            # cv2.moveWindow(right_window_name,
-            #                (pixel_width//2)+640,
-            #                (pixel_height//2))
+            cv2.moveWindow(main_window_name, (pixel_width//2), (pixel_height//2))
 
 
 
@@ -975,51 +902,14 @@ def main():
             # config_ui removed
             km = kbm.KeyboardMap(depth_threshold=config.DEPTH_THRESHOLD)
             
-            # Inicializar detectores de manos
-            left_detector = HandDetector(staticImageMode=False,
-                                        detectionCon=config.HAND_DETECTION_CONFIDENCE,
-                                        trackCon=config.HAND_TRACKING_CONFIDENCE)
-            right_detector = HandDetector(staticImageMode=False,
-                                         detectionCon=config.HAND_DETECTION_CONFIDENCE,
-                                         trackCon=config.HAND_TRACKING_CONFIDENCE)
+            # Inicializar AlgorithmManager (singleton global para algoritmos)
+            from src.vision.algorithms import get_algorithm_manager
+            algorithm_manager = get_algorithm_manager()
             
             # Inicializar ángulos
             angler = angles.Frame_Angles(pixel_width, pixel_height, angle_width,
                                         angle_height)
             angler.build_frame()
-            
-            # Inicializar sintetizador
-            fs = fluidsynth.Synth()
-            fs.start(driver='dsound')  # Windows - driver explícito
-            
-            # Buscar SoundFont en múltiples ubicaciones
-            soundfont_paths = [
-                r"C:\CodingWindows\IHCProyecto\utils\fluid\fluid\FluidR3_GM.sf2",
-                r"C:\CodingWindows\IHCProyecto\utils\fluid\FluidR3_GM.sf2",
-                r"C:\Users\MI PC\OneDrive\Desktop\fluid\FluidR3_GM.sf2",
-                AppConfig.get_soundfont_path()
-            ]
-            
-            sfid = None
-            for sf_path in soundfont_paths:
-                if sf_path and os.path.exists(sf_path):
-                    try:
-                        sfid = fs.sfload(sf_path)
-                        print(f"✓ SoundFont cargado desde: {sf_path}")
-                        break
-                    except Exception as e:
-                        print(f"⚠ Error cargando {sf_path}: {e}")
-            
-            if sfid is None:
-                print("❌ ERROR: No se encontró el archivo SoundFont (.sf2)")
-                print("   Descarga FluidR3_GM.sf2 y colócalo en:")
-                for path in soundfont_paths[:2]:        
-                    print(f"   - {path}")
-                cam_left.stop()
-                cam_right.stop()
-                sys.exit(1)
-            
-            fs.program_select(0, sfid, 0, 0)  # Canal 0, banco 0, preset 0 (piano)
 
             # Variables de estado (algunas ya inicializadas arriba)
             game_mode = False
@@ -1046,11 +936,6 @@ def main():
             elif initial_mode == "config":
                 game_mode = False
                 print("Configuración terminada. Iniciando en modo libre.")
-
-            # ------------------------------
-            # stabilize
-            # ------------------------------
-            time.sleep(0.5)
 
             # variables
             # ------------------------------
@@ -1339,8 +1224,8 @@ def main():
                     # Abrir ventana PyQt6 para la canción (bloquea hasta que termine)
                     print(f"Iniciando ventana de canción: {current_song.name}")
                     
-                    # Llamar a la ventana PyQt6 (esto bloquea hasta que termine la canción)
-                    song_completed = show_song_window(
+                    # Llamar a la ventana PyQt6 (retorna: 'retry', 'songs', o 'menu')
+                    song_result = show_song_window(
                         song=current_song,
                         camera_left=cam_left,
                         camera_right=cam_right,
@@ -1356,13 +1241,39 @@ def main():
                         camera_separation=camera_separation
                     )
                     
-                    # Cuando la ventana se cierre, limpiar estado
-                    current_song.stop()
-                    in_song = False
-                    current_song = None
-                    rhythm_mode = False
-                    print("Canción terminada. Regresando al menú principal...")
-                    break  # Salir del loop de OpenCV para volver al menú principal
+                    # Manejar resultado
+                    if song_result == 'retry':
+                        # Reiniciar la misma canción
+                        print("Reintentando canción...")
+                        current_song.stop()
+                        # No cambiar in_song ni current_song, se reiniciará en el siguiente ciclo
+                        continue
+                    elif song_result == 'songs':
+                        # Ir al menú de canciones
+                        print("Volviendo al menú de canciones...")
+                        current_song.stop()
+                        in_song = False
+                        current_song = None
+                        # Mostrar menú de canciones
+                        songs_dict = song_manager_instance.get_all_songs()
+                        if songs_dict:
+                            selected_song_name = show_songs_menu(songs_dict)
+                            if selected_song_name:
+                                new_song = song_manager_instance.get_song(selected_song_name)
+                                if new_song:
+                                    current_song = new_song
+                                    in_song = True
+                                    continue
+                        rhythm_mode = False
+                        break
+                    else:
+                        # Volver al menú principal
+                        current_song.stop()
+                        in_song = False
+                        current_song = None
+                        rhythm_mode = False
+                        print("Canción terminada. Regresando al menú principal...")
+                        break
 
                 if initial_mode == "free" and not theory_mode and not rhythm_mode:
                     print("Iniciando Ventana de Modo Libre...")
@@ -1462,6 +1373,36 @@ def main():
                     # cv2.rectangle(frame_left, (esc_x - 4, keys_y - k2_h - 4), (esc_x + k2_w + 4, keys_y + 4), key_bg_color, -1)
                     cv2.putText(frame_left, key_text_2, (esc_x, keys_y), font, k_font_scale, (180, 180, 180), 1, cv2.LINE_AA)
 
+                    # --- PANEL DE ALGORITMOS (debajo del menú) ---
+                    algo_panel_h = 50
+                    algo_y_start = y_end + 10
+                    algo_y_end = algo_y_start + algo_panel_h
+                    
+                    # Fondo semi-transparente
+                    algo_sub_img = frame_left[algo_y_start:algo_y_end, x_start:x_end]
+                    algo_rect = np.full(algo_sub_img.shape, (40, 40, 40), dtype=np.uint8)
+                    algo_res = cv2.addWeighted(algo_sub_img, 0.3, algo_rect, 0.7, 1.0)
+                    frame_left[algo_y_start:algo_y_end, x_start:x_end] = algo_res
+                    
+                    # Borde con color diferente (naranja para algoritmos)
+                    algo_border_color = (0, 165, 255)  # Naranja
+                    cv2.rectangle(frame_left, (x_start, algo_y_start), (x_end, algo_y_end), algo_border_color, 1, cv2.LINE_AA)
+                    cv2.rectangle(frame_left, (x_start, algo_y_start), (x_start + 4, algo_y_end), algo_border_color, -1)
+                    
+                    # Texto "ALGORITMOS"
+                    algo_text = "ALGORITMOS"
+                    (algo_tw, algo_th), _ = cv2.getTextSize(algo_text, font, 0.5, 1)
+                    algo_tx = x_start + (panel_w - algo_tw) // 2
+                    algo_ty = algo_y_start + 20
+                    cv2.putText(frame_left, algo_text, (algo_tx, algo_ty), font, 0.5, text_color, 1, cv2.LINE_AA)
+                    
+                    # Tecla [A]
+                    key_a_text = "[ A ]"
+                    (ka_w, ka_h), _ = cv2.getTextSize(key_a_text, font, k_font_scale, 1)
+                    ka_x = x_start + (panel_w - ka_w) // 2
+                    ka_y = algo_y_start + 40
+                    cv2.putText(frame_left, key_a_text, (ka_x, ka_y), font, k_font_scale, algo_border_color, 1, cv2.LINE_AA)
+
                 # Combinar frames antes de procesar UI
                 if camera_in_front_of_you:
                     h_frames = np.concatenate((frame_right, frame_left), axis=1)
@@ -1528,6 +1469,20 @@ def main():
                 elif (key == ord('m') or key == ord('M') or key == 27) and initial_mode == "free" and not theory_mode and not rhythm_mode:
                     print("Volviendo al menú principal...")
                     break  # Salir del bucle para volver al menú
+                # Tecla 'A' para abrir configuración de algoritmos (solo en modo libre)
+                elif (key == ord('a') or key == ord('A')) and initial_mode == "free" and not theory_mode and not rhythm_mode:
+                    print("Abriendo configuración de algoritmos...")
+                    from src.ui.qt_advanced_config import show_advanced_config
+                    from src.vision.algorithms import sync_algorithms_from_config
+                    
+                    def on_algo_config_change_quick(new_config):
+                        sync_algorithms_from_config()
+                        # Reconfigurar el KeyboardMapper con los nuevos algoritmos
+                        km._initialize_algorithms()
+                        print("✓ Algoritmos actualizados en tiempo real")
+                    
+                    show_advanced_config(on_config_change=on_algo_config_change_quick)
+                    print("Configuración de algoritmos cerrada. Continuando...")
                 # Legacy key c removed
                 elif key == ord('d'):
                     if display_dashboard:
@@ -1566,31 +1521,16 @@ def main():
             print(traceback.format_exc())
 
         # ------------------------------
-        # close all
+        # Solo cerrar ventanas (NO recursos - son persistentes)
         # ------------------------------
-
-        # Fluidsynth
-        try:
-            fs.delete()
-        except Exception:
-            pass
-        # close camera1
-        try:
-            cam_left.stop()
-        except Exception:
-            pass
-
-        # close camera2
-        try:
-            cam_right.stop()
-        except Exception:
-            pass
-
-        # kill frames
         cv2.destroyAllWindows()
-
-        # done
-        print('DONE')
+        print('--- Volviendo al menú principal ---')
+    
+    # ====== LIMPIEZA FINAL (al salir del programa) ======
+    print("\n🛑 Cerrando programa...")
+    cleanup_resources()
+    cv2.destroyAllWindows()
+    print('✓ Programa finalizado')
 
 
 # ------------------------------

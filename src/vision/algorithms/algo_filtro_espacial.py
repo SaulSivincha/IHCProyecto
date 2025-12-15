@@ -80,14 +80,18 @@ class FiltroEspacialAlgorithm(BaseAlgorithm):
                     self.stats['total_conflicts'] += 1
         
         # Resolver conflictos: mantener el dedo con mayor profundidad (más cerca)
+        # IMPORTANTE: En el sistema actual, depth ALTO = dedo CERCA (tocando)
         fingers_to_remove = set()
         
         for finger1, finger2, distance, depth1, depth2 in conflicts:
-            if depth1 < depth2:
-                # finger1 está más cerca (menor profundidad)
+            # Comparar profundidades: mayor depth = más cerca del teclado
+            if depth1 > depth2:
+                # finger1 está más cerca (mayor profundidad)
+                # Mantener finger1, remover finger2
                 fingers_to_remove.add(finger2)
             else:
-                # finger2 está más cerca
+                # finger2 está más cerca (mayor profundidad)
+                # Mantener finger2, remover finger1
                 fingers_to_remove.add(finger1)
             
             self.stats['resolved_by_depth'] += 1

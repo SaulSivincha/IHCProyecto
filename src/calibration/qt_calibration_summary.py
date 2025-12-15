@@ -219,6 +219,65 @@ class CalibrationSummaryDialog(QDialog):
         row_distance.addStretch()
         p3_layout.addLayout(row_distance)
         
+        # Factor de corrección (si existe)
+        correction_factor = self.summary.get('correction_factor', None)
+        if correction_factor is not None and correction_factor != 1.0:
+            row_factor = QHBoxLayout()
+            row_factor.addWidget(QLabel("Factor de Correccion:"))
+            lbl_factor = QLabel(f"{correction_factor:.4f}")
+            lbl_factor.setStyleSheet("color: #00C8FF; font-weight: bold; font-size: 16px;")
+            row_factor.addWidget(lbl_factor)
+            row_factor.addStretch()
+            p3_layout.addLayout(row_factor)
+        
+        # Error de medición (si existe distancia real)
+        real_dist = self.summary.get('real_distance_cm', None)
+        measured_dist = self.summary.get('measured_distance_cm', None)
+        error_percent = self.summary.get('depth_error_percent', None)
+        
+        if real_dist is not None and measured_dist is not None:
+            row_comparison = QHBoxLayout()
+            row_comparison.addWidget(QLabel("Medicion del Sistema:"))
+            lbl_measured = QLabel(f"{measured_dist:.2f} cm")
+            lbl_measured.setStyleSheet("color: #aaaaaa; font-size: 14px;")
+            row_comparison.addWidget(lbl_measured)
+            
+            row_comparison.addWidget(QLabel("  vs  Distancia Real:"))
+            lbl_real = QLabel(f"{real_dist:.2f} cm")
+            lbl_real.setStyleSheet("color: #00C8FF; font-size: 14px;")
+            row_comparison.addWidget(lbl_real)
+            row_comparison.addStretch()
+            p3_layout.addLayout(row_comparison)
+            
+            if error_percent is not None:
+                row_error = QHBoxLayout()
+                row_error.addWidget(QLabel("Error de Medicion:"))
+                
+                # Color según el error
+                if error_percent < 5:
+                    error_color = "#00ff00"  # Verde - excelente
+                    quality = "EXCELENTE"
+                elif error_percent < 10:
+                    error_color = "#ffff00"  # Amarillo - bueno
+                    quality = "BUENO"
+                elif error_percent < 20:
+                    error_color = "#ffaa00"  # Naranja - regular
+                    quality = "REGULAR"
+                else:
+                    error_color = "#ff0000"  # Rojo - malo
+                    quality = "ALTO"
+                
+                lbl_error = QLabel(f"{error_percent:.1f}%")
+                lbl_error.setStyleSheet(f"color: {error_color}; font-weight: bold; font-size: 16px;")
+                row_error.addWidget(lbl_error)
+                
+                lbl_quality = QLabel(f"({quality})")
+                lbl_quality.setStyleSheet(f"color: {error_color}; font-size: 14px; margin-left: 10px;")
+                row_error.addWidget(lbl_quality)
+                
+                row_error.addStretch()
+                p3_layout.addLayout(row_error)
+        
         main_layout.addLayout(p3_layout)
         
         self._add_separator(main_layout)

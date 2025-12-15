@@ -13,13 +13,11 @@ ALGORITHMS_CONFIG = {
     'Una Nota Por Acción': {
         'enabled': True,
         'params': {
-            # Calibración en MESA:
-            # 0 cm = Tocando (aprox)
-            # +5 cm = Aire
-            'profundidad_activacion': 2.0,   # Activa si está CERCA de la mesa (<= 2.0)
-            'profundidad_reset': 4.0         # Resetea si SUBE (>= 4.0)
+            # Calibración en MESA (Sistema Negativo):
+            # Solo conservamos Reset por si quieres ajustar cuándo cortar por altura.
+            'profundidad_reset': 10.0,       # Resetea si sube de -10.0
         },
-        'description': 'Evita múltiples activaciones durante un solo gesto. Solo permite tocar de nuevo después de alejarse.'
+        'description': 'Modo ultrarrapido: Solo bloquea si levantas la mano (Velocity < -2.0).'
     }
 }
 

@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-ALGORITMO: Una Nota Por Acción
-Evita que un dedo active múltiples notas durante un solo movimiento de tocar.
-Solo permite una nueva activación después de que el dedo se aleje suficientemente.
+ALGORITMO: Lift Guard (Anteriormente Una Nota Por Acción)
+
+FILOSOFÍA: "CERO LATENCIA"
+- Este algoritmo se ha reducido a su mínima expresión.
+- NO gestiona profundidad (delegado al Mapper).
+- NO gestiona paciencia/buffer (eliminado para velocidad pura).
+- ÚNICA FUNCIÓN: Bloquear frames si la velocidad es de "salida" (Lift).
 """
 
 from typing import Any, Dict, List, Tuple, Set
@@ -11,137 +15,88 @@ from .base_algorithm import BaseAlgorithm
 
 
 class UnaNotaPorAccionAlgorithm(BaseAlgorithm):
-    """
-    Evita activaciones múltiples durante un solo gesto de tocar.
-    
-    Problema que resuelve:
-    - Al levantar el dedo después de tocar "Sol", pasa por "La" y "Si"
-      y las activa incorrectamente.
-    
-    Solución:
-    - Rastrea qué dedos ya activaron una nota
-    - Solo permite nueva activación cuando el dedo se ALEJA del teclado
-      (depth sube por encima de un umbral de "reset")
-    - Esto crea un ciclo: TOCAR → ALEJAR → TOCAR
-    """
     
     def __init__(self, enabled: bool = True):
         super().__init__(name="Una Nota Por Acción", enabled=enabled)
         
-        # Parámetros configurables
-        self.profundidad_activacion = -10.0  # Depth para activar (tocando)
-        self.profundidad_reset = -5.0       # Depth para resetear (alejado)
+        # Parámetros ÚTILES
+        # Eliminamos: profundidad_activacion, paciencia_frames (causaban confusión/lag)
+        self.profundidad_reset = -5.0 # Mantenemos solo para Reset por altura absurda
         
-        # Estado: dedos que ya activaron una nota en este ciclo
-        self.dedos_activos: Set[Tuple] = set()  # {finger_id, ...}
+        # Estado Mínimo
+        self.dedos_activos: Dict[Tuple, Any] = {}
+        self.cooldown_por_dedo: Dict[Tuple, int] = {}
         
-        # Estadísticas
-        self.stats = {
-            'total_verificaciones': 0,
-            'activaciones_permitidas': 0,
-            'activaciones_bloqueadas': 0,
-            'resets_aplicados': 0
-        }
-        
-        # Debug
         self._debug_count = 0
     
     def process(self, detections: List[Tuple], context: Dict[str, Any]) -> List[Tuple]:
-        """
-        Filtra detecciones permitiendo solo una activación por ciclo tocar-alejar.
-        
-        Args:
-            detections: [(finger_id, key, depth, velocity, x, y), ...]
-            context: Contexto adicional
-            
-        Returns:
-            Lista filtrada
-        """
-        if not self.enabled or not detections:
+        if not self.enabled:
             return detections
         
         filtered = []
         self._debug_count += 1
+        dedos_presentes = {det[0] for det in detections}
         
-        # Primero, verificar qué dedos se alejaron (reset)
-        dedos_en_detecciones = {det[0] for det in detections}
-        
-        for finger_id in list(self.dedos_activos):
-            # Si el dedo NO está en las detecciones actuales, resetear
-            if finger_id not in dedos_en_detecciones:
-                self.dedos_activos.discard(finger_id)
-                self.stats['resets_aplicados'] += 1
-                if self._debug_count % 30 == 0:
-                    print(f"[UNA NOTA/ACCIÓN] Reset dedo {finger_id} (ya no detectado)")
-        
-        # Procesar detecciones
+        # --- LIMPIEZA RÁPIDA (Sin bucles de paciencia) ---
+        # Si el dedo no está en el frame actual, lo sacamos del estado inmediatamente.
+        for f_id in list(self.dedos_activos.keys()):
+            if f_id not in dedos_presentes:
+                del self.dedos_activos[f_id]
+
+        for f_id in list(self.cooldown_por_dedo.keys()):
+            if self.cooldown_por_dedo[f_id] > 0: self.cooldown_por_dedo[f_id] -= 1
+            else: del self.cooldown_por_dedo[f_id]
+
+        # --- PROCESO DIRECTO ---
         for detection in detections:
             finger_id, key, depth, velocity, x_pos, y_pos = detection
             
-            self.stats['total_verificaciones'] += 1
+            # --- 1. LIFT GUARD (Critical Safety) ---
+            # Si vel < -2.0, BLOQUEAR.
+            # Esta es la única razón por la que existe este algoritmo activado.
             
-            # Verificar si el dedo se alejó lo suficiente para resetear
-            if depth > self.profundidad_reset:
-                # Dedo LEJOS del teclado → resetear
+            IS_LIFTING = velocity < -2.0
+            
+            if IS_LIFTING:
+                # Si detectamos lift, cortamos y ponemos cooldown.
                 if finger_id in self.dedos_activos:
-                    self.dedos_activos.discard(finger_id)
-                    self.stats['resets_aplicados'] += 1
-                    if self._debug_count % 30 == 0:
-                        print(f"[UNA NOTA/ACCIÓN] Reset dedo {finger_id} (depth={depth:.1f} > {self.profundidad_reset})")
-                # No agregar a filtered (dedo lejos)
+                    del self.dedos_activos[finger_id]
+                
+                self.cooldown_por_dedo[finger_id] = 6 
+                
+                if self._debug_count % 30 == 0:
+                    print(f"🛑 [LIFT GUARD] {finger_id} | v={velocity:.2f} (Blocked)")
                 continue
+
+            # --- 2. PASO TRANSPARENTE (Zero Logic) ---
+            # Si no hay lift, pasa directo.
             
-            # Dedo CERCA del teclado
-            if depth <= self.profundidad_activacion:
-                # Verificar si ya activó una nota
-                if finger_id in self.dedos_activos:
-                    # YA activó → BLOQUEAR
-                    self.stats['activaciones_bloqueadas'] += 1
-                    if self._debug_count % 30 == 0:
-                        print(f"[UNA NOTA/ACCIÓN] BLOQUEADO dedo {finger_id} tecla {key} (ya activó en este ciclo)")
-                else:
-                    # PRIMERA activación → PERMITIR
-                    filtered.append(detection)
-                    self.dedos_activos.add(finger_id)
-                    self.stats['activaciones_permitidas'] += 1
-                    if self._debug_count % 30 == 0:
-                        print(f"[UNA NOTA/ACCIÓN] PERMITIDO dedo {finger_id} tecla {key} (primera activación)")
-        
+            in_cooldown = self.cooldown_por_dedo.get(finger_id, 0) > 0
+            
+            if not in_cooldown:
+                # Actualizar estado (simplemente para saber que sigue vivo)
+                self.dedos_activos[finger_id] = key
+                filtered.append(detection)
+                
+                # Debug ultrasimple
+                if self._debug_count % 60 == 0: 
+                    print(f"⚡ [PASS] {key} | v={velocity:.2f}")
+
         return filtered
     
     def configure(self, **params):
-        """
-        Configura parámetros del algoritmo.
-        
-        Args:
-            profundidad_activacion: float - Depth para activar nota
-            profundidad_reset: float - Depth para resetear ciclo
-        """
-        if 'profundidad_activacion' in params:
-            self.profundidad_activacion = float(params['profundidad_activacion'])
+        # Permitimos configurar reset, pero ignoramos el resto para no confundir
         if 'profundidad_reset' in params:
-            self.profundidad_reset = float(params['profundidad_reset'])
-    
+            val = float(params['profundidad_reset'])
+            if val > 0: self.profundidad_reset = -val
+            else: self.profundidad_reset = val
+            
     def reset(self):
-        """Reinicia estado."""
         self.dedos_activos.clear()
-        self.stats['total_verificaciones'] = 0
-        self.stats['activaciones_permitidas'] = 0
-        self.stats['activaciones_bloqueadas'] = 0
-        self.stats['resets_aplicados'] = 0
+        self.cooldown_por_dedo.clear()
     
     def get_config(self) -> Dict[str, Any]:
-        """Retorna configuración actual."""
+        # Solo retornamos lo que realmente usamos
         return {
-            'profundidad_activacion': self.profundidad_activacion,
             'profundidad_reset': self.profundidad_reset
-        }
-    
-    def get_stats(self) -> Dict[str, Any]:
-        """Retorna estadísticas del algoritmo."""
-        base_stats = super().get_stats()
-        return {
-            **base_stats,
-            **self.stats,
-            'dedos_activos_count': len(self.dedos_activos)
         }

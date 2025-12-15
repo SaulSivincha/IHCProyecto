@@ -1,11 +1,16 @@
 """
 Módulo de algoritmos de detección para piano virtual
-Arquitectura modular y escalable
+Arquitectura modular y escalable - Sistema limpio
 """
 
 from .base_algorithm import BaseAlgorithm
 from .algorithm_manager import AlgorithmManager
-from .algorithms_config import ALGORITHMS_CONFIG, PRESETS, apply_preset, get_active_algorithms
+from .algorithms_config import (
+    ALGORITHMS_CONFIG, 
+    PRESETS, 
+    apply_preset, 
+    get_active_algorithms
+)
 
 # === SINGLETON GLOBAL DEL ALGORITHM MANAGER ===
 _global_algorithm_manager = None
@@ -31,39 +36,16 @@ def get_algorithm_manager() -> AlgorithmManager:
 def _initialize_algorithms(manager: AlgorithmManager):
     """
     Inicializa todos los algoritmos y los registra en el manager.
+    Por ahora está vacío - se llenará conforme se agreguen algoritmos.
     """
-    from .algo_antirebote import AntireboteAlgorithm
-    from .algo_histeresis import HisteresisAlgorithm
-    from .algo_suavizado import SuavizadoAlgorithm
-    from .algo_multinota import MultinotaAlgorithm
-    from .algo_filtro_espacial import FiltroEspacialAlgorithm
-    from .algo_zona_salida import ZonaSalidaAlgorithm
+    # TODO: Importar y registrar algoritmos aquí
+    # Ejemplo:
+    # from .algo_mi_algoritmo import MiAlgoritmo
+    # algo = MiAlgoritmo(enabled=ALGORITHMS_CONFIG['Mi Algoritmo']['enabled'])
+    # algo.configure(**ALGORITHMS_CONFIG['Mi Algoritmo']['params'])
+    # manager.register_algorithm(algo)
     
-    # Crear instancias con configuración inicial
-    algorithms = [
-        ('Antirebote', AntireboteAlgorithm),
-        ('Histéresis', HisteresisAlgorithm),
-        ('Suavizado', SuavizadoAlgorithm),
-        ('Filtro Espacial', FiltroEspacialAlgorithm),
-        ('Zona Salida', ZonaSalidaAlgorithm),
-        ('Multi-nota', MultinotaAlgorithm),
-    ]
-    
-    for name, AlgoClass in algorithms:
-        if name in ALGORITHMS_CONFIG:
-            config = ALGORITHMS_CONFIG[name]
-            try:
-                # Los algoritmos reciben enabled como único parámetro del constructor
-                algo = AlgoClass(enabled=config.get('enabled', False))
-                
-                # Configurar parámetros adicionales
-                if config.get('params'):
-                    algo.configure(**config['params'])
-                    
-                manager.register_algorithm(algo)
-                print(f"  ✓ {name} inicializado")
-            except Exception as e:
-                print(f"⚠ Error inicializando {name}: {e}")
+    pass  # Sin algoritmos por ahora
 
 
 def sync_algorithms_from_config():

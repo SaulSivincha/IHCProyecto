@@ -151,7 +151,7 @@ class StereoConfig:
     VKB_CENTER_DISTANCE = 71        # Distancia del teclado virtual (cm)
     
     # ==================== DETECCIÓN DE PROFUNDIDAD ====================
-    DEPTH_THRESHOLD = 1.0           # Umbral de profundidad para presión (cm) - reducido
+    DEPTH_THRESHOLD = 5.0           # Umbral de profundidad para presión (cm) - aumentado para mejor detección
                                      # Rango recomendado: 2.0-5.0 cm
     DEPTH_CORRECTION_FACTOR = 1.0   # Factor de corrección de profundidad (calculado en Fase 3)
     

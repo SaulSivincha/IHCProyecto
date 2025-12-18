@@ -11,6 +11,7 @@ import time
 import numpy as np
 from collections import deque
 from src.config.app_config import AppConfig
+from src.vision.stereo_config import StereoConfig
 
 # Sistema modular de algoritmos - solo importar lo necesario
 from src.vision.algorithms.algorithm_manager import AlgorithmManager
@@ -36,14 +37,14 @@ class KeyboardMapModular:
             config_preset: Preset de configuración ('default', 'sensitive', 'stable', 'minimal')
         """
         self.prev_map = np.empty(0, dtype=bool)
-        self.depth_threshold = depth_threshold if depth_threshold is not None else AppConfig.DEPTH_THRESHOLD
+        self.depth_threshold = depth_threshold if depth_threshold is not None else StereoConfig.DEPTH_THRESHOLD
         self.finger_depths = {}
         
         # Sistema de velocidad (legacy, para compatibilidad)
         self.finger_depth_history = {}
-        self.velocity_threshold = AppConfig.VELOCITY_THRESHOLD
-        self.velocity_enabled = AppConfig.VELOCITY_ENABLED
-        self.velocity_history_size = AppConfig.VELOCITY_HISTORY_SIZE
+        self.velocity_threshold = StereoConfig.VELOCITY_THRESHOLD
+        self.velocity_enabled = StereoConfig.VELOCITY_ENABLED
+        self.velocity_history_size = StereoConfig.VELOCITY_HISTORY_SIZE
         
         # NUEVO: Sistema modular de algoritmos - USAR SINGLETON GLOBAL
         from src.vision.algorithms import get_algorithm_manager
@@ -121,11 +122,28 @@ class KeyboardMapModular:
                     if finger_id in finger_depths:
                         depth = finger_depths[finger_id]
                         
-                        # FILTRO: Ignorar valores de profundidad absurdos
-                        # Estos ocurren por errores de triangulación estéreo
-                        if depth < -100 or depth > 100:
-                            continue  # Saltar este dedo, valor no confiable
+                        # ESTRATEGIA DE RECUPERACIÓN DE ERRORES (Safe Depth Clamping)
+                        # Problema: En los bordes (especialmente izquierda), la triangulación falla
+                        # y reporta profundidades enormes (ej: Z=128cm, relative=-79cm).
+                        # Solución: Si detectamos una mano válida (x,y ok) pero profundidad absurda ("muy lejos"),
+                        # ASUMIMOS que es un error de medición de una mano que intenta tocar.
+                        # En lugar de ignorar (tecla muerta), CLAMPEAMOS el valor a "Tocando".
                         
+                        # Rango Válido estricto: -20 (abajo) a +40 (arriba)
+                        
+                        if depth < -20.0:
+                            # Caso: Valor muy negativo (ej: -70cm). Triangulación dice "muy lejos".
+                            # Acción: Recuperar como "Tocando firme" (-5.0 cm).
+                            # Esto hace que las teclas "muertas" de la izquierda vuelvan a sonar.
+                            if self._debug_frame_count % 30 == 0:
+                                print(f"[RECUPERADO] Dedo {finger_id} Error Z ({depth:.1f}cm) -> Clamped a -5.0cm")
+                            depth = -5.0
+                            
+                        elif depth > 50.0:
+                            # Caso: Valor muy positivo (ej: +80cm). Triangulación dice "muy cerca".
+                            # Acción: Ignorar, riesgo de falso positivo por ruido cerca de cámara.
+                            continue
+                            
                         # Actualizar historial de profundidad
                         if finger_id not in self.finger_depth_history:
                             self.finger_depth_history[finger_id] = deque(maxlen=self.velocity_history_size)
@@ -189,9 +207,9 @@ class KeyboardMapModular:
             # Filtrar por profundidad (solo cuando hay algoritmos activos)
             filtered_by_depth = []
             # Calibración en MESA: 0=Tocar, +10=Aire
-            # Queremos pasar TODO lo que esté CERCA de la mesa (<= 2.0)
+            # Queremos pasar TODO lo que esté CERCA de la mesa (<= depth_threshold)
             # Ojo: A veces se va un poco negativo (-1.0), lo incluimos
-            activation_threshold = 2.0  
+            activation_threshold = self.depth_threshold  
             
             for detection in raw_detections:
                 finger_id, key, depth, velocity, x_pos, y_pos = detection

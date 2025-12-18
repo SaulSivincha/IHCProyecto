@@ -316,17 +316,25 @@ flowchart TD
 
 ### Umbrales de Activación
 
+### Umbrales de Activación y Recuperación de Errores
+
 ```python
 # En keyboard_mapper.py
+
+# 1. Estrategia de "Clamping" (Recuperación):
+# Si la triangulación falla en bordes (ej: lado izquierdo), reporta
+# valores absurdos como depth_relative < -20cm (Z > 70cm).
+# En lugar de ignorarlos, ASUMIMOS que es un toque válido.
+if depth < -20.0:
+    depth = -5.0  # Forzar a "TOCANDO"
+
+# 2. Lógica de Activación:
 activation_threshold = 2.0  # cm
 
-# Lógica:
 if depth_relative <= activation_threshold:
-    # TOCANDO: El dedo está a menos de 2cm del plano del teclado
-    should_activate = True
+    should_activate = True  # TOCANDO
 else:
-    # ARRIBA: El dedo está en el aire
-    should_activate = False
+    should_activate = False # ARRIBA
 ```
 
 ### Diagrama Visual de Zonas de Profundidad

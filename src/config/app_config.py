@@ -90,60 +90,47 @@ class AppConfig:
     DEBUG_MODE = False                    # Modo debug (más logging)
     VERBOSE_HAND_DETECTION = False        # Logging detallado de detección
     
-    # ==================== DETECCIÓN DE TECLAS ====================
-    # Sistema de detección por profundidad y velocidad
-    DEPTH_THRESHOLD = 1.0                 # Umbral de profundidad para presión (cm) - reducido para mejor sensibilidad
-                                          # Rango recomendado: 2.0-5.0 cm
-                                          # Menor valor = más estricto
-    
-    # Sistema de detección de movimiento (velocity-based triggering)
-    VELOCITY_THRESHOLD = 1.5              # Velocidad mínima hacia abajo (cm/frame)
-                                          # para activar tecla
-                                          # Valores típicos: 1.0-3.0 cm/frame
-                                          # Mayor valor = requiere golpe más fuerte
-    
-    VELOCITY_ENABLED = False              # Activar detección por velocidad
-                                          # True = requiere movimiento descendente
-                                          # False = modo clásico (solo profundidad)
-    
-    VELOCITY_HISTORY_SIZE = 3             # Número de frames para calcular velocidad
-                                          # Valores típicos: 2-5 frames
-                                          # Más frames = más suave pero menos responsivo
     MAX_HANDS = 2                     # Máximo de manos a detectar
     
     @staticmethod
     def set_key_sensitivity(sensitivity='normal'):
         """
-        Ajusta la sensibilidad de detección de teclas.
+        Ajusta la sensibilidad de detección de teclas (Modifica StereoConfig).
         
         Args:
             sensitivity: 'soft', 'normal', 'hard', 'classic'
         """
+        # Nota: Usamos las propiedades estáticas definidas arriba (AppConfig.DEPTH_THRESHOLD...)
+        # pero como son propiedades de instancia en un contexto estático, es mejor acceder
+        # directamente a StereoConfig para evitar confusión, o instanciar.
+        # Simplificamos accediendo a StereoConfig directo aquí para claridad.
+        from src.vision.stereo_config import StereoConfig
+
         if sensitivity == 'soft':
             # Piano sensible (toques suaves)
-            AppConfig.DEPTH_THRESHOLD = 4.0
-            AppConfig.VELOCITY_THRESHOLD = 1.0
-            AppConfig.VELOCITY_ENABLED = True
+            StereoConfig.DEPTH_THRESHOLD = 4.0
+            StereoConfig.VELOCITY_THRESHOLD = 1.0
+            StereoConfig.VELOCITY_ENABLED = True
             print("[INFO] Sensibilidad: SUAVE (toques ligeros)")
         
         elif sensitivity == 'normal':
             # Configuración balanceada (recomendado)
-            AppConfig.DEPTH_THRESHOLD = 3.5
-            AppConfig.VELOCITY_THRESHOLD = 1.5
-            AppConfig.VELOCITY_ENABLED = False
+            StereoConfig.DEPTH_THRESHOLD = 3.5
+            StereoConfig.VELOCITY_THRESHOLD = 1.5
+            StereoConfig.VELOCITY_ENABLED = False
             print("[INFO] Sensibilidad: NORMAL (balanceado - modo clasico)")
         
         elif sensitivity == 'hard':
             # Requiere golpe fuerte
-            AppConfig.DEPTH_THRESHOLD = 2.5
-            AppConfig.VELOCITY_THRESHOLD = 2.5
-            AppConfig.VELOCITY_ENABLED = True
+            StereoConfig.DEPTH_THRESHOLD = 2.5
+            StereoConfig.VELOCITY_THRESHOLD = 2.5
+            StereoConfig.VELOCITY_ENABLED = True
             print("[INFO] Sensibilidad: FUERTE (golpes pronunciados)")
         
         elif sensitivity == 'classic':
             # Modo clásico sin detección de velocidad
-            AppConfig.DEPTH_THRESHOLD = 4.5
-            AppConfig.VELOCITY_ENABLED = False
+            StereoConfig.DEPTH_THRESHOLD = 5.0 # Aumentado para mejor detección
+            StereoConfig.VELOCITY_ENABLED = False
             print("[INFO] Sensibilidad: CLASICA (sin deteccion de velocidad)")
         
         else:
@@ -155,6 +142,7 @@ class AppConfig:
     @staticmethod
     def print_config():
         """Imprime la configuración actual de la app"""
+        from src.vision.stereo_config import StereoConfig
         print("\n" + "="*60)
         print(f"{AppConfig.APP_NAME} v{AppConfig.APP_VERSION}")
         print("="*60)
@@ -163,11 +151,11 @@ class AppConfig:
         print(f"Soundfont: {AppConfig.get_soundfont_path() or 'No encontrado'}")
         print(f"Target FPS: {AppConfig.TARGET_FPS}")
         print(f"Debug mode: {'On' if AppConfig.DEBUG_MODE else 'Off'}")
-        print(f"\nDetección de teclas:")
-        print(f"  Umbral profundidad: {AppConfig.DEPTH_THRESHOLD} cm")
-        print(f"  Detección por velocidad: {'On' if AppConfig.VELOCITY_ENABLED else 'Off'}")
-        if AppConfig.VELOCITY_ENABLED:
-            print(f"  Velocidad mínima: {AppConfig.VELOCITY_THRESHOLD} cm/frame")
+        print(f"\nDetección de teclas (Source: StereoConfig):")
+        print(f"  Umbral profundidad: {StereoConfig.DEPTH_THRESHOLD} cm")
+        print(f"  Detección por velocidad: {'On' if StereoConfig.VELOCITY_ENABLED else 'Off'}")
+        if StereoConfig.VELOCITY_ENABLED:
+            print(f"  Velocidad mínima: {StereoConfig.VELOCITY_THRESHOLD} cm/frame")
         print("="*60 + "\n")
     
     @staticmethod

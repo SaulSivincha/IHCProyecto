@@ -186,16 +186,17 @@ class FreeModeWindow(QMainWindow):
         # Importar configuración estéreo (compartida por todos los modos)
         from src.vision.stereo_config import StereoConfig
 
-        # === Lógica de visualización unificada ===
-        # Aplicamos la misma transformación a AMBOS frames para mantener
-        # la coherencia en el cálculo de profundidad.
-        if getattr(StereoConfig, 'ROTATE_CAMERAS_180', False):
-            frame_left = cv2.flip(frame_left, -1)
-            frame_right = cv2.flip(frame_right, -1)
-        elif getattr(StereoConfig, 'MIRROR_HORIZONTAL', False):
-            frame_left = cv2.flip(frame_left, 1)
-            frame_right = cv2.flip(frame_right, 1)
-            
+        # === NUEVA ARQUITECTURA DE TRANSFORMACIONES ===
+        # 1. apply_camera_transforms: Para detección (imágenes RAW, geometría correcta)
+        # 2. apply_display_transform: Para visualización (efecto espejo/selfie)
+        
+        # Aplicar transformaciones para DETECCIÓN (no afecta geometría)
+        frame_left = StereoConfig.apply_camera_transforms(frame_left)
+        frame_right = StereoConfig.apply_camera_transforms(frame_right)
+        
+        # Guardamos referencia a frames sin espejo para visualización después
+        # (el espejo se aplica al final, después de dibujar todo)
+        
         # frame_right se usa para profundidad, no visualización directa
         
         # 2. PROCESAMIENTO PERSONALIZADO 
@@ -208,12 +209,19 @@ class FreeModeWindow(QMainWindow):
             hl_hands, hl_tips = self.hand_detector_left.getFingerTipsPos()
             hr_hands, hr_tips = self.hand_detector_right.getFingerTipsPos()
             
-            # B. Dibujar base
-            self.virtual_keyboard.draw_virtual_keyboard(frame_left)
+            # B. APLICAR ESPEJO PARA VISUALIZACIÓN
+            # Espejamos el frame ANTES de dibujar overlays para que el texto salga bien
+            # y el movimiento sea intuitivo.
+            frame_left_display = StereoConfig.apply_display_transform(frame_left)
             
-            # C. Dibujar manos
-            self.hand_detector_left.drawHands(frame_left)
-            self.hand_detector_left.drawTips(frame_left)
+            # C. DIBUJAR SOBRE EL FRAME ESPEJADO
+            
+            # 1. Dibujar teclado (se dibuja normal sobre frame espejado -> texto sale bien)
+            self.virtual_keyboard.draw_virtual_keyboard(frame_left_display)
+            
+            # 2. Dibujar manos (con rotate_180=True para corregir coordenadas)
+            self.hand_detector_left.drawHands(frame_left_display, rotate_180=True)
+            self.hand_detector_left.drawTips(frame_left_display, rotate_180=True)
             
             # D. Procesar teclas y audio
             if len(hl_tips) > 0 and len(hr_tips) > 0:
@@ -229,7 +237,7 @@ class FreeModeWindow(QMainWindow):
                 if keyboard_distance is None:
                     # Mostrar advertencia una sola vez
                     if not hasattr(self, '_calibration_warning_shown'):
-                        print("⚠ Fase 3 no completada - la detección de notas no funcionará")
+                        print("[ALERTA] Fase 3 no completada - la deteccion de notas no funcionara")
                         print("  Ejecuta: Recalibrar → Fase 3 para calibrar la distancia del teclado")
                         self._calibration_warning_shown = True
                     # Continuar sin procesar notas
@@ -267,16 +275,29 @@ class FreeModeWindow(QMainWindow):
                                             # Mostrar configuración al inicio
                                             print(f"\n=== CONFIGURACIÓN DE DETECCIÓN ===")
                                             print(f"Distancia calibrada (keyboard_distance): {keyboard_distance:.1f}cm")
-                                            print(f"Umbral de activación: >= 10.0cm (Relativo positivo alto)")
-                                            print(f"NOTA: Activa cuando Relativo >= 10cm (dedo cerca de cámaras)")
+                                            print(f"Umbral de activación: depth_relative <= 2.0cm")
+                                            print(f"NOTA: Activa cuando el dedo está CERCA del teclado calibrado")
+                                            print(f"  - Relativo NEGATIVO = dedo MÁS LEJOS de cámaras que el teclado")
+                                            print(f"  - Relativo POSITIVO = dedo MÁS CERCA de cámaras que el teclado")
                                             print(f"==================================\n")
                                         self._debug_counter += 1
                                         if self._debug_counter % 30 == 0:  # Cada 30 frames
-                                            # Lógica adaptada: activa cuando depth_relative >= 10
-                                            # (dedo cerca de cámaras = tocando teclado físico)
-                                            activation_threshold = 10.0
-                                            activate = "SI" if depth_relative >= activation_threshold else "NO"
-                                            print(f"[DEBUG] Dedo {fl[0]},{fl[1]}: Z={depth_absolute:.1f}cm, Relativo={depth_relative:.1f}cm, Activar={activate}")
+                                            # Lógica corregida: activa cuando el dedo está sobre la mesa
+                                            activation_threshold = 2.0
+                                            activate = depth_relative <= activation_threshold
+                                            
+                                            # Determinar RAZÓN de no activación
+                                            if activate:
+                                                reason = "[TOCANDO]"
+                                            elif depth_relative < -5.0:
+                                                reason = f"(dedo {abs(depth_relative):.1f}cm DEBAJO del teclado)"
+                                            elif depth_relative > 5.0:
+                                                reason = f"(dedo {depth_relative:.1f}cm ARRIBA del teclado)"
+                                            else:
+                                                reason = "(en zona intermedia)"
+                                            
+                                            status = "SI" if activate else "NO"
+                                            print(f"[DEBUG] Dedo {fl[0]},{fl[1]}: Z={depth_absolute:.1f}cm, Rel={depth_relative:.1f}cm -> {status} {reason}")
 
                                 # Fallback a lógica antigua si no hay DepthEstimator
                                 elif self.angler and keyboard_distance:
@@ -290,9 +311,18 @@ class FreeModeWindow(QMainWindow):
                                     depth_relative = keyboard_distance - depth_absolute
                                     finger_depths_dict[(fl[0], fl[1])] = depth_relative
                 
-                # Obtener teclas presionadas
+                # 4. Asignar mapa de teclas
+                # IMPORTANTE: Transformar coordenadas RAW a VISUALES para que coincidan con el teclado dibujado
+                h_frame, w_frame = frame_left.shape[:2]
+                hl_tips_visual = []
+                for t in hl_tips:
+                    # t = [hand_id, tip_id, x, y]
+                    vx, vy = StereoConfig.transform_point_for_display((t[2], t[3]), w_frame, h_frame)
+                    hl_tips_visual.append([t[0], t[1], vx, vy])
+
+                # Obtener teclas presionadas (usando coordenadas visuales transformadas)
                 on_map, off_map = self.keyboard_mapper.get_kayboard_map(
-                    self.virtual_keyboard, hl_tips, finger_depths_dict, self.keyboard_total_keys
+                    self.virtual_keyboard, hl_tips_visual, finger_depths_dict, self.keyboard_total_keys
                 )
                 
                 # E. Reproducir Audio y ACTUALIZAR UI
@@ -320,15 +350,15 @@ class FreeModeWindow(QMainWindow):
             
             # F. Crosshairs
             if self.angler:
-                self.angler.frame_add_crosshairs(frame_left)
+                self.angler.frame_add_crosshairs(frame_left_display)
 
         except Exception as e:
             print(f"Error en loop de modo libre: {e}")
             import traceback
             traceback.print_exc()
 
-        # 3. Mostrar Frame
-        self._display_frame(frame_left)
+        # 3. Mostrar Frame FINAL (que ya está espejado y con dibujos)
+        self._display_frame(frame_left_display)
 
     def _display_frame(self, frame):
         """Convierte y muestra el frame de OpenCV en PyQt - Optimizado para evitar parpadeo"""
@@ -436,7 +466,7 @@ class FreeModeWindow(QMainWindow):
                 # Reinicializar algoritmos en el keyboard_mapper
                 if self.keyboard_mapper:
                     self.keyboard_mapper._initialize_algorithms()
-                print("✓ Algoritmos actualizados")
+                print("[INFO] Algoritmos actualizados")
             
             show_advanced_config(on_config_change=on_config_change)
             

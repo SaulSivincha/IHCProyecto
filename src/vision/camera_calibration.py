@@ -52,7 +52,7 @@ class StereoCalibrator:
         cap = cv2.VideoCapture(camera_id)
         
         if not cap.isOpened():
-            print(f"✗ No se pudo abrir la cámara {camera_id}")
+            print(f"[ERROR] No se pudo abrir la camara {camera_id}")
             return None, None
         
         # Configurar resolución
@@ -74,7 +74,7 @@ class StereoCalibrator:
         while captured < num_images:
             ret, frame = cap.read()
             if not ret:
-                print("✗ Error al leer frame")
+                print("[ERROR] Error al leer frame")
                 break
             
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -107,10 +107,10 @@ class StereoCalibrator:
                 objpoints.append(objp)
                 imgpoints.append(corners2)
                 captured += 1
-                print(f"✓ Imagen {captured}/{num_images} capturada")
+                print(f"[INFO] Imagen {captured}/{num_images} capturada")
             elif key == ord('q'):
                 if captured < 3:
-                    print("⚠ Se necesitan al menos 3 imágenes. Continúa...")
+                    print("[INFO] Se necesitan al menos 3 imagenes. Continua...")
                     continue
                 break
         
@@ -118,20 +118,20 @@ class StereoCalibrator:
         cv2.destroyAllWindows()
         
         if len(objpoints) < 3:
-            print(f"✗ No hay suficientes imágenes ({len(objpoints)}) para calibración")
+            print(f"[ERROR] No hay suficientes imagenes ({len(objpoints)}) para calibracion")
             return None, None
         
-        print(f"\n✓ Calibrando con {len(objpoints)} imágenes...")
+        print(f"\n[INFO] Calibrando con {len(objpoints)} imagenes...")
         
         # Calibrar
         ret, matrix, distortion, rvecs, tvecs = cv2.calibrateCamera(
             objpoints, imgpoints, gray.shape[::-1], None, None)
         
         if ret:
-            print(f"✓ Calibración exitosa (Error: {ret:.4f})")
+            print(f"[EXITO] Calibracion exitosa (Error: {ret:.4f})")
             return matrix, distortion
         else:
-            print("✗ Error en calibración")
+            print("[ERROR] Error en calibracion")
             return None, None
     
     def calibrate_stereo_pair(self, cam_left_id, cam_right_id):
@@ -149,16 +149,16 @@ class StereoCalibrator:
         matrix_left, distortion_left = self.calibrate_single_camera(cam_left_id, num_images=15)
         
         if matrix_left is None:
-            print("✗ Falló calibración de cámara izquierda")
+            print("[ERROR] Fallo calibracion de camara izquierda")
             return None
         
         matrix_right, distortion_right = self.calibrate_single_camera(cam_right_id, num_images=15)
         
         if matrix_right is None:
-            print("✗ Falló calibración de cámara derecha")
+            print("[ERROR] Fallo calibracion de camara derecha")
             return None
         
-        print("\n✓ Ambas cámaras calibradas")
+        print("\n[EXITO] Ambas camaras calibradas")
         
         # Asumir que las cámaras están aproximadamente horizontales
         # En una calibración real, usarías stereoCalibrate() con ambas cámaras simultáneamente
@@ -191,14 +191,14 @@ def measure_camera_separation():
     
     while True:
         try:
-            separation = float(input("\nDistancia entre cámaras (cm): "))
+            separation = float(input("\nDistancia entre camaras (cm): "))
             if 1 < separation < 50:
-                print(f"✓ Separación: {separation:.2f} cm")
+                print(f"[INFO] Separacion: {separation:.2f} cm")
                 return separation
             else:
-                print("⚠ Valor fuera de rango (1-50 cm). Intenta de nuevo.")
+                print("[ALERTA] Valor fuera de rango (1-50 cm). Intenta de nuevo.")
         except ValueError:
-            print("⚠ Ingresa un número válido")
+            print("[ALERTA] Ingresa un numero valido")
 
 
 def measure_keyboard_distance():
@@ -219,12 +219,12 @@ def measure_keyboard_distance():
         try:
             distance = float(input("\nDistancia del teclado (cm): "))
             if 30 < distance < 200:
-                print(f"✓ Distancia: {distance:.2f} cm")
+                print(f"[INFO] Distancia: {distance:.2f} cm")
                 return distance
             else:
-                print("⚠ Valor fuera de rango (30-200 cm). Intenta de nuevo.")
+                print("[ALERTA] Valor fuera de rango (30-200 cm). Intenta de nuevo.")
         except ValueError:
-            print("⚠ Ingresa un número válido")
+            print("[ALERTA] Ingresa un numero valido")
 
 
 def save_calibration(calibration_data, output_path='camcalibration/calibration.json'):
@@ -240,19 +240,19 @@ def save_calibration(calibration_data, output_path='camcalibration/calibration.j
     with open(output_path, 'w') as f:
         json.dump(calibration_data, f, indent=4)
     
-    print(f"\n✓ Calibración guardada en: {output_path}")
+    print(f"\n[EXITO] Calibracion guardada en: {output_path}")
 
 
 def main():
     """Flujo principal de calibración"""
     
     print("\n" + "="*70)
-    print("HERRAMIENTA DE CALIBRACIÓN ESTEREOSCÓPICA")
+    print("HERRAMIENTA DE CALIBRACION ESTEREOSCOPICA")
     print("="*70)
-    print("\n1. Se calibrarán las cámaras")
-    print("2. Se medirá la separación entre cámaras")
-    print("3. Se medirá la distancia del teclado")
-    print("4. Se guardarán los parámetros")
+    print("\n1. Se calibraran las camaras")
+    print("2. Se medira la separacion entre camaras")
+    print("3. Se medira la distancia del teclado")
+    print("4. Se guardaran los parametros")
     print("\n" + "="*70)
     
     input("\nPresiona ENTER para comenzar...")
@@ -264,7 +264,7 @@ def main():
     calib_data = calibrator.calibrate_stereo_pair(cam_left_id=1, cam_right_id=2)
     
     if calib_data is None:
-        print("✗ Calibración fallida")
+        print("[ERROR] Calibracion fallida")
         return
     
     # Medir separación
@@ -279,7 +279,7 @@ def main():
     save_calibration(calib_data)
     
     print("\n" + "="*70)
-    print("✓ CALIBRACIÓN COMPLETADA")
+    print("[EXITO] CALIBRACION COMPLETADA")
     print("="*70)
     print("\nAhora puedes ejecutar: python -m src.main")
     print("="*70 + "\n")

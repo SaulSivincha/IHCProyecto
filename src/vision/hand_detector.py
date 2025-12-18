@@ -16,33 +16,13 @@ import cv2
 
 class HandDetector():
 
-    # WRIST = 0
-    # THUMB_CMC = 1  # Carpometacarpal Joint (CMC)
-    # THUMB_MCP = 2  # Metacarpophalangeal Joint (MP)
-    # THUMB_IP = 3   # Interphalangeal Joint (IP)
-    # THUMB_TIP = 4  # Finger Tip
-
-    # INDEX_MCP = 5
-    # INDEX_PIP = 6
-    # INDEX_DIP = 7  # Distal Interphalangeal Joint (DIP)
-    # INDEX_TIP = 8
-
-    # MIDDLE_MCP = 9
-    # MIDDLE_PIP = 10
-    # MIDDLE_DIP = 11
-    # MIDDLE_TIP = 12
-
-    # RING_MCP = 13
-    # RING_PIP = 14
-    # RING_DIP = 15
-    # RING_TIP = 16
-
-    # SMALL_MCP = 17
-    # SMALL_PIP = 18
-    # SMALL_DIP = 19
-    # SMALL_TIP = 20
-
-    # fingerTips = {THUMB_TIP, INDEX_TIP, MIDDLE_TIP, RING_TIP, SMALL_TIP}
+    # Indices de landmarks de MediaPipe Hands
+    # 0: MUNECA
+    # 1-4: PULGAR (CMC, MCP, IP, TIP)
+    # 5-8: INDICE (MCP, PIP, DIP, TIP)
+    # 9-12: MEDIO (MCP, PIP, DIP, TIP)
+    # 13-16: ANULAR (MCP, PIP, DIP, TIP)
+    # 17-20: MENIQUE (MCP, PIP, DIP, TIP)
 
     def __init__(self, staticImageMode=False, maxHands=2, detectionCon=0.5,
                  trackCon=0.5, img_width=640, img_height=480):
@@ -77,8 +57,8 @@ class HandDetector():
 
     def findHands(self, img):
 
-        # To improve performance, optionally mark the image as not writeable to
-        # pass by reference.
+        # Para mejorar el rendimiento, opcionalmente marcar la imagen como no escribible
+        # para pasar por referencia.
         img.flags.writeable = False
         imgRGB = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         img.flags.writeable = True
@@ -94,16 +74,32 @@ class HandDetector():
             found = True
         return found
 
-    def drawHands(self, img):
-        # if self.results.multi_handedness:
-        #     print('multi_handedness:\n{}'.format(
-        #         self.results.multi_handedness))
-
+    def drawHands(self, img, mirror=False, rotate_180=False):
+        """
+        Dibuja las conexiones de las manos en la imagen.
+        
+        Args:
+            img: Imagen donde dibujar
+            mirror: Si es True, invierte X (modo espejo)
+            rotate_180: Si es True, invierte X e Y (modo rotación 180)
+        """
         if self.results.multi_hand_landmarks:
             for handLandmarks in self.results.multi_hand_landmarks:
-                self.mpDraw.draw_landmarks(
-                    img, handLandmarks, self.mpHands.HAND_CONNECTIONS)
-        # return imgRGB
+                if rotate_180:
+                    import copy
+                    modified_landmarks = copy.deepcopy(handLandmarks)
+                    for lm in modified_landmarks.landmark:
+                        lm.x = 1.0 - lm.x
+                        lm.y = 1.0 - lm.y
+                    self.mpDraw.draw_landmarks(img, modified_landmarks, self.mpHands.HAND_CONNECTIONS)
+                elif mirror:
+                    import copy
+                    modified_landmarks = copy.deepcopy(handLandmarks)
+                    for lm in modified_landmarks.landmark:
+                        lm.x = 1.0 - lm.x
+                    self.mpDraw.draw_landmarks(img, modified_landmarks, self.mpHands.HAND_CONNECTIONS)
+                else:
+                    self.mpDraw.draw_landmarks(img, handLandmarks, self.mpHands.HAND_CONNECTIONS)
 
     # # TODO: No es necesario pasar la img, solo por w+h???
     # def getJoints(self, img, handNo=0, draw=False):
@@ -127,16 +123,24 @@ class HandDetector():
     #                 img, handLandmarks,
     #                 self.mpHands.HAND_CONNECTIONS)
 
-    def drawTips(self, img):
+    def drawTips(self, img, mirror=False, rotate_180=False):
         if self.results.multi_hand_landmarks:
             for id, handLandmarks in enumerate(
                     self.results.multi_hand_landmarks):
                 # print('handLandmarks=id:{}'.format(id))
                 for indx_tips in self.fingerTips:
-                    cx = handLandmarks.landmark[indx_tips].x * \
-                        self.img_width
-                    cy = handLandmarks.landmark[indx_tips].y * \
-                        self.img_height
+                    lx, ly = handLandmarks.landmark[indx_tips].x, handLandmarks.landmark[indx_tips].y
+                    
+                    if rotate_180:
+                        cx = (1.0 - lx) * self.img_width
+                        cy = (1.0 - ly) * self.img_height
+                    elif mirror:
+                        cx = (1.0 - lx) * self.img_width
+                        cy = ly * self.img_height
+                    else:
+                        cx = lx * self.img_width
+                        cy = ly * self.img_height
+                        
                     cv2.circle(img, (int(cx), int(cy)),
                                7, (255, 0, 0), cv2.FILLED)
 

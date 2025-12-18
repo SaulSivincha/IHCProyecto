@@ -10,6 +10,14 @@ Sistema limpio - Listo para agregar nuevos algoritmos
 # ==============================================================================
 
 ALGORITHMS_CONFIG = {
+    'Suavizado de Profundidad': {
+        'enabled': True,
+        'params': {
+            'smoothing_window': 3,        # Número de muestras para promediar
+            'outlier_threshold': 15.0,    # Diferencia máxima (cm) del median para filtrar outliers
+        },
+        'description': 'Reduce ruido de tracking aplicando promedio temporal. Mayor window = más suave pero más lento.'
+    },
     'Una Nota Por Acción': {
         'enabled': True,
         'params': {
@@ -22,8 +30,11 @@ ALGORITHMS_CONFIG = {
 }
 
 # Orden de ejecución de algoritmos
+# NOTA: "Suavizado de Profundidad" se incluye aquí para que aparezca en la UI,
+# aunque NO es un algoritmo de pipeline (se aplica en keyboard_mapper antes del pipeline).
 EXECUTION_ORDER = [
-    'Una Nota Por Acción',  # Evita activaciones múltiples en un gesto
+    'Suavizado de Profundidad',  # PRIMERO: Filtro de ruido previo
+    'Una Nota Por Acción',       # Evita activaciones múltiples en un gesto
 ]
 
 

@@ -25,7 +25,7 @@ class LessonManager:
         lessons_dir = Path(__file__).parent / 'lessons'
         
         if not lessons_dir.exists():
-            print(f"⚠ Directorio de lecciones no encontrado: {lessons_dir}")
+            print(f"[ALERTA] Directorio de lecciones no encontrado: {lessons_dir}")
             return
         
         # Buscar todos los archivos lesson_*.py
@@ -43,10 +43,10 @@ class LessonManager:
                         lesson_id = module_name.replace('lesson_', '')
                         self._lessons[lesson_id] = lesson_instance
                         self._lesson_order.append(lesson_id)
-                        print(f"✓ Lección cargada: {lesson_instance.name} ({lesson_id})")
+                        print(f"[INFO] Leccion cargada: {lesson_instance.name} ({lesson_id})")
             
             except Exception as e:
-                print(f"✗ Error al cargar {module_name}: {e}")
+                print(f"[ERROR] Error al cargar {module_name}: {e}")
     
     def get_all_lessons(self):
         """

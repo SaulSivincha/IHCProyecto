@@ -54,6 +54,12 @@ from src.config.app_config import AppConfig
 # --- Common ---
 from src.utils import round_half_up
 
+# ========== CARGAR CONFIGURACIÓN DE CÁMARAS ==========
+# IMPORTANTE: Debe ejecutarse ANTES de crear instancia de StereoConfig
+# para aplicar los IDs configurados por el usuario en la UI
+StereoConfig.load_camera_ids_from_calibration()
+# ======================================================
+
 def frame_add_crosshairs(frame, x, y, r=20, lc=(0, 0, 255), cc=(0, 0, 255), lw=2, cw=1):
 
     x = int(round(x, 0))
@@ -99,10 +105,10 @@ def run_calibration_process(ui_helper, pixel_width, pixel_height, config, force_
             action = show_calibration_summary(summary)
             
             if action == CalibrationSummaryDialog.ACTION_START:
-                print("\n✓ Usando calibración existente - Iniciando juego...")
+                print("\n[EXITO] Usando calibración existente - Iniciando juego...")
                 return True
             elif action == CalibrationSummaryDialog.ACTION_RECALIBRATE_ALL:
-                print("\n✓ Iniciando recalibración...")
+                print("\n[INFO] Iniciando recalibración...")
                 success = run_qt_calibration(cam_left_id=config.cam_left_id, cam_right_id=config.cam_right_id)
                 return success
                     
@@ -315,7 +321,7 @@ def run_calibration_process(ui_helper, pixel_width, pixel_height, config, force_
                 
                 elif key == ord('s') or key == ord('S'):  # Re-calibrar SOLO Fase 2
                     cv2.destroyWindow(window_name)
-                    print("\n⚡ Re-calibrando SOLO FASE 2...")
+                    print("\n[INFO] Re-calibrando SOLO FASE 2...")
                     print("  (Manteniendo calibración de Fase 1 existente)")
                     
                     # IMPORTANTE: Eliminar stereo del JSON ANTES de salir
@@ -333,7 +339,7 @@ def run_calibration_process(ui_helper, pixel_width, pixel_height, config, force_
                         
                         print("✓ Preparando re-calibración de Fase 2...\n")
                     except Exception as e:
-                        print(f"⚠ Error al modificar calibración: {e}")
+                        print(f"[ALERTA] Error al modificar calibración: {e}")
                     
                     # Actualizar variables de estado
                     force_recalibration = True
@@ -343,7 +349,7 @@ def run_calibration_process(ui_helper, pixel_width, pixel_height, config, force_
                 
                 elif key == ord('r') or key == ord('R'):  # Re-calibrar TODO
                     cv2.destroyWindow(window_name)
-                    print("\n⚠ Iniciando RE-CALIBRACIÓN COMPLETA...")
+                    print("\n[ALERTA] Iniciando RE-CALIBRACIÓN COMPLETA...")
                     print("  (Fase 1 + Fase 2 desde cero)")
                     force_recalibration = True
                     recalibrate_phase2_only = False
@@ -589,13 +595,13 @@ def run_calibration_process(ui_helper, pixel_width, pixel_height, config, force_
             # ========== CASO 2A: RE-CALIBRAR SOLO FASE 2 ==========
             if recalibrate_phase2_only and has_phase1:
                 print("\n" + "="*70)
-                print("⚡ RE-CALIBRANDO SOLO FASE 2")
+                print("[INFO] RE-CALIBRANDO SOLO FASE 2")
                 print("="*70)
-                print("✓ Fase 1 existente se mantendrá")
+                print("[INFO] Fase 1 existente se mantendrá")
                 print(f"  Izquierda: {summary['error_left']:.4f} px" if isinstance(summary['error_left'], float) else "  Izquierda: OK")
                 print(f"  Derecha: {summary['error_right']:.4f} px" if isinstance(summary['error_right'], float) else "  Derecha: OK")
-                print("\n⚡ Iniciando SOLO captura de pares estéreo...")
-                print("💡 TIP: Captura 15 pares y mantén tablero INMÓVIL")
+                print("\n[INFO] Iniciando SOLO captura de pares estéreo...")
+                print("[TIP] TIP: Captura 15 pares y mantén tablero INMÓVIL")
                 print("="*70 + "\n")
                 
                 from src.calibration import run_qt_calibration
@@ -607,7 +613,7 @@ def run_calibration_process(ui_helper, pixel_width, pixel_height, config, force_
                 )
                 
                 if not success:
-                    print("✗ Re-calibración de Fase 2 fallida o cancelada")
+                    print("[ERROR] Re-calibración de Fase 2 fallida o cancelada")
                     return False
                 
                 print("\n" + "="*70)
@@ -626,11 +632,11 @@ def run_calibration_process(ui_helper, pixel_width, pixel_height, config, force_
             # ========== CASO 2B: SOLO FASE 1 COMPLETA, FALTA FASE 2 ==========
             elif has_phase1 and not has_phase2 and not force_recalibration:
                 print("\n" + "="*70)
-                print("✓ FASE 1 COMPLETA - Saltando a Fase 2")
+                print("[EXITO] FASE 1 COMPLETA - Saltando a Fase 2")
                 print("="*70)
                 print(f"  Izquierda: {summary['error_left']:.4f} px" if isinstance(summary['error_left'], float) else "  Izquierda: OK")
                 print(f"  Derecha: {summary['error_right']:.4f} px" if isinstance(summary['error_right'], float) else "  Derecha: OK")
-                print("\n⚡ Iniciando Fase 2 directamente...")
+                print("\n[INFO] Iniciando Fase 2 directamente...")
                 print("="*70 + "\n")
             
             # ========== CASO 3: NADA COMPLETO O RE-CALIBRACIÓN COMPLETA SOLICITADA ==========
@@ -650,7 +656,7 @@ def run_calibration_process(ui_helper, pixel_width, pixel_height, config, force_
                 )
                 
                 if not success:
-                    print("✗ Calibración fallida o cancelada")
+                    print("[ERROR] Calibración fallida o cancelada")
                     return False
                 
                 print("\n" + "="*70)
@@ -660,7 +666,7 @@ def run_calibration_process(ui_helper, pixel_width, pixel_height, config, force_
             return True
         
     except Exception as e:
-        print(f"✗ Error durante calibración: {e}")
+        print(f"[ERROR] Error durante calibración: {e}")
         import traceback
         traceback.print_exc()
         return False
@@ -686,7 +692,7 @@ def main():
     
     # ====== INICIALIZAR RECURSOS PERSISTENTES ANTES DEL MENÚ ======
     print("\n" + "="*60)
-    print("🎹 PIANO VIRTUAL - INICIANDO")
+    print("[INFO] PIANO VIRTUAL - INICIANDO")
     print("="*60)
     
     resources = get_resources()
@@ -731,9 +737,9 @@ def main():
                     current_lesson.start()
                     in_lesson = True
                     theory_mode = True
-                    print(f"✓ Modo TEORÍA iniciado: Lección '{lesson.name}'")
+                    print(f"[EXITO] Modo TEORÍA iniciado: Lección '{lesson.name}'")
                 else:
-                    print(f"⚠ Lección '{target_lesson_id}' no encontrada.")
+                    print(f"[ALERTA] Lección '{target_lesson_id}' no encontrada.")
             
             # Si solo se seleccionó "theory" sin lección específica, mostrar menú PyQt6
             elif start_mode == "theory":
@@ -749,12 +755,12 @@ def main():
                             current_lesson.start()
                             in_lesson = True
                             theory_mode = True
-                            print(f"✓ Lección seleccionada: '{lesson.name}'")
+                            print(f"[EXITO] Lección seleccionada: '{lesson.name}'")
                     else:
                         print("Regresando al menú principal...")
                         continue  # Volver al inicio del loop global
                 else:
-                    print("⚠ No hay lecciones disponibles.")
+                    print("[ALERTA] No hay lecciones disponibles.")
             
             # Manejar selección de rhythm con menú PyQt6
             elif start_mode == "rhythm":
@@ -769,12 +775,12 @@ def main():
                             current_song = song
                             in_song = True
                             rhythm_mode = True
-                            print(f"✓ Canción seleccionada: '{song.name}'")
+                            print(f"[EXITO] Canción seleccionada: '{song.name}'")
                     else:
                         print("Regresando al menú principal...")
                         continue  # Volver al inicio del loop global
                 else:
-                    print("⚠ No hay canciones disponibles.")
+                    print("[ALERTA] No hay canciones disponibles.")
                     continue
             
             if start_mode is None or start_mode == "exit":
@@ -873,8 +879,8 @@ def main():
             else:
                 main_window_name = 'Same Point of View: left+rigth cam'
 
-            cv2.namedWindow(main_window_name)
-            cv2.moveWindow(main_window_name, (pixel_width//2), (pixel_height//2))
+            # cv2.namedWindow(main_window_name)
+            # cv2.moveWindow(main_window_name, (pixel_width//2), (pixel_height//2))
 
 
 

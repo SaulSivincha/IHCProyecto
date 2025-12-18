@@ -534,15 +534,10 @@ class QtCalibrationManager(QObject):
         if not ret:
             return
         
-        # Importar configuración estéreo
+        # IMPORTANTE: Aplicar transformaciones antes de detectar tablero
+        # Esto asegura que la calibración se haga en el espacio transformado correcto
         from ..vision.stereo_config import StereoConfig
-
-        # Aplicar transformación según configuración
-        # IMPORTANTE: Debe coincidir con la transformación usada en las UIs
-        if hasattr(StereoConfig, 'ROTATE_CAMERAS_180') and StereoConfig.ROTATE_CAMERAS_180:
-            frame = cv2.flip(frame, -1)
-        elif hasattr(StereoConfig, 'MIRROR_HORIZONTAL') and StereoConfig.MIRROR_HORIZONTAL:
-            frame = cv2.flip(frame, 1)
+        frame = StereoConfig.apply_camera_transforms(frame)
 
         # Detectar tablero
         detected, corners, frame_overlay = self.current_calibrator.detect_chessboard(frame)
@@ -560,11 +555,12 @@ class QtCalibrationManager(QObject):
             self.window.set_status("Buscando tablero...", "#FFA500")
             self.window.enable_capture(False)
         
-        # Mostrar frame
+        # Mostrar frame (aplicar espejo para visualización intuitiva)
+        frame_display = StereoConfig.apply_display_transform(frame_overlay)
         if camera_name == "left":
-            self.window.update_frames(frame_left=frame_overlay)
+            self.window.update_frames(frame_left=frame_display)
         else:
-            self.window.update_frames(frame_right=frame_overlay)
+            self.window.update_frames(frame_right=frame_display)
     
     def _on_capture(self):
         """Maneja el evento de captura"""
@@ -719,16 +715,11 @@ class QtCalibrationManager(QObject):
         if not ret_left or not ret_right:
             return
         
-        # Importar configuración estéreo
+        # IMPORTANTE: Aplicar las mismas transformaciones que en runtime
+        # Esto asegura que la calibración se haga en el espacio transformado correcto
         from ..vision.stereo_config import StereoConfig
-
-        # Aplicar transformación según configuración (igual que en UIs)
-        if hasattr(StereoConfig, 'ROTATE_CAMERAS_180') and StereoConfig.ROTATE_CAMERAS_180:
-            frame_left = cv2.flip(frame_left, -1)
-            frame_right = cv2.flip(frame_right, -1)
-        elif hasattr(StereoConfig, 'MIRROR_HORIZONTAL') and StereoConfig.MIRROR_HORIZONTAL:
-            frame_left = cv2.flip(frame_left, 1)
-            frame_right = cv2.flip(frame_right, 1)
+        frame_left = StereoConfig.apply_camera_transforms(frame_left)
+        frame_right = StereoConfig.apply_camera_transforms(frame_right)
 
         # Detectar tablero en ambas cámaras
         detected_both, corners_left, corners_right, display_left, display_right = \
@@ -761,8 +752,11 @@ class QtCalibrationManager(QObject):
             self.window.set_status("Buscando tablero en ambas cámaras...", "#FFA500")
             self.window.enable_capture(False)
         
-        # Mostrar frames
-        self.window.update_frames(display_left, display_right)
+        # Mostrar frames (con espejo)
+        self.window.update_frames(
+            StereoConfig.apply_display_transform(display_left), 
+            StereoConfig.apply_display_transform(display_right)
+        )
     
     def _capture_stereo_pair(self):
         """Captura un par estéreo"""
@@ -1100,30 +1094,63 @@ class QtCalibrationManager(QObject):
         # Importar configuración estéreo
         from ..vision.stereo_config import StereoConfig
 
-        # Aplicar transformación según configuración (igual que en UIs)
-        if hasattr(StereoConfig, 'ROTATE_CAMERAS_180') and StereoConfig.ROTATE_CAMERAS_180:
-            frame_left = cv2.flip(frame_left, -1)
-            frame_right = cv2.flip(frame_right, -1)
-        elif hasattr(StereoConfig, 'MIRROR_HORIZONTAL') and StereoConfig.MIRROR_HORIZONTAL:
-            frame_left = cv2.flip(frame_left, 1)
-            frame_right = cv2.flip(frame_right, 1)
+        # 1. Transformación RAW (para geometría correcta y detección)
+        frame_left = StereoConfig.apply_camera_transforms(frame_left)
+        frame_right = StereoConfig.apply_camera_transforms(frame_right)
 
-        # Copias para visualización
-        display_left = frame_left.copy()
-        display_right = frame_right.copy()
+        # 2. Detección en RAW (coordenadas reales)
+        # Usamos hand_detector tanto para izq como der? No, self.hand_detector es el principal?
+        # Revisando código abajo: usa self.hand_detector para AMBAS? (Líneas 1110 y 1116 usan self.hand_detector)
+        # Esto parece un BUG original si usa el mismo detector para ambas imágenes secuencialmente
+        # Pero asumiremos que es intencional o que es una instancia compartida.
+        # CORRECCIÓN: Debería usar detectores separados si existen, pero depth_calibrator usa landmarks.
         
-        # Detectar manos
-        found_left = self.hand_detector.findHands(display_left)
+        found_left = self.hand_detector.findHands(frame_left)
         landmarks_left = None
         if found_left and self.hand_detector.results.multi_hand_landmarks:
             landmarks_left = self.hand_detector.results.multi_hand_landmarks[0]
-            self.hand_detector.drawHands(display_left)
             
-        found_right = self.hand_detector.findHands(display_right)
+        # IMPORTANTE: Si usamos el mismo detector, debemos guardar landmarks_left antes de detectar right
+        # O si hay un detector derecho... Revisemos init.
+        # Asumiendo self.hand_detector se usa para Left. Para Right usamos... el mismo?
+        # El código original (línea 1116) usa self.hand_detector.findHands(display_right) SOBREESCRIBIENDO results.
+        # ESTO ES UN BUG POTENCIAL si calculate_depth necesita both results?
+        # No, depth_calibrator.calculate_depth recibe (landmarks_left, landmarks_right).
+        # Así que debemos guardar los objetos landmarks antes de la segunda detección.
+        
+        # Guardar landmarks izq
+        import copy
+        processed_landmarks_left = copy.deepcopy(landmarks_left) if landmarks_left else None
+
+        found_right = self.hand_detector.findHands(frame_right)
         landmarks_right = None
         if found_right and self.hand_detector.results.multi_hand_landmarks:
             landmarks_right = self.hand_detector.results.multi_hand_landmarks[0]
-            self.hand_detector.drawHands(display_right)
+
+        # 3. Preparar Display (Espejo para visualización)
+        display_left = StereoConfig.apply_display_transform(frame_left)
+        display_right = StereoConfig.apply_display_transform(frame_right)
+        
+        # 4. Dibujar en Display (con rotate_180=True)
+        # Mejor solución: Dibujar Right primero (que está activo en results)
+        if landmarks_right:
+            self.hand_detector.drawHands(display_right, rotate_180=True)
+            
+        # Para Left, tendríamos que re-inyectar los resultados... o re-detectar en display?
+        # Re-detectar es lento. 
+        # Intentemos "mockear" los resultados para dibujar
+        if processed_landmarks_left:
+            # Restaurar landmarks izq temporalmente
+            class MockResults:
+                def __init__(self, lm): self.multi_hand_landmarks = [lm]
+            
+            original_results = self.hand_detector.results
+            self.hand_detector.results = MockResults(processed_landmarks_left)
+            self.hand_detector.drawHands(display_left, rotate_180=True)
+            self.hand_detector.results = original_results # Restaurar (que tiene Right)
+            
+        # Actualizar variables para cálculo (usamos las copias/referencias directas)
+        landmarks_left = processed_landmarks_left
             
         # Calcular profundidad si hay manos en ambas
         self.last_depth_value = None
@@ -1246,6 +1273,7 @@ class QtCalibrationManager(QObject):
     def _finish_calibration(self, success):
         """Finaliza el proceso de calibración"""
         self._cleanup()
+        self.window.close()
         self.finished.emit(success)
         
         if success:
@@ -1542,7 +1570,14 @@ def run_qt_calibration(cam_left_id=1, cam_right_id=2):
     manager.finished.connect(exit_loop)
     loop.exec()
     
-    print(f"[DEBUG] Event loop terminado, resultado: {result[0]}")
+    # IMPORTANTE: Procesar eventos pendientes para asegurar que la ventana se cierre visualmente
+    # antes de retornar al bloqueante main.py
+    print("[DEBUG] Event loop terminado, procesando eventos de cierre...")
+    app.processEvents()
+    time.sleep(0.1)
+    app.processEvents()
+    
+    print(f"[DEBUG] Retornando resultado: {result[0]}")
     
     return result[0]
 

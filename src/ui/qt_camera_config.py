@@ -320,6 +320,10 @@ class CameraConfigDialog(QDialog):
             cap.release()
             
             if ret and frame is not None and frame.size > 0:
+                # IMPORTANTE: Aplicar las mismas transformaciones que en runtime
+                # para que la vista previa coincida con lo que verá durante el uso
+                from src.vision.stereo_config import StereoConfig
+                frame = StereoConfig.apply_camera_transforms(frame)
                 return frame
             return None
         except:

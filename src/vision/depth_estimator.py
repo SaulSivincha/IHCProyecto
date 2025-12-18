@@ -84,8 +84,8 @@ class DepthEstimator:
         """Carga todos los parámetros desde calibration.json"""
         if not self.calibration_file.exists():
             raise FileNotFoundError(
-                f"❌ Archivo de calibración no encontrado: {self.calibration_file}\n"
-                f"   Ejecuta calibración completa primero."
+                f"[ERROR] Archivo de calibracion no encontrado: {self.calibration_file}\n"
+                f"   Ejecuta calibracion completa primero."
             )
         
         with open(self.calibration_file, 'r') as f:
@@ -93,15 +93,15 @@ class DepthEstimator:
         
         # Verificar que existan todas las secciones necesarias
         if 'left_camera' not in data or 'right_camera' not in data:
-            raise ValueError("❌ Calibración incompleta: falta Fase 1 (cámaras individuales)")
+            raise ValueError("[ERROR] Calibracion incompleta: falta Fase 1 (camaras individuales)")
         
         if 'stereo' not in data or data['stereo'] is None:
-            raise ValueError("❌ Calibración incompleta: falta Fase 2 (calibración estéreo)")
+            raise ValueError("[ERROR] Calibracion incompleta: falta Fase 2 (calibracion estereo)")
         
         if 'rectification' not in data['stereo']:
             raise ValueError(
-                "❌ Calibración incompleta: falta rectificación.\n"
-                "   Re-calibra Fase 2 para generar parámetros de rectificación."
+                "[ERROR] Calibracion incompleta: falta rectificacion.\n"
+                "   Re-calibra Fase 2 para generar parametros de rectificacion."
             )
         
         # Cargar parámetros intrínsecos (Fase 1)
@@ -122,25 +122,25 @@ class DepthEstimator:
         
         # Cargar parámetros extrínsecos (Fase 2)
         stereo = data['stereo']
-        self.R = np.array(stereo['rotation_matrix'], dtype=np.float32)
-        self.T = np.array(stereo['translation_vector'], dtype=np.float32)
+        self.R = np.array(stereo['rotation_matrix'], dtype=np.float32).reshape(3, 3)
+        self.T = np.array(stereo['translation_vector'], dtype=np.float32).reshape(3, 1)
         self.baseline_cm = stereo.get('baseline_cm', np.linalg.norm(self.T) * 100)
         
         # NUEVO: Cargar transformaciones al mundo si están disponibles
         # (Backward compatible: si no existen, usa convención por defecto)
         if 'world_rotation' in left_cam and 'world_rotation' in right_cam:
-            self.R_world_left = np.array(left_cam['world_rotation'], dtype=np.float32)
+            self.R_world_left = np.array(left_cam['world_rotation'], dtype=np.float32).reshape(3, 3)
             self.T_world_left = np.array(left_cam['world_translation'], dtype=np.float32).reshape(3, 1)
-            self.R_world_right = np.array(right_cam['world_rotation'], dtype=np.float32)
+            self.R_world_right = np.array(right_cam['world_rotation'], dtype=np.float32).reshape(3, 3)
             self.T_world_right = np.array(right_cam['world_translation'], dtype=np.float32).reshape(3, 1)
-            print("  ✓ Transformaciones al mundo cargadas desde calibración")
+            print("  [INFO] Transformaciones al mundo cargadas desde calibracion")
         else:
             # Fallback: usar convención estándar (cam izq = origen)
             self.R_world_left = np.eye(3, dtype=np.float32)
             self.T_world_left = np.zeros((3, 1), dtype=np.float32)
             self.R_world_right = self.R  # Rotación estéreo
             self.T_world_right = self.T  # Traslación estéreo
-            print("  ⚠ Transformaciones al mundo no encontradas, usando convención por defecto")
+            print("  [ALERTA] Transformaciones al mundo no encontradas, usando convencion por defecto")
         
         # Cargar parámetros de rectificación
         rect = stereo['rectification']
@@ -163,19 +163,19 @@ class DepthEstimator:
             # Distancia del teclado (IMPORTANTE - calculada en Fase 3)
             if 'keyboard_distance_cm' in depth_corr:
                 self.keyboard_distance_cm = depth_corr['keyboard_distance_cm']
-                print(f"  ✓ Distancia del teclado cargada: {self.keyboard_distance_cm:.2f} cm")
+                print(f"  [INFO] Distancia del teclado cargada: {self.keyboard_distance_cm:.2f} cm")
             else:
-                print("  ⚠ Distancia del teclado no encontrada en calibración")
+                print("  [ALERTA] Distancia del teclado no encontrada en calibracion")
                 print("    Ejecuta Fase 3 para calibrar la distancia del teclado")
         else:
             # Sin Fase 3 - usar valores por defecto
             self.DEPTH_CORRECTION_FACTOR = 1.0
-            print("  ⚠ Fase 3 no completada - la detección de notas puede no funcionar")
-            print("    Ejecuta Fase 3 (Calibración de Distancia) para habilitar la detección")
+            print("  [ALERTA] Fase 3 no completada - la deteccion de notas puede no funcionar")
+            print("    Ejecuta Fase 3 (Calibracion de Distancia) para habilitar la deteccion")
         
-        print(f"✓ Calibración cargada desde: {self.calibration_file}")
+        print(f"[EXITO] Calibracion cargada desde: {self.calibration_file}")
         print(f"  Baseline: {self.baseline_cm:.2f} cm")
-        print(f"  Resolución: {self.image_size[0]}x{self.image_size[1]}")
+        print(f"  Resolucion: {self.image_size[0]}x{self.image_size[1]}")
     
     def _generate_rectification_maps(self):
         """
@@ -202,7 +202,7 @@ class DepthEstimator:
             cv2.CV_32FC1
         )
         
-        print(f"✓ Mapas de rectificación generados")
+        # print(f"[INFO] Mapas de rectificacion generados")
     
     def rectify_images(self, img_left, img_right):
         """

@@ -52,10 +52,10 @@ class UnaNotaPorAccionAlgorithm(BaseAlgorithm):
             finger_id, key, depth, velocity, x_pos, y_pos = detection
             
             # --- 1. LIFT GUARD (Critical Safety) ---
-            # Si vel < -2.0, BLOQUEAR.
-            # Esta es la única razón por la que existe este algoritmo activado.
+            # Si vel < -5.0 (antes -2.0), BLOQUEAR.
+            # Relajamos el umbral porque en los bordes el ruido puede simular velocidad alta.
             
-            IS_LIFTING = velocity < -2.0
+            IS_LIFTING = velocity < -5.0
             
             if IS_LIFTING:
                 # Si detectamos lift, cortamos y ponemos cooldown.
@@ -65,7 +65,7 @@ class UnaNotaPorAccionAlgorithm(BaseAlgorithm):
                 self.cooldown_por_dedo[finger_id] = 6 
                 
                 if self._debug_count % 30 == 0:
-                    print(f"🛑 [LIFT GUARD] {finger_id} | v={velocity:.2f} (Blocked)")
+                    print(f"[BLOQUEO] [LIFT GUARD] {finger_id} | v={velocity:.2f} (Blocked)")
                 continue
 
             # --- 2. PASO TRANSPARENTE (Zero Logic) ---
@@ -80,7 +80,7 @@ class UnaNotaPorAccionAlgorithm(BaseAlgorithm):
                 
                 # Debug ultrasimple
                 if self._debug_count % 60 == 0: 
-                    print(f"⚡ [PASS] {key} | v={velocity:.2f}")
+                    print(f"[PASS] {key} | v={velocity:.2f}")
 
         return filtered
     

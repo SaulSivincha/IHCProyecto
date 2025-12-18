@@ -21,18 +21,119 @@ class StereoConfig:
     PIXEL_WIDTH = 640               # Ancho en píxeles
     PIXEL_HEIGHT = 480              # Alto en píxeles
     FRAME_RATE = 30                 # FPS objetivo
+    
+    @staticmethod
+    def load_camera_ids_from_calibration():
+        """
+        Lee los IDs de cámaras desde calibration.json si existe.
+        
+        Este método debe llamarse ANTES de crear instancias de StereoConfig
+        para que aplique los IDs configurados por el usuario.
+        """
+        from pathlib import Path
+        
+        calib_path = Path("camcalibration/calibration.json")
+        
+        try:
+            if calib_path.exists():
+                with open(calib_path, 'r') as f:
+                    data = json.load(f)
+                
+                if 'camera_ids' in data:
+                    StereoConfig.LEFT_CAMERA_SOURCE = data['camera_ids']['left']
+                    StereoConfig.RIGHT_CAMERA_SOURCE = data['camera_ids']['right']
+                    print(f"[StereoConfig] IDs de cámara cargados desde calibration.json:")
+                    print(f"  Izquierda: Cámara {StereoConfig.LEFT_CAMERA_SOURCE}")
+                    print(f"  Derecha: Cámara {StereoConfig.RIGHT_CAMERA_SOURCE}")
+                    return True
+        except Exception as e:
+            print(f"[StereoConfig] Error al cargar IDs de cámara: {e}")
+        
+        print(f"[StereoConfig] Usando IDs por defecto: L={StereoConfig.LEFT_CAMERA_SOURCE}, R={StereoConfig.RIGHT_CAMERA_SOURCE}")
+        return False
+    
+    @staticmethod
+    def apply_camera_transforms(frame):
+        """
+        Aplica transformaciones para CALIBRACIÓN y DETECCIÓN.
+        
+        Estas transformaciones afectan la geometría estéreo y DEBEN aplicarse
+        consistentemente durante calibración Y runtime para que las matrices
+        R, T, P funcionen correctamente.
+        
+        IMPORTANTE: NO aplicar espejado aquí porque afecta la geometría.
+        El espejado solo se aplica para visualización con apply_display_transform().
+        
+        Args:
+            frame: Frame original de OpenCV (numpy array)
+            
+        Returns:
+            Frame transformado para procesamiento interno
+        """
+        import cv2
+        
+        if frame is None:
+            return None
+        
+        result = frame.copy()
+        
+        # NO aplicar ninguna transformación para mantener geometría correcta
+        # La calibración y detección trabajan con imágenes RAW
+        # El espejado se aplica SOLO para visualización
+        
+        return result
+    
+    @staticmethod
+    def apply_display_transform(frame):
+        """
+        Aplica transformación SOLO para VISUALIZACIÓN (Rotación 180°).
+        
+        Esta transformación hace DOS cosas:
+        1. Rota la imagen 180° (Flip Vertical + Flip Horizontal)
+           -> Pone al usuario "abajo" (posición natural de piano)
+        2. Al incluir Flip Horizontal, mantiene el efecto espejo/selfie
+           -> Mover derecha física = Mover derecha pantalla
+        
+        IMPORTANTE: Usar DESPUÉS de la detección de manos, solo para mostrar.
+        
+        Args:
+            frame: Frame procesado (después de detección)
+            
+        Returns:
+            Frame rotado 180° para visualización perfecta
+        """
+        import cv2
+        
+        if frame is None:
+            return None
+        
+        # Rotación 180° = Flip Vertical + Flip Horizontal
+        result = cv2.rotate(frame, cv2.ROTATE_180)
+        
+        return result
 
-    # Orientación física y modo espejo (compartido por TODOS los modos)
-    # IMPORTANTE: Estos flags afectan TODO el sistema (UI, calibración, teclado).
-    # Después de cambiarlos, DEBES recalibrar (Fase 1, 2 y 3).
+    @staticmethod
+    def transform_point_for_display(point, width, height):
+        """
+        Transforma un punto (x, y) del espacio RAW al espacio DISPLAY.
+        Debe coincidir con la transformación de apply_display_transform.
+        """
+        x, y = point
+        # Rotación 180: (x, y) -> (w-x, h-y)
+        new_x = width - x
+        new_y = height - y
+        return (new_x, new_y)
+
+    # ==================== ORIENTACIÓN DE CÁMARAS ====================
+    # NOTA: Estas configuraciones ya NO afectan la geometría.
+    # La calibración y detección usan imágenes RAW.
+    # Solo apply_display_transform() afecta la visualización.
     
-    # ROTATE_CAMERAS_180: Rota la imagen 180° para cámaras que están frente a ti.
-    # Las cámaras ven el piano "al revés" (Do a la derecha), esto lo corrige.
-    ROTATE_CAMERAS_180 = True       # True = cámaras frente a ti, corrige orientación
+    # ROTATE_CAMERAS_180: Ya no se usa (mantenido por compatibilidad)
+    ROTATE_CAMERAS_180 = False       # Desactivado - no afecta nada
     
-    # MIRROR_HORIZONTAL: Efecto espejo (como selfie).
-    # Generalmente False cuando usas ROTATE_CAMERAS_180.
-    MIRROR_HORIZONTAL = False       # False = sin efecto espejo
+    # MIRROR_HORIZONTAL: Ya no se usa (mantenido por compatibilidad)
+    MIRROR_HORIZONTAL = False        # Desactivado - apply_display_transform() lo hace
     
     # ==================== CALIBRACIÓN ÓPTICA ====================
     # Logi C920s HD Pro Webcam
@@ -131,14 +232,14 @@ class StereoConfig:
         print("\n" + "="*70)
         print("CONFIGURACIÓN ESTÉREO ACTUAL")
         print("="*70)
-        print(f"Cámaras: LEFT={StereoConfig.LEFT_CAMERA_SOURCE}, RIGHT={StereoConfig.RIGHT_CAMERA_SOURCE}")
-        print(f"Resolución: {StereoConfig.PIXEL_WIDTH}x{StereoConfig.PIXEL_HEIGHT} @ {StereoConfig.FRAME_RATE}fps")
+        print(f"Camaras: IZQ={StereoConfig.LEFT_CAMERA_SOURCE}, DER={StereoConfig.RIGHT_CAMERA_SOURCE}")
+        print(f"Resolucion: {StereoConfig.PIXEL_WIDTH}x{StereoConfig.PIXEL_HEIGHT} @ {StereoConfig.FRAME_RATE}fps")
         print(f"FoV: H={StereoConfig.CAMERA_H_FOV}°, V={StereoConfig.CAMERA_V_FOV}°")
-        print(f"Ángulos efectivos: W={StereoConfig.ANGLE_WIDTH:.2f}°, H={StereoConfig.ANGLE_HEIGHT:.2f}°")
-        print(f"Separación cámaras: {StereoConfig.CAMERA_SEPARATION} cm")
+        print(f"Angulos efectivos: W={StereoConfig.ANGLE_WIDTH:.2f}°, H={StereoConfig.ANGLE_HEIGHT:.2f}°")
+        print(f"Separacion camaras: {StereoConfig.CAMERA_SEPARATION} cm")
         print(f"Distancia teclado: {StereoConfig.VKB_CENTER_DISTANCE} cm")
         print(f"Umbral profundidad: {StereoConfig.DEPTH_THRESHOLD} cm")
-        print(f"Confianza detección: {StereoConfig.HAND_DETECTION_CONFIDENCE}")
+        print(f"Confianza deteccion: {StereoConfig.HAND_DETECTION_CONFIDENCE}")
         print(f"Confianza rastreo: {StereoConfig.HAND_TRACKING_CONFIDENCE}")
         print(f"Teclado: {StereoConfig.KEYBOARD_WHITE_KEYS} blancas + "
               f"{StereoConfig.KEYBOARD_TOTAL_KEYS - StereoConfig.KEYBOARD_WHITE_KEYS} negras")
@@ -151,13 +252,13 @@ class StereoConfig:
     def update_depth_threshold(new_threshold):
         """Actualiza dinámicamente el umbral de profundidad"""
         if new_threshold < 0.5:
-            print("⚠ Umbral muy bajo (mínimo 0.5 cm)")
+            print("[ALERTA] Umbral muy bajo (minimo 0.5 cm)")
             return False
         if new_threshold > 10:
-            print("⚠ Umbral muy alto (máximo 10 cm)")
+            print("[ALERTA] Umbral muy alto (maximo 10 cm)")
             return False
         StereoConfig.DEPTH_THRESHOLD = new_threshold
-        print(f"✓ Umbral actualizado a: {new_threshold:.2f} cm")
+        print(f"[INFO] Umbral actualizado a: {new_threshold:.2f} cm")
         return True
     
     @staticmethod
@@ -165,7 +266,7 @@ class StereoConfig:
         """Actualiza las fuentes de cámara"""
         StereoConfig.LEFT_CAMERA_SOURCE = left_id
         StereoConfig.RIGHT_CAMERA_SOURCE = right_id
-        print(f"✓ Cámaras actualizadas: LEFT={left_id}, RIGHT={right_id}")
+        print(f"[INFO] Camaras actualizadas: IZQ={left_id}, DER={right_id}")
     
     @staticmethod
     def load_calibration(calibration_path='camcalibration/calibration.json'):
@@ -179,7 +280,7 @@ class StereoConfig:
             True si se cargó exitosamente, False en caso contrario
         """
         if not os.path.exists(calibration_path):
-            print(f"⚠ No se encontró archivo de calibración en: {calibration_path}")
+            print(f"[ALERTA] No se encontro archivo de calibracion en: {calibration_path}")
             print("  Usando valores por defecto")
             return False
         
@@ -220,15 +321,15 @@ class StereoConfig:
                 if 'right' in calib_data['camera_ids']:
                     StereoConfig.RIGHT_CAMERA_SOURCE = calib_data['camera_ids']['right']
             
-            print(f"✓ Calibración cargada desde: {calibration_path}")
-            print(f"  Separación cámaras: {StereoConfig.CAMERA_SEPARATION:.2f} cm")
+            print(f"[EXITO] Calibracion cargada desde: {calibration_path}")
+            print(f"  Separacion camaras: {StereoConfig.CAMERA_SEPARATION:.2f} cm")
             print(f"  Distancia teclado: {StereoConfig.VKB_CENTER_DISTANCE:.2f} cm")
             print(f"  Umbral profundidad: {StereoConfig.DEPTH_THRESHOLD:.2f} cm")
             
             return True
         
         except Exception as e:
-            print(f"✗ Error al cargar calibración: {e}")
+            print(f"[ERROR] Error al cargar calibracion: {e}")
             print("  Usando valores por defecto")
             return False
 

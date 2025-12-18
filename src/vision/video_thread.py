@@ -1,14 +1,5 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-Created on Sun Aug 22 20:00:06 2021
-Idea y código original:
-    https://www.youtube.com/watch?v=sW4CVI51jDY
-    Clayton Darwin
-    https://gitlab.com/duder1966/youtube-projects/-/tree/master/
-
-@author: mherrera
-"""
 import time
 import threading
 import queue
@@ -19,11 +10,10 @@ import numpy as np
 # Camera Tread
 # ------------------------------
 
-
 class VideoThread:
 
     def __init__(self,
-                 video_source=2,  # device, stream or file
+                 video_source=2,  # dispositivo
                  video_width=640,
                  video_height=480,
                  video_frame_rate=30,
@@ -97,7 +87,7 @@ class VideoThread:
             self.video_frame_rate = self.resource.get(cv2.CAP_PROP_FPS)
             self.video_fourcc = self.resource.get(cv2.CAP_PROP_FOURCC)
 
-        # black frame (filler)
+        # Frame negro de relleno (fallback)
         self.black_frame = np.zeros((
             self.video_height, self.video_width, 3), np.uint8)
 
@@ -127,7 +117,7 @@ class VideoThread:
         )        
         
         self.start()
-        print('reconnecting...')
+        print('[INFO] Reconectando camara...')
         
     def is_available(self):
         return self.resource_available

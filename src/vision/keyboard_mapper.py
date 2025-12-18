@@ -49,6 +49,19 @@ class KeyboardMapModular:
         from src.vision.algorithms import get_algorithm_manager
         self.algorithm_manager = get_algorithm_manager()
         
+        # Configuración de suavizado de profundidad (dinámico desde algorithms_config)
+        self._update_smoothing_config()
+        
+    def _update_smoothing_config(self):
+        """Actualiza parámetros de suavizado desde algorithms_config."""
+        from src.vision.algorithms.algorithms_config import ALGORITHMS_CONFIG
+        
+        smoothing_config = ALGORITHMS_CONFIG.get('Suavizado de Profundidad', {})
+        self.smoothing_enabled = smoothing_config.get('enabled', True)
+        params = smoothing_config.get('params', {})
+        self.smoothing_window = params.get('smoothing_window', 3)
+        self.outlier_threshold = params.get('outlier_threshold', 15.0)
+        
     def _initialize_algorithms(self):
         """Inicializa y registra todos los algoritmos según configuración."""
         
@@ -118,14 +131,29 @@ class KeyboardMapModular:
                             self.finger_depth_history[finger_id] = deque(maxlen=self.velocity_history_size)
                         self.finger_depth_history[finger_id].append(depth)
                         
-                        # Calcular velocidad
+                        # NUEVO: Suavizar profundidad para reducir ruido de tracking
+                        # Parámetros configurables desde algorithms_config.py
+                        depth_smoothed = depth
+                        
+                        if self.smoothing_enabled and len(self.finger_depth_history[finger_id]) >= self.smoothing_window:
+                            history = list(self.finger_depth_history[finger_id])
+                            # Filtrar outliers extremos antes de promediar
+                            recent_values = history[-self.smoothing_window:]
+                            median_val = sorted(recent_values)[len(recent_values)//2]  # Valor medio
+                            # Filtrar valores que difieren más del threshold
+                            filtered = [v for v in recent_values if abs(v - median_val) < self.outlier_threshold]
+                            if len(filtered) > 0:
+                                depth_smoothed = sum(filtered) / len(filtered)
+                        
+                        # Calcular velocidad usando profundidad suavizada
                         velocity = 0.0
                         if len(self.finger_depth_history[finger_id]) >= 2:
                             history = list(self.finger_depth_history[finger_id])
+                            # Usar los últimos 2 valores suavizados
                             velocity = history[-2] - history[-1]
                         
-                        # AGREGAR SIEMPRE a raw_detections (sin filtrar por profundidad aún)
-                        raw_detections.append((finger_id, key, depth, velocity, x_pos, y_pos))
+                        # AGREGAR SIEMPRE a raw_detections (con depth suavizada)
+                        raw_detections.append((finger_id, key, depth_smoothed, velocity, x_pos, y_pos))
                     else:
                         # Fallback sin profundidad
                         raw_detections.append((finger_id, key, 0.0, 0.0, x_pos, y_pos))
@@ -136,10 +164,10 @@ class KeyboardMapModular:
         self._debug_frame_count += 1
         
         if len(raw_detections) > 0 and self._debug_frame_count % 30 == 0:
-            print(f"\n[DEBUG FASE 1] Intersecciones detectadas: {len(raw_detections)}")
+            # print(f"\n[DEBUG FASE 1] Intersecciones detectadas: {len(raw_detections)}")
             for det in raw_detections[:3]:  # Mostrar primeras 3
                 finger_id, key, depth, velocity, x, y = det
-                print(f"  Dedo {finger_id}, Tecla {key}, Depth={depth:.1f}cm, Vel={velocity:.2f}")
+                # print(f"  Dedo {finger_id}, Tecla {key}, Depth={depth:.1f}cm, Vel={velocity:.2f}")
         
         # FASE 1.5: Aplicar filtro de profundidad SOLO si hay algoritmos activos
         has_active_algorithms = any(algo.is_enabled() for algo in self.algorithm_manager.algorithms)
@@ -148,11 +176,13 @@ class KeyboardMapModular:
         if not hasattr(self, '_filter_debug_shown'):
             active_algos = [algo.name for algo in self.algorithm_manager.algorithms if algo.is_enabled()]
             if has_active_algorithms:
-                print(f"\n[KEYBOARD_MAPPER] Algoritmos activos: {active_algos}")
-                print(f"[KEYBOARD_MAPPER] ✓ Filtro de profundidad ACTIVADO (umbral >= 10cm)")
+                # print(f"\n[KEYBOARD_MAPPER] Algoritmos activos: {active_algos}")
+                # print(f"[KEYBOARD_MAPPER] [INFO] Filtro de profundidad ACTIVADO (umbral >= 10cm)")
+                pass
             else:
-                print(f"\n[KEYBOARD_MAPPER] No hay algoritmos activos")
-                print(f"[KEYBOARD_MAPPER] ✗ Filtro de profundidad DESACTIVADO")
+                # print(f"\n[KEYBOARD_MAPPER] No hay algoritmos activos")
+                # print(f"[KEYBOARD_MAPPER] [INFO] Filtro de profundidad DESACTIVADO")
+                pass
             self._filter_debug_shown = True
         
         if has_active_algorithms:
@@ -175,14 +205,16 @@ class KeyboardMapModular:
             
             # DEBUG: Mostrar resultado del filtro
             if self._debug_frame_count % 30 == 0 and len(raw_detections) > 0:
-                print(f"[DEBUG FILTRO] Antes: {len(raw_detections)}, Después: {len(filtered_by_depth)}")
+                # print(f"[DEBUG FILTRO] Antes: {len(raw_detections)}, Despues: {len(filtered_by_depth)}")
                 if len(filtered_by_depth) == 0 and len(raw_detections) > 0:
-                    print(f"⚠️ TODAS filtradas! Depths: {[d[2] for d in raw_detections[:3]]}")
+                    pass
+                    # print(f"[ALERTA] TODAS filtradas! Depths: {[d[2] for d in raw_detections[:3]]}")
             
             raw_detections = filtered_by_depth
         else:
             if len(raw_detections) > 0 and self._debug_frame_count % 30 == 0:
-                print(f"[DEBUG] Pasando {len(raw_detections)} intersecciones SIN filtrar")
+                pass
+                # print(f"[DEBUG] Pasando {len(raw_detections)} intersecciones SIN filtrar")
         
         # FASE 2: Procesar detecciones a través de algoritmos modulares
         context = {
@@ -196,9 +228,10 @@ class KeyboardMapModular:
         
         # DEBUG: Mostrar resultado de algoritmos
         if self._debug_frame_count % 30 == 0 and len(raw_detections) > 0:
-            print(f"[DEBUG ALGORITMOS] Antes: {len(raw_detections)}, Después: {len(filtered_detections)}")
+            # print(f"[DEBUG ALGORITMOS] Antes: {len(raw_detections)}, Despues: {len(filtered_detections)}")
             if len(filtered_detections) == 0 and len(raw_detections) > 0:
-                print(f"⚠️ ALGORITMOS bloquearon todo!")
+                pass
+                # print(f"[ALERTA] ALGORITMOS bloquearon todo!")
         
         # FASE 3: Aplicar detecciones filtradas al mapa
         for detection in filtered_detections:
@@ -227,7 +260,15 @@ class KeyboardMapModular:
     
     def configure_algorithm(self, name, **params):
         """Configura parámetros de un algoritmo."""
-        self.algorithm_manager.configure_algorithm(name, **params)
+        # Si es suavizado de profundidad, actualizar también nuestra config local
+        if name == 'Suavizado de Profundidad':
+            # Actualizar en algorithms_config
+            self.algorithm_manager.configure_algorithm(name, **params)
+            # Recargar nuestra configuración local
+            self._update_smoothing_config()
+            print(f"✓ Suavizado actualizado: enabled={self.smoothing_enabled}, window={self.smoothing_window}, threshold={self.outlier_threshold}cm")
+        else:
+            self.algorithm_manager.configure_algorithm(name, **params)
     
     def reset_algorithms(self):
         """Reinicia el estado de todos los algoritmos."""

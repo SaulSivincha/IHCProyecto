@@ -47,7 +47,7 @@ class AppConfig:
         for path in AppConfig.SOUNDFONT_PATHS:
             if os.path.exists(path):
                 return path
-        print("⚠ No se encontró el archivo soundfont")
+        print("[ALERTA] No se encontro el archivo soundfont")
         return None
     
     # ==================== UI GENERAL ====================
@@ -109,11 +109,12 @@ class AppConfig:
     VELOCITY_HISTORY_SIZE = 3             # Número de frames para calcular velocidad
                                           # Valores típicos: 2-5 frames
                                           # Más frames = más suave pero menos responsivo
+    MAX_HANDS = 2                     # Máximo de manos a detectar
     
     @staticmethod
     def set_key_sensitivity(sensitivity='normal'):
         """
-        Ajusta la sensibilidad de detección de teclas
+        Ajusta la sensibilidad de detección de teclas.
         
         Args:
             sensitivity: 'soft', 'normal', 'hard', 'classic'
@@ -123,30 +124,30 @@ class AppConfig:
             AppConfig.DEPTH_THRESHOLD = 4.0
             AppConfig.VELOCITY_THRESHOLD = 1.0
             AppConfig.VELOCITY_ENABLED = True
-            print("✓ Sensibilidad: SUAVE (toques ligeros)")
+            print("[INFO] Sensibilidad: SUAVE (toques ligeros)")
         
         elif sensitivity == 'normal':
             # Configuración balanceada (recomendado)
             AppConfig.DEPTH_THRESHOLD = 3.5
             AppConfig.VELOCITY_THRESHOLD = 1.5
             AppConfig.VELOCITY_ENABLED = False
-            print("✓ Sensibilidad: NORMAL (balanceado - modo clásico)")
+            print("[INFO] Sensibilidad: NORMAL (balanceado - modo clasico)")
         
         elif sensitivity == 'hard':
             # Requiere golpe fuerte
             AppConfig.DEPTH_THRESHOLD = 2.5
             AppConfig.VELOCITY_THRESHOLD = 2.5
             AppConfig.VELOCITY_ENABLED = True
-            print("✓ Sensibilidad: FUERTE (golpes pronunciados)")
+            print("[INFO] Sensibilidad: FUERTE (golpes pronunciados)")
         
         elif sensitivity == 'classic':
             # Modo clásico sin detección de velocidad
             AppConfig.DEPTH_THRESHOLD = 4.5
             AppConfig.VELOCITY_ENABLED = False
-            print("✓ Sensibilidad: CLÁSICA (sin detección de velocidad)")
+            print("[INFO] Sensibilidad: CLASICA (sin deteccion de velocidad)")
         
         else:
-            print(f"⚠ Sensibilidad '{sensitivity}' no reconocida")
+            print(f"[ALERTA] Sensibilidad '{sensitivity}' no reconocida")
             print("   Opciones: 'soft', 'normal', 'hard', 'classic'")
     
     # ==================== MÉTODOS ====================
@@ -176,7 +177,7 @@ class AppConfig:
         AppConfig.ENABLE_PERFORMANCE_STATS = enabled
         AppConfig.VERBOSE_HAND_DETECTION = enabled
         status = "activado" if enabled else "desactivado"
-        print(f"✓ Modo debug {status}")
+        print(f"[INFO] Modo debug {status}")
 
 
 # Crear directorios al importar el módulo

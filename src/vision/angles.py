@@ -10,11 +10,11 @@ import os
 import math
 import cv2
 
-# Frame Angles and Distance
+# Angulos del Frame y Distancia
 
 class Frame_Angles:
 
-    # User Variables
+    # Variables de Usuario
 
     pixel_width = 640
     pixel_height = 480
@@ -22,168 +22,197 @@ class Frame_Angles:
     angle_width = 60
     angle_height = None
 
-    # System Variables
+    # Variables del Sistema
     x_origin = None
     y_origin = None
 
     x_adjacent = None
     x_adjacent = None
 
-    # Init Functions
+    # Funciones de Inicio
 
     def __init__(self,pixel_width=None,pixel_height=None,angle_width=None,angle_height=None):
 
-        # full frame dimensions in pixels
+        # dimensiones completas del frame en pixeles
         if type(pixel_width) in (int,float):
             self.pixel_width = int(pixel_width)
         if type(pixel_height) in (int,float):
             self.pixel_height = int(pixel_height)
 
-        # full frame dimensions in degrees
+        # dimensiones completas del frame en grados
         if type(angle_width) in (int,float):
             self.angle_width = float(angle_width)
         if type(angle_height) in (int,float):
             self.angle_height = float(angle_height)
 
-        # do initial setup
+        # configuracion inicial
         self.build_frame()
 
     def build_frame(self):
 
-        # this assumes correct values for pixel_width, pixel_height, and angle_width
+        # asume valores correctos para pixel_width, pixel_height, y angle_width
 
-        # fix angle height
+        # corregir altura angular
         if not self.angle_height:
             self.angle_height = self.angle_width*(self.pixel_height/self.pixel_width)
 
-        # center point (also max pixel distance from origin)
+        # punto central (tambien distancia maxima en pixeles desde el origen)
         self.x_origin = int(self.pixel_width/2)
         self.y_origin = int(self.pixel_height/2)
 
-        # theoretical distance in pixels from camera to frame
-        # this is the adjacent-side length in tangent calculations
-        # the pixel x,y inputs is the opposite-side lengths
+        # distancia teorica en pixeles desde la camara al frame
+        # esta es la longitud del lado adyacente en calculos de tangente
+        # las entradas pixel x,y son las longitudes del lado opuesto
         self.x_adjacent = self.x_origin / math.tan(math.radians(self.angle_width/2))
         self.y_adjacent = self.y_origin / math.tan(math.radians(self.angle_height/2))
 
-    # Pixels-to-Angles Functions
-    def angles(self,x,y):
+    # Funciones de Conversion Pixel-Angulo
+    def angles(self, x, y):
+        """Retorna los angulos (x, y) desde el centro para un pixel dado."""
+        return self.angles_from_center(x, y)
 
-        return self.angles_from_center(x,y)
+    def angles_from_center(self, x, y, top_left=True, degrees=True):
+        """
+        Calcula el angulo de un pixel respecto al centro optico de la camara.
 
-    def angles_from_center(self,x,y,top_left=True,degrees=True):
-
-        # x = pixels right from left edge of frame
-        # y = pixels down from top edge of frame
-        # if not top_left, assume x,y are from frame center
-        # if not degrees, return radians
-
+        Args:
+            x: Posicion horizontal del pixel.
+            y: Posicion vertical del pixel.
+            top_left: Si True, asume (0,0) en la esquina superior izquierda (estandar OpenCV).
+                     Si False, asume (0,0) en el centro de la imagen.
+            degrees: Si True retorna grados, si False retorna radianes.
+        
+        Returns:
+            (x_angle, y_angle): Angulos horizontal y vertical.
+        """
+        # Convertir coordenadas de imagen (top-left) a coordenadas centradas en el eje optico
         if top_left:
             x = x - self.x_origin
-            y = self.y_origin - y
+            y = self.y_origin - y # Invertir Y porque eje Y de imagen crece hacia abajo
 
-        xtan = x/self.x_adjacent
-        ytan = y/self.y_adjacent
+        # Calcular tangente del angulo usando la distancia focal virtual (adyacente)
+        xtan = x / self.x_adjacent
+        ytan = y / self.y_adjacent
 
         xrad = math.atan(xtan)
         yrad = math.atan(ytan)
 
         if not degrees:
-            return xrad,yrad
+            return xrad, yrad
 
-        return math.degrees(xrad),math.degrees(yrad)
+        return math.degrees(xrad), math.degrees(yrad)
 
-    def pixels_from_center(self,x,y,degrees=True):
-
-        # this is the reverse of angles_from_center
-
-        # x = horizontal angle from center
-        # y = vertical angle from center
-        # if not degrees, angles are radians
+    def pixels_from_center(self, x, y, degrees=True):
+        """
+        Operacion inversa a angles_from_center.
+        Calcula la posicion en pixeles (desde el centro) para un angulo dado.
+        """
+        # x = angulo horizontal desde el centro
+        # y = angulo vertical desde el centro
 
         if degrees:
             x = math.radians(x)
             y = math.radians(y)
 
-        return int(self.x_adjacent*math.tan(x)),int(self.y_adjacent*math.tan(y))
+        # return int(self.x_adjacent * math.tan(x)), int(self.y_adjacent * math.tan(y))
+        return int(self.x_adjacent * math.tan(x)), int(self.y_adjacent * math.tan(y))
 
     # ------------------------------
-    # 3D Functions
+    # Funciones 3D (Triangulacion)
     # ------------------------------
 
-    def distance(self,*coordinates):
+    def distance(self, *coordinates):
         return self.distance_from_origin(*coordinates)
 
-    def distance_from_origin(self,*coordinates):
+    def distance_from_origin(self, *coordinates):
+        """Calcula la distancia Euclidiana desde el origen (0,0,...)"""
         return math.sqrt(sum([x**2 for x in coordinates]))
 
-    def intersection(self,pdistance,langle,rangle,degrees=False):
-
-        # return (X,Y) of target from left-camera-center
-
-        # pdistance is the measure from left-camera-center to right-camera-center (point-to-point, or point distance)
-        # langle is the left-camera  angle to object measured from center frame (up/right positive)
-        # rangle is the right-camera angle to object measured from center frame (up/right positive)
-        # left-camera-center is origin (0,0) for return (X,Y)
-        # X is measured along the baseline from left-camera-center to right-camera-center
-        # Y is measured from the baseline
-
-        # fix degrees
+    def intersection(self, pdistance, langle, rangle, degrees=False):
+        """
+        Calcula la posicion (X, Y) de un punto mediante triangulacion basica 2D.
+        
+        Args:
+            pdistance: Distancia entre las dos camaras (baseline).
+            langle: Angulo de la camara izquierda hacia el objeto.
+            rangle: Angulo de la camara derecha hacia el objeto.
+            degrees: Si los angulos estan en grados.
+            
+        Returns:
+            (X, Y): Coordenadas del punto.
+                    X: Distancia lateral desde el centro de la camara izquierda.
+                    Y: Profundidad (distancia perpendicular al baseline).
+        """
+        # Normalizar a radianes
         if degrees:
             langle = math.radians(langle)
             rangle = math.radians(rangle)
 
-        # fix angle orientation (from center frame)
-        # here langle is measured from right baseline
-        # here rangle is measured from left  baseline
+        # Ajustar sistema de coordenadas de angulos
+        # langle se mide desde el baseline derecho (90 grados - angulo)
+        # rangle se mide desde el baseline izquierdo (90 grados + angulo)
         langle = math.pi/2 - langle
         rangle = math.pi/2 + rangle
 
-        # all calculations using tangent
+        # Calculo usando ley de senos o tangentes para triangulacion
         ltan = math.tan(langle)
         rtan = math.tan(rangle)
 
-        # get Y value
-        # use the idea that pdistance = ( Y/ltan + Y/rtan )
-        Y = pdistance / ( 1/ltan + 1/rtan )
+        # Calcular profundidad (Y)
+        # Formula derivada de: X = Y/tan(la)  y  (D-X) = Y/tan(ra)
+        # Donde D = pdistance
+        Y = pdistance / (1/ltan + 1/rtan)
 
-        # get X measure from left-camera-center using Y
-        X = Y/ltan
+        # Calcular posicion lateral (X) desde el centro de camara izquierda
+        X = Y / ltan
 
-        # done
-        return X,Y
+        return X, Y
 
-    def location(self,pdistance,lcamera,rcamera,center=False,degrees=True):
+    def location(self, pdistance, lcamera, rcamera, center=False, degrees=True):
+        """
+        Calcula la posicion 3D (X, Y, Z) completa.
+        
+        Args:
+            pdistance: Distancia entre camaras (baseline).
+            lcamera: Tupla (x_angle, y_angle) camara izquierda.
+            rcamera: Tupla (x_angle, y_angle) camara derecha.
+            center: Si True, ajusta X para que (0,0,0) sea el centro del baseline (entre las camaras).
+                   Si False, (0,0,0) es el centro de la camara izquierda.
+        
+        Returns:
+            X, Y, Z, D: Coordenadas 3D y distancia total.
+            NOTA: En este sistema de retorno:
+              X: Lateral
+              Y: Altura (calculada promedio de angulos verticales)
+              Z: Profundidad (la Y de intersection)
+        """
+        # Separar angulos
+        lxangle, lyangle = lcamera
+        rxangle, ryangle = rcamera
 
-        # separate values
-        lxangle,lyangle = lcamera
-        rxangle,ryangle = rcamera
+        # Asumir que el objeto esta a la misma altura vertical para ambas camaras (promedio)
+        yangle = (lyangle + ryangle) / 2
 
-        # yangle should be the same for both cameras (if aligned correctly)
-        yangle = (lyangle+ryangle)/2
-
-        # fix degrees
         if degrees:
             lxangle = math.radians(lxangle)
             rxangle = math.radians(rxangle)
-            yangle  = math.radians( yangle)
+            yangle  = math.radians(yangle)
 
-        # get X,Z (remember Y for the intersection is Z frame)
-        X,Z = self.intersection(pdistance,lxangle,rxangle,degrees=False)
+        # Obtener X (Lateral) y Z (Profundidad) usando los angulos horizontales
+        # Nota: intersection retorna (X, Y_depth), aqui lo asignamos a X, Z
+        X, Z = self.intersection(pdistance, lxangle, rxangle, degrees=False)
 
-        # get Y
-        # using yangle and 2D distance to target
-        Y = math.tan(yangle) * self.distance_from_origin(X,Z)
+        # Calcular Y (Altura) usando la profundidad Z y el angulo vertical
+        Y = math.tan(yangle) * self.distance_from_origin(X, Z)
 
-        # baseline-center instead of left-camera-center
+        # Centrar coordenada X al medio de las dos camaras
         if center:
-            X -= pdistance/2
+            X -= pdistance / 2
 
-        # get 3D distance
-        D = self.distance_from_origin(X,Y,Z)
+        # Distancia total Euclidiana 3D
+        D = self.distance_from_origin(X, Y, Z)
 
-        # done
-        return X,Y,Z,D
+        return X, Y, Z, D
 
     # Tertiary Functions
 

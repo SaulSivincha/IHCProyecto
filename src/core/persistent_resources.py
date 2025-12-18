@@ -65,7 +65,7 @@ class PersistentResources:
         self.config = config
         
         print("\n" + "="*60)
-        print("⏳ INICIALIZANDO RECURSOS (solo una vez)...")
+        print("[INFO] INICIALIZANDO RECURSOS (solo una vez)...")
         print("="*60)
         
         start_time = time.time()
@@ -88,7 +88,7 @@ class PersistentResources:
         
         elapsed = time.time() - start_time
         print("="*60)
-        print(f"✓ RECURSOS LISTOS en {elapsed:.2f} segundos")
+        print(f"[EXITO] RECURSOS LISTOS en {elapsed:.2f} segundos")
         print("="*60 + "\n")
         
         return self._cameras_ready and self._synth_ready
@@ -149,7 +149,7 @@ class PersistentResources:
     
     def _init_detectors(self):
         """Inicializa los detectores de manos"""
-        print("  🖐️ Iniciando detectores de manos...")
+        print("  [INFO] Iniciando detectores de manos...")
         
         try:
             self.left_detector = HandDetector(
@@ -165,14 +165,14 @@ class PersistentResources:
             )
             
             self._detectors_ready = True
-            print("  ✓ Detectores listos")
+            print("  [EXITO] Detectores listos")
             
         except Exception as e:
-            print(f"  ❌ Error iniciando detectores: {e}")
+            print(f"  [ERROR] Error iniciando detectores: {e}")
     
     def _init_synth(self):
         """Inicializa el sintetizador y carga el SoundFont"""
-        print("  🎹 Iniciando sintetizador...")
+        print("  [INFO] Iniciando sintetizador...")
         
         try:
             self.synth = fluidsynth.Synth()
@@ -191,20 +191,20 @@ class PersistentResources:
                         self.sfid = self.synth.sfload(sf_path)
                         self.synth.program_select(0, self.sfid, 0, 0)
                         self._synth_ready = True
-                        print(f"  ✓ SoundFont cargado: {os.path.basename(sf_path)}")
+                        print(f"  [EXITO] SoundFont cargado: {os.path.basename(sf_path)}")
                         break
                     except Exception as e:
-                        print(f"  ⚠ Error con {sf_path}: {e}")
+                        print(f"  [ALERTA] Error con {sf_path}: {e}")
             
             if not self._synth_ready:
-                print("  ❌ No se encontró SoundFont válido")
+                print("  [ERROR] No se encontro SoundFont valido")
                 
         except Exception as e:
-            print(f"  ❌ Error iniciando sintetizador: {e}")
+            print(f"  [ERROR] Error iniciando sintetizador: {e}")
     
     def _init_depth_estimator(self):
         """Inicializa el estimador de profundidad si hay calibración"""
-        print("  📐 Cargando calibración estéreo...")
+        print("  [INFO] Cargando calibracion estereo...")
         
         try:
             from src.calibration.calibration_config import CalibrationConfig
@@ -213,13 +213,13 @@ class PersistentResources:
                 self.depth_estimator = load_depth_estimator(CalibrationConfig.CALIBRATION_FILE)
                 self.use_stereo_calibration = True
                 self._depth_ready = True
-                print(f"  ✓ Calibración cargada (baseline: {self.depth_estimator.baseline_cm:.2f} cm)")
+                print(f"  [EXITO] Calibracion cargada (baseline: {self.depth_estimator.baseline_cm:.2f} cm)")
             else:
-                print("  ⚠ No hay calibración estéreo")
+                print("  [ALERTA] No hay calibracion estereo")
                 self._depth_ready = True  # No es error, simplemente no hay
                 
         except Exception as e:
-            print(f"  ⚠ Calibración no disponible: {e}")
+            print(f"  [ALERTA] Calibracion no disponible: {e}")
             self._depth_ready = True
     
     def reload_depth_estimator(self):
@@ -279,7 +279,7 @@ class PersistentResources:
     
     def cleanup(self):
         """Libera todos los recursos"""
-        print("\n🧹 Limpiando recursos...")
+        print("\n[INFO] Limpiando recursos...")
         
         try:
             if self.synth:
@@ -307,7 +307,7 @@ class PersistentResources:
         self._synth_ready = False
         self._depth_ready = False
         
-        print("✓ Recursos liberados")
+        print("[EXITO] Recursos liberados")
 
 
 # Función de acceso global

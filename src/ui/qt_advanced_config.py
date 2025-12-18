@@ -78,6 +78,19 @@ class AlgorithmWidget(QGroupBox):
             'detail': 'Cuando un dedo sale del área del teclado por el borde inferior, '
                      'espera un tiempo de gracia antes de liberar la tecla. Evita cortes '
                      'abruptos cuando el dedo se mueve fuera del teclado.'
+        },
+        'Suavizado de Profundidad': {
+            'icon': '〰️',
+            'short': 'Reduce ruido de tracking',
+            'detail': 'Aplica un filtro temporal a las mediciones de profundidad para reducir '
+                     'saltos erráticos causados por imprecisión del tracking de manos. '
+                     'Usa promedio de últimas N muestras filtrando outliers extremos.'
+        },
+        'Una Nota Por Acción': {
+            'icon': '⚡',
+            'short': 'Modo ultrarrápido con protección de rebote',
+            'detail': 'Bloquea activaciones solo si detecta movimiento de alejamiento rápido (Lift). '
+                     'Optimizado para latencia mínima manteniendo protección contra errores.'
         }
     }
     
@@ -292,6 +305,8 @@ class AlgorithmWidget(QGroupBox):
             'press_threshold': '(cm)',
             'release_threshold': '(cm)',
             'smoothing_window': '(frames)',
+            'outlier_threshold': '(cm)',
+            'profundidad_reset': '(cm)',
             'simultaneous_window': '(segundos)',
             'min_finger_distance': '(píxeles)',
             'adjacent_keys_threshold': '(teclas)',
@@ -319,6 +334,9 @@ class AlgorithmWidget(QGroupBox):
             # Parámetros de "Una Nota Por Dedo"
             'min_depth_advantage': (0.1, 1.0, 0.1),
             'sticky_time': (0.05, 0.3, 0.05),
+            # Parámetros de "Suavizado de Profundidad"
+            'outlier_threshold': (5.0, 30.0, 1.0),
+            'profundidad_reset': (5.0, 20.0, 1.0),
         }
         return ranges.get(param_name, (0, 100, 1))
     

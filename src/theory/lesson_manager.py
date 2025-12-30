@@ -29,7 +29,7 @@ class LessonManager:
             return
         
         # Buscar todos los archivos lesson_*.py
-        for lesson_file in sorted(lessons_dir.glob('lesson_*.py')):
+        for lesson_file in sorted(lessons_dir.glob('*lesson_*.py')):
             module_name = lesson_file.stem
             
             try:

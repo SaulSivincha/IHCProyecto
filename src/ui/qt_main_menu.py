@@ -114,7 +114,7 @@ class MainMenuDialog(QDialog):
         self.layout_main.addWidget(self._btn_free)
 
         self._btn_theory = QPushButton("   APRENDER TEORÍA")
-        self._btn_theory.clicked.connect(self._show_theory_menu)
+        self._btn_theory.clicked.connect(lambda: self._select("theory"))
         self.layout_main.addWidget(self._btn_theory)
 
         self._btn_config = QPushButton("   CONFIGURACIÓN")

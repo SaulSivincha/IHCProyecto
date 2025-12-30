@@ -1,293 +1,132 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-Menú de selección de lecciones de teoría musical con PyQt6
-"""
-
 import sys
 from typing import Optional
 from PyQt6.QtWidgets import (
     QApplication, QDialog, QVBoxLayout, QHBoxLayout,
-    QLabel, QPushButton, QSpacerItem, QSizePolicy, QScrollArea, QWidget
+    QLabel, QPushButton, QScrollArea, QWidget, QFrame
 )
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QFont, QPixmap, QPainter
-
+from src.theory.progress_manager import ProgressManager
 
 class TheoryMenuDialog(QDialog):
-    """
-    Diálogo para seleccionar una lección de teoría musical
-    """
-
     def __init__(self, lessons):
-        """
-        Args:
-            lessons: Lista de tuplas (lesson_id, lesson_instance)
-        """
         super().__init__()
-        
         self.lessons = lessons
         self.selected_lesson_id: Optional[str] = None
-        self.selected_index = 0
+        self.progress = ProgressManager()
         
-        self.setWindowTitle("Teoría Musical - Selección de Lección")
-        self.setMinimumSize(900, 600)
-        
-        self.setStyleSheet("""
-            QDialog {
-                background-color: #1a1a2e;
-            }
-            QLabel#title {
-                color: #ffffff;
-                font-size: 36px;
-                font-weight: bold;
-            }
-            QLabel#subtitle {
-                color: #16c79a;
-                font-size: 18px;
-            }
-            QLabel#lessonName {
-                color: #ffffff;
-                font-size: 20px;
-                font-weight: bold;
-            }
-            QLabel#lessonDesc {
-                color: #cccccc;
-                font-size: 14px;
-            }
-            QLabel#difficulty {
-                font-size: 14px;
-                font-weight: bold;
-                padding: 4px 12px;
-                border-radius: 4px;
-            }
-            QLabel#difficultyBasic {
-                color: #00ff00;
-                background-color: rgba(0, 255, 0, 0.15);
-            }
-            QLabel#difficultyIntermediate {
-                color: #ffa500;
-                background-color: rgba(255, 165, 0, 0.15);
-            }
-            QLabel#difficultyAdvanced {
-                color: #ff4444;
-                background-color: rgba(255, 68, 68, 0.15);
-            }
-            QPushButton {
-                background-color: #0f3460;
-                color: #ffffff;
-                font-size: 16px;
-                padding: 12px 20px;
-                border: 2px solid #16c79a;
-                border-radius: 8px;
-                text-align: left;
-            }
-            QPushButton:hover {
-                background-color: #16c79a;
-                border-color: #ffffff;
-            }
-            QPushButton#selected {
-                background-color: #16c79a;
-                border-color: #ffffff;
-                border-width: 3px;
-            }
-            QPushButton#backButton {
-                background-color: #c70039;
-                border-color: #c70039;
-                text-align: center;
-            }
-            QPushButton#backButton:hover {
-                background-color: #ff5757;
-                border-color: #ffffff;
-            }
-        """)
+        self.setWindowTitle("Ruta de Aprendizaje Musical")
+        self.setMinimumSize(800, 600)
+        self.setStyleSheet("background-color: #1a1a2e;") # Fondo oscuro
         
         self._build_ui()
-        self._update_focus()
-    
+
     def _build_ui(self):
-        """Construye la interfaz de usuario"""
-        main_layout = QVBoxLayout()
-        main_layout.setContentsMargins(40, 30, 40, 30)
-        main_layout.setSpacing(20)
+        main_layout = QVBoxLayout(self)
         
-        # Título
-        title = QLabel("TEORÍA MUSICAL")
-        title.setObjectName("title")
+        # Título llamativo para niños
+        title = QLabel("¡MI RUTA MUSICAL!")
+        title.setStyleSheet("""
+            font-size: 40px; 
+            font-weight: bold; 
+            color: #FFD700; 
+            margin: 20px;
+        """)
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         main_layout.addWidget(title)
+
+        # Área de desplazamiento para la ruta
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setStyleSheet("border: none; background: transparent;")
         
-        # Subtítulo
-        subtitle = QLabel("Selecciona una lección para comenzar")
-        subtitle.setObjectName("subtitle")
-        subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        main_layout.addWidget(subtitle)
-        
-        # Área de scroll para lecciones
-        scroll_area = QScrollArea()
-        scroll_area.setWidgetResizable(True)
-        scroll_area.setStyleSheet("""
-            QScrollArea {
-                border: none;
-                background-color: transparent;
-            }
-            QScrollBar:vertical {
-                background-color: #0f3460;
-                width: 12px;
-                border-radius: 6px;
-            }
-            QScrollBar::handle:vertical {
-                background-color: #16c79a;
-                border-radius: 6px;
-            }
-        """)
-        
-        # Widget contenedor para las lecciones
-        lessons_widget = QWidget()
-        lessons_layout = QVBoxLayout(lessons_widget)
-        lessons_layout.setSpacing(10)
-        
-        # Crear botones para cada lección
-        self.lesson_buttons = []
+        container = QWidget()
+        path_layout = QVBoxLayout(container)
+        path_layout.setContentsMargins(50, 20, 50, 20)
+        path_layout.setSpacing(30)
+
+        # Generar botones en zigzag
         for i, (lesson_id, lesson) in enumerate(self.lessons):
-            # Contenedor horizontal para cada lección
-            lesson_container = QHBoxLayout()
+            is_unlocked = self.progress.is_unlocked(lesson_id, i)
             
-            # Botón principal de la lección
-            btn = QPushButton()
-            btn.setMinimumHeight(70)
-            btn.clicked.connect(lambda checked, idx=i: self._select_lesson(idx))
+            # Contenedor para el zigzag
+            row = QHBoxLayout()
+            pos = i % 4
             
-            # Layout interno del botón
-            btn_layout = QVBoxLayout()
+            # Lógica de posición: Derecha, Centro, Izquierda, Centro
+            if pos == 0: row.addStretch(2)
+            elif pos == 1 or pos == 3: row.addStretch(1)
             
-            # Fila superior: número y nombre
-            top_row = QHBoxLayout()
+            # Botón circular
+            btn = QPushButton(str(i + 1))
+            btn.setFixedSize(120, 120)
             
-            num_label = QLabel(f"{i + 1}.")
-            num_label.setStyleSheet("color: #16c79a; font-weight: bold; font-size: 18px;")
-            top_row.addWidget(num_label)
-            
-            name_label = QLabel(lesson.name)
-            name_label.setObjectName("lessonName")
-            top_row.addWidget(name_label)
-            
-            top_row.addStretch()
-            
-            # Etiqueta de dificultad
-            difficulty_label = QLabel(lesson.difficulty)
-            difficulty_label.setObjectName("difficulty")
-            
-            # Aplicar estilo según dificultad
-            if lesson.difficulty == "Básico":
-                difficulty_label.setProperty("class", "difficultyBasic")
-                difficulty_label.setObjectName("difficultyBasic")
-            elif lesson.difficulty == "Intermedio":
-                difficulty_label.setProperty("class", "difficultyIntermediate")
-                difficulty_label.setObjectName("difficultyIntermediate")
+            if is_unlocked:
+                # Colores vivos (Verde para pares, Azul para impares)
+                color = "#58CC02" if i % 2 == 0 else "#1CB0F6"
+                btn.setStyleSheet(f"""
+                    QPushButton {{
+                        background-color: {color};
+                        border-bottom: 8px solid rgba(0,0,0,0.2);
+                        border-radius: 60px;
+                        font-size: 35px;
+                        font-weight: bold;
+                        color: white;
+                    }}
+                    QPushButton:hover {{ background-color: #78D932; transform: scale(1.1); }}
+                """)
+                btn.clicked.connect(lambda checked, lid=lesson_id: self._select(lid))
             else:
-                difficulty_label.setProperty("class", "difficultyAdvanced")
-                difficulty_label.setObjectName("difficultyAdvanced")
+                # Color gris bloqueado
+                btn.setStyleSheet("""
+                    QPushButton {
+                        background-color: #3c3c5a;
+                        border-bottom: 8px solid #2a2a40;
+                        border-radius: 60px;
+                        color: #666680;
+                        font-size: 35px;
+                    }
+                """)
+                btn.setEnabled(False)
+
+            row.addWidget(btn)
             
-            top_row.addWidget(difficulty_label)
+            if pos == 2: row.addStretch(2)
+            elif pos == 1 or pos == 3: row.addStretch(1)
             
-            btn_layout.addLayout(top_row)
+            path_layout.addLayout(row)
             
-            # Descripción
-            desc_label = QLabel(lesson.description)
-            desc_label.setObjectName("lessonDesc")
-            desc_label.setWordWrap(True)
-            btn_layout.addWidget(desc_label)
-            
-            # Aplicar layout al botón (nota: en PyQt6 no se puede directamente)
-            # En su lugar, usamos un contenedor
-            btn_widget = QWidget()
-            btn_inner = QVBoxLayout(btn_widget)
-            btn_inner.setContentsMargins(15, 10, 15, 10)
-            
-            btn_inner.addLayout(top_row)
-            btn_inner.addWidget(desc_label)
-            
-            # Agregar widget al layout principal
-            lesson_container.addWidget(btn)
-            
-            lessons_layout.addWidget(btn)
-            self.lesson_buttons.append(btn)
-        
-        lessons_layout.addStretch()
-        scroll_area.setWidget(lessons_widget)
-        main_layout.addWidget(scroll_area)
-        
-        # Instrucciones
-        instructions = QLabel("↑/↓: Navegar  |  ENTER: Seleccionar  |  ESC: Volver")
-        instructions.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        instructions.setStyleSheet("color: #999999; font-size: 13px;")
-        main_layout.addWidget(instructions)
-        
-        # Botón de volver
-        back_button = QPushButton("VOLVER AL MENÚ PRINCIPAL")
-        back_button.setObjectName("backButton")
-        back_button.clicked.connect(self.reject)
-        main_layout.addWidget(back_button)
-        
-        self.setLayout(main_layout)
-    
-    def _update_focus(self):
-        """Actualiza el estilo del botón seleccionado"""
-        for i, btn in enumerate(self.lesson_buttons):
-            if i == self.selected_index:
-                btn.setObjectName("selected")
-                btn.setFocus()
-            else:
-                btn.setObjectName("")
-            btn.style().unpolish(btn)
-            btn.style().polish(btn)
-    
-    def _select_lesson(self, index):
-        """Selecciona una lección y cierra el diálogo"""
-        self.selected_index = index
-        lesson_id, _ = self.lessons[index]
+            # Etiqueta con el nombre de la lección
+            label = QLabel(lesson.name.upper())
+            label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            label.setStyleSheet("color: white; font-weight: bold; font-size: 14px;")
+            path_layout.addWidget(label)
+
+        scroll.setWidget(container)
+        main_layout.addWidget(scroll)
+
+        # Botón para salir
+        exit_btn = QPushButton("VOLVER AL PIANO")
+        exit_btn.setStyleSheet("""
+            background-color: #FF4B4B; 
+            color: white; 
+            padding: 15px; 
+            border-radius: 10px; 
+            font-weight: bold;
+        """)
+        exit_btn.clicked.connect(self.reject)
+        main_layout.addWidget(exit_btn)
+
+    def _select(self, lesson_id):
         self.selected_lesson_id = lesson_id
         self.accept()
-    
-    def keyPressEvent(self, event):
-        """Manejo de teclas para navegación"""
-        if event.key() in (Qt.Key.Key_Up, Qt.Key.Key_W):
-            self.selected_index = max(0, self.selected_index - 1)
-            self._update_focus()
-        elif event.key() in (Qt.Key.Key_Down, Qt.Key.Key_S):
-            self.selected_index = min(len(self.lessons) - 1, self.selected_index + 1)
-            self._update_focus()
-        elif event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
-            self._select_lesson(self.selected_index)
-        elif event.key() in (Qt.Key.Key_Escape, Qt.Key.Key_Q):
-            self.reject()
-        elif event.key() >= Qt.Key.Key_1 and event.key() <= Qt.Key.Key_9:
-            # Selección directa por número
-            num = event.key() - Qt.Key.Key_1
-            if 0 <= num < len(self.lessons):
-                self._select_lesson(num)
-        else:
-            super().keyPressEvent(event)
 
-
+# ESTA FUNCIÓN ES LA QUE LLAMA MAIN.PY
 def show_theory_menu(lessons) -> Optional[str]:
-    """
-    Muestra el menú de selección de lecciones de teoría
-    
-    Args:
-        lessons: Lista de tuplas (lesson_id, lesson_instance)
-    
-    Returns:
-        lesson_id seleccionado o None si se cancela
-    """
     app = QApplication.instance()
     if app is None:
         app = QApplication(sys.argv)
     
     dlg = TheoryMenuDialog(lessons)
-    result = dlg.exec()
-    
-    lesson_id = dlg.selected_lesson_id if result == QDialog.DialogCode.Accepted else None
-    
-    return lesson_id
+    if dlg.exec() == QDialog.DialogCode.Accepted:
+        return dlg.selected_lesson_id
+    return None

@@ -27,10 +27,11 @@ class LessonWindow(QMainWindow):
     def __init__(self, lesson, camera_left, camera_right, synth, 
                  virtual_keyboard, hand_detector_left=None, hand_detector_right=None,
                  keyboard_mapper=None, angler=None, depth_estimator=None, octave_base=60,
-                 keyboard_total_keys=24, camera_separation=9.07):
+                 keyboard_total_keys=24, camera_separation=9.07, lesson_index=None):
         super().__init__()
         
         self.lesson = lesson
+        self.lesson_index = lesson_index
         self.camera_left = camera_left
         self.camera_right = camera_right
         self.synth = synth
@@ -61,66 +62,78 @@ class LessonWindow(QMainWindow):
         
         self.setStyleSheet("""
             QMainWindow {
-                background-color: #000000;
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #87CEEB, stop:1 #E0F7FA);
             }
             QLabel#title {
-                color: #ffffff;
-                font-size: 20px;
+                color: #FFFFFF;
+                font-family: 'Comic Sans MS', 'Verdana';
+                font-size: 28px;
                 font-weight: bold;
                 padding: 10px;
-                background-color: #000000;
+                background-color: transparent;
+                text-shadow: 1px 1px #333;
             }
             QLabel#subtitle {
-                color: #ffffff;
-                font-size: 12px;
+                color: #006064;
+                font-family: 'Comic Sans MS';
+                font-size: 14px;
+                font-weight: bold;
                 padding: 5px;
             }
             QLabel#instruction {
-                color: #ffffff;
-                font-size: 11px;
+                color: #004D40;
+                font-family: 'Comic Sans MS';
+                font-size: 13px;
                 padding: 3px;
             }
             QTextEdit {
-                background-color: #000000;
-                color: #ffffff;
-                border: 1px solid #ffffff;
-                font-size: 14px;
+                background-color: #FFFFFF;
+                color: #37474F;
+                border: 2px solid #B0BEC5;
+                border-radius: 10px;
+                font-family: 'Comic Sans MS', 'Arial';
+                font-size: 16px;
                 padding: 10px;
             }
             QPushButton {
-                background-color: #333333;
-                color: #ffffff;
-                font-size: 13px;
+                background-color: #FF7043;
+                color: #FFFFFF;
+                font-family: 'Comic Sans MS';
+                font-size: 14px;
                 font-weight: bold;
-                padding: 8px 16px;
-                border: 1px solid #ffffff;
+                padding: 10px 20px;
+                border: 2px solid #FFAB91;
+                border-radius: 15px;
             }
             QPushButton:hover {
-                background-color: #555555;
+                background-color: #F4511E;
             }
             QPushButton:pressed {
-                background-color: #777777;
+                background-color: #E64A19;
             }
             QPushButton#exitButton {
-                background-color: #333333;
-                border: 1px solid #ff0000;
-                color: #ff0000;
+                background-color: #EF5350;
+                border: 2px solid #FFCDD2;
+                color: #FFFFFF;
             }
             QPushButton#exitButton:hover {
-                background-color: #550000;
-                color: #ffffff;
+                background-color: #D32F2F;
             }
             QProgressBar {
-                border: 1px solid #ffffff;
+                border: 2px solid #B0BEC5;
+                border-radius: 5px;
                 text-align: center;
-                background-color: #000000;
-                color: #ffffff;
+                background-color: #ECEFF1;
+                color: #37474F;
+                font-weight: bold;
             }
             QProgressBar::chunk {
-                background-color: #ffffff;
+                background-color: #66BB6A;
+                border-radius: 3px;
             }
             QFrame#cameraFrame {
-                border: 1px solid #ffffff;
+                border: 4px solid #B0BEC5;
+                border-radius: 15px;
                 background-color: #000000;
             }
         """)
@@ -347,6 +360,16 @@ class LessonWindow(QMainWindow):
         """Maneja el botón de salir"""
         self.continue_lesson = False
         self.lesson.stop()
+        
+        # GUARDAR PROGRESO si la barra está al 100% o si el usuario sale
+        # (Para facilitar pruebas, guardamos al salir ahora mismo)
+        if self.lesson_index is not None:
+             # Importar aquí para evitar ciclos si fuera necesario, o arriba
+             from src.theory.progress_manager import ProgressManager
+             pm = ProgressManager()
+             pm.save_completion(self.lesson_index)
+             print(f"Progreso guardado para lección índice: {self.lesson_index}")
+        
         self.close()
     
     def keyPressEvent(self, event):
@@ -394,7 +417,8 @@ class LessonWindow(QMainWindow):
 def show_lesson_window(lesson, camera_left, camera_right, synth, 
                       virtual_keyboard, hand_detector_left=None, hand_detector_right=None,
                       keyboard_mapper=None, angler=None, depth_estimator=None,
-                      octave_base=60, keyboard_total_keys=24, camera_separation=9.07):
+                      octave_base=60, keyboard_total_keys=24, camera_separation=9.07,
+                      lesson_index=None):
     app = QApplication.instance()
     owns_app = False
     if app is None:
@@ -404,7 +428,7 @@ def show_lesson_window(lesson, camera_left, camera_right, synth,
     window = LessonWindow(lesson, camera_left, camera_right, synth,
                          virtual_keyboard, hand_detector_left, hand_detector_right,
                          keyboard_mapper, angler, depth_estimator, octave_base,
-                         keyboard_total_keys, camera_separation)
+                         keyboard_total_keys, camera_separation, lesson_index)
     window.show()
     
     if owns_app:

@@ -19,6 +19,13 @@ class LessonManager:
         self._lessons = {}
         self._lesson_order = []
         self._load_lessons()
+
+    def reload_lessons(self):
+        """Recarga la lista de lecciones (útil si se añadieron archivos nuevos)"""
+        print("[INFO] Recargando lecciones...")
+        self._lessons = {}
+        self._lesson_order = []
+        self._load_lessons()
     
     def _load_lessons(self):
         """Carga automáticamente todas las lecciones del directorio lessons/"""
@@ -27,9 +34,13 @@ class LessonManager:
         if not lessons_dir.exists():
             print(f"[ALERTA] Directorio de lecciones no encontrado: {lessons_dir}")
             return
+            
+        print(f"[DEBUG] Buscando lecciones en: {lessons_dir}")
+        all_files = list(lessons_dir.glob('*lesson_*.py'))
+        print(f"[DEBUG] Archivos encontrados ({len(all_files)}): {[f.name for f in all_files]}")
         
         # Buscar todos los archivos lesson_*.py
-        for lesson_file in sorted(lessons_dir.glob('*lesson_*.py')):
+        for lesson_file in sorted(all_files):
             module_name = lesson_file.stem
             
             try:

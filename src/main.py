@@ -718,7 +718,9 @@ def main():
             lesson_manager_instance = get_lesson_manager()
             theory_mode = False
             in_lesson = False
+            in_lesson = False
             current_lesson = None
+            current_lesson_index = None
             
             # Inicializar song_manager y variables de rhythm
             song_manager_instance = get_song_manager()
@@ -737,12 +739,21 @@ def main():
                     current_lesson.start()
                     in_lesson = True
                     theory_mode = True
+                    
+                    # Calcular index
+                    try:
+                        current_lesson_index = lesson_manager_instance._lesson_order.index(target_lesson_id)
+                    except:
+                        current_lesson_index = None
+                        
                     print(f"[EXITO] Modo TEORÍA iniciado: Lección '{lesson.name}'")
                 else:
                     print(f"[ALERTA] Lección '{target_lesson_id}' no encontrada.")
             
             # Si solo se seleccionó "theory" sin lección específica, mostrar menú PyQt6
             elif start_mode == "theory":
+                # RECARGAR LECCIONES para detectar archivos nuevos (05, 06...)
+                lesson_manager_instance.reload_lessons()
                 lessons = lesson_manager_instance.get_all_lessons()
                 
                 if lessons:
@@ -755,6 +766,13 @@ def main():
                             current_lesson.start()
                             in_lesson = True
                             theory_mode = True
+                            
+                            # Calcular index
+                            try:
+                                current_lesson_index = lesson_manager_instance._lesson_order.index(selected_lesson_id)
+                            except:
+                                current_lesson_index = None
+                                
                             print(f"[EXITO] Lección seleccionada: '{lesson.name}'")
                     else:
                         print("Regresando al menú principal...")
@@ -988,34 +1006,50 @@ def main():
                 # 0.0 puede causar bloqueo total si la cámara demora un milisegundo.
                 wait_time = 0.001  # Siempre rápido para evitar lag en UI
                 
-                finished_left, frame_left = cam_left.next(black=True, wait=wait_time)
-                finished_right, frame_right = cam_right.next(black=True, wait=wait_time)
+                if cam_left and cam_right:
+                    finished_left, frame_left = cam_left.next(black=True, wait=wait_time)
+                    finished_right, frame_right = cam_right.next(black=True, wait=wait_time)
+                else:
+                    # Fallback si no hay cámaras: generar frames negros
+                    time.sleep(0.03) # Simular 30 FPS
+                    frame_left = np.zeros((pixel_height, pixel_width, 3), np.uint8)
+                    frame_right = frame_left.copy()
+                    finished_left = True
+                    finished_right = True
 
                 # Aplicar rotación/espejo SEGÚN StereoConfig
                 # Usamos la clase importada al inicio del archivo.
                 # Aplicamos la misma transformación a AMBOS frames.
-
-                if getattr(StereoConfig, 'ROTATE_CAMERAS_180', False):
-                    # Cámaras físicamente boca abajo: corregir con flip(-1)
-                    frame_left = cv2.flip(frame_left, -1)
-                    frame_right = cv2.flip(frame_right, -1)
-                elif getattr(StereoConfig, 'MIRROR_HORIZONTAL', False):
-                    # Espejo horizontal para ambos frames
-                    frame_left = cv2.flip(frame_left, 1)
-                    frame_right = cv2.flip(frame_right, 1)
+                
+                # Solo aplicar si tenemos frames validos
+                if frame_left is not None and frame_right is not None:
+                    if getattr(StereoConfig, 'ROTATE_CAMERAS_180', False):
+                        # Cámaras físicamente boca abajo: corregir con flip(-1)
+                        frame_left = cv2.flip(frame_left, -1)
+                        frame_right = cv2.flip(frame_right, -1)
+                    elif getattr(StereoConfig, 'MIRROR_HORIZONTAL', False):
+                        # Espejo horizontal para ambos frames
+                        frame_left = cv2.flip(frame_left, 1)
+                        frame_right = cv2.flip(frame_right, 1)
 
                 hands_left_image = fingers_left_image = []
                 hands_right_image = fingers_right_image = []
 
                 # Detect Hands PRIMERO (sin dibujar todavía)
-                hands_detected_left = left_detector.findHands(frame_left)
+                if left_detector:
+                    hands_detected_left = left_detector.findHands(frame_left)
+                else:
+                    hands_detected_left = None
                 if hands_detected_left:
                     hands_left_image, fingers_left_image = \
                         left_detector.getFingerTipsPos()
                 else:
                     hands_left_image = fingers_left_image = []
 
-                hands_detected_right = right_detector.findHands(frame_right)
+                if right_detector:
+                    hands_detected_right = right_detector.findHands(frame_right)
+                else:
+                    hands_detected_right = None
                 if hands_detected_right:
                     hands_right_image, fingers_right_image = \
                         right_detector.getFingerTipsPos()
@@ -1214,15 +1248,42 @@ def main():
                         depth_estimator=depth_estimator,
                         octave_base=octave_base,
                         keyboard_total_keys=KEYBOARD_TOT_KEYS,
-                        camera_separation=camera_separation
+                        camera_separation=camera_separation,
+                        lesson_index=current_lesson_index # Nuevo argumento para guardar progreso
                     )
-                    
                     # Cuando la ventana se cierre, limpiar estado
                     current_lesson.stop()
                     in_lesson = False
                     current_lesson = None
+                    
+                    print("Lección terminada. Volviendo al Roadmap...")
+                    
+                    # VOLVER A MOSTRAR EL MAPA (Recargar para asegurar consistencia)
+                    lesson_manager_instance.reload_lessons()
+                    lessons = lesson_manager_instance.get_all_lessons()
+                    selected_lesson_id = show_theory_menu(lessons)
+                    
+                    if selected_lesson_id:
+                        # Usuario seleccionó otra lección
+                        lesson = lesson_manager_instance.get_lesson(selected_lesson_id)
+                        if lesson:
+                            current_lesson = lesson
+                            current_lesson.start()
+                            in_lesson = True
+                            theory_mode = True
+                            
+                            # Actualizar índice
+                            try:
+                                current_lesson_index = lesson_manager_instance._lesson_order.index(selected_lesson_id)
+                            except ValueError:
+                                current_lesson_index = 0
+                                
+                            print(f"[EXITO] Nueva lección seleccionada: '{lesson.name}'")
+                            continue
+                    
+                    # Si no seleccionó nada (canceló o volvió), salir al menú principal
                     theory_mode = False
-                    print("Lección terminada. Regresando al menú principal...")
+                    print("Regresando al menú principal...")
                     break  # Salir del loop de OpenCV para volver al menú principal
                 
                 # === MODO RITMO (CANCIONES) ===

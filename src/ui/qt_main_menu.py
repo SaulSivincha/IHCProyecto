@@ -137,20 +137,20 @@ class MainMenuDialog(QDialog):
         lbl_theory.setObjectName("subtitle")
         self.layout_theory.addWidget(lbl_theory)
 
-        self._btn_t1 = QPushButton("▶  1 - ACORDES BÁSICOS")
-        self._btn_t1.clicked.connect(lambda: self._select("theory_chords"))
+        self._btn_t1 = QPushButton("▶  1 - RITMO Y TEMPO")
+        self._btn_t1.clicked.connect(lambda: self._select("theory_01_rhythm"))
         self.layout_theory.addWidget(self._btn_t1)
 
         self._btn_t2 = QPushButton("   2 - INTERVALOS")
-        self._btn_t2.clicked.connect(lambda: self._select("theory_intervals"))
+        self._btn_t2.clicked.connect(lambda: self._select("theory_02_intervals"))
         self.layout_theory.addWidget(self._btn_t2)
 
-        self._btn_t3 = QPushButton("   3 - RITMO Y TEMPO")
-        self._btn_t3.clicked.connect(lambda: self._select("theory_rhythm"))
+        self._btn_t3 = QPushButton("   3 - ESCALAS")
+        self._btn_t3.clicked.connect(lambda: self._select("theory_03_scales"))
         self.layout_theory.addWidget(self._btn_t3)
 
-        self._btn_t4 = QPushButton("   4 - ESCALAS")
-        self._btn_t4.clicked.connect(lambda: self._select("theory_scales"))
+        self._btn_t4 = QPushButton("   4 - ACORDES BÁSICOS")
+        self._btn_t4.clicked.connect(lambda: self._select("theory_04_chords"))
         self.layout_theory.addWidget(self._btn_t4)
         
         self.layout_theory.addSpacing(20)
@@ -294,6 +294,11 @@ def show_main_menu() -> Optional[str]:
     app = QApplication.instance()
     if app is None:
         app = QApplication(sys.argv)
+    
+    # IMPORTANTE: Evitar que la app se cierre cuando se cierra el diálogo del menú
+    # Esto es crucial porque cerramos el menú antes de abrir la siguiente ventana (lección/modo libre)
+    app.setQuitOnLastWindowClosed(False)
+    
     dlg = MainMenuDialog()
     dlg.exec()
     choice = dlg.choice

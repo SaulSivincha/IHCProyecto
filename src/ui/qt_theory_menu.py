@@ -2,10 +2,59 @@ import sys
 from typing import Optional
 from PyQt6.QtWidgets import (
     QApplication, QDialog, QVBoxLayout, QHBoxLayout,
-    QLabel, QPushButton, QScrollArea, QWidget, QFrame
+    QLabel, QPushButton, QScrollArea, QWidget, QFrame,
+    QSpacerItem, QSizePolicy, QGridLayout
 )
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QPoint, QRect
+from PyQt6.QtGui import QFont, QColor, QPalette, QBrush, QLinearGradient, QPainter, QPen, QPainterPath
 from src.theory.progress_manager import ProgressManager
+
+class RoadmapContainer(QWidget):
+    """Contenedor personalizado que dibuja las líneas de conexión"""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.points = [] # Lista de (widget, widget_next)
+
+    def set_connections(self, widgets_in_order):
+        self.points = []
+        for i in range(len(widgets_in_order) - 1):
+            self.points.append((widgets_in_order[i], widgets_in_order[i+1]))
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        
+        pen = QPen(QColor(255, 255, 255, 150))
+        pen.setWidth(4)
+        pen.setStyle(Qt.PenStyle.DashLine)
+        painter.setPen(pen)
+
+        for w1, w2 in self.points:
+            if w1.isVisible() and w2.isVisible():
+                # Calcular centros relativos a este contenedor
+                p1 = w1.mapTo(self, QPoint(w1.width()//2, w1.height()//2))
+                p2 = w2.mapTo(self, QPoint(w2.width()//2, w2.height()//2))
+                
+                path = QPainterPath()
+                # Pasar coordenadas float para evitar TypeError con QPoint
+                path.moveTo(p1.x(), p1.y())
+                
+                # Curva bézier suave entre puntos
+                # Usamos coordenadas directas
+                c1x = p1.x() + 50
+                c1y = p1.y()
+                c2x = p2.x() - 50
+                c2y = p2.y()
+                
+                # Ajustar control points si están en diferentes filas (zigzag vertical)
+                if abs(p1.y() - p2.y()) > 50:
+                    c1x = p1.x() + 20
+                    c2x = p2.x() - 20
+
+                path.cubicTo(c1x, c1y, c2x, c2y, p2.x(), p2.y())
+                painter.drawPath(path)
+
 
 class TheoryMenuDialog(QDialog):
     def __init__(self, lessons):
@@ -14,113 +63,180 @@ class TheoryMenuDialog(QDialog):
         self.selected_lesson_id: Optional[str] = None
         self.progress = ProgressManager()
         
-        self.setWindowTitle("Ruta de Aprendizaje Musical")
-        self.setMinimumSize(800, 600)
-        self.setStyleSheet("background-color: #1a1a2e;") # Fondo oscuro
+        self.setWindowTitle("Mi Aventura Musical")
+        self.setMinimumSize(1000, 600)
+        
+        # Fondo estilo cielo infantil
+        self.setStyleSheet("""
+            QDialog {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                          stop:0 #87CEEB, stop:1 #E0F7FA);
+            }
+        """)
         
         self._build_ui()
 
     def _build_ui(self):
         main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(20, 20, 20, 20)
         
-        # Título llamativo para niños
-        title = QLabel("¡MI RUTA MUSICAL!")
+        # --- HEADER ---
+        header = QHBoxLayout()
+        title = QLabel("MI RUTA MUSICAL")
         title.setStyleSheet("""
-            font-size: 40px; 
+            font-family: 'Comic Sans MS', 'Verdana'; 
+            font-size: 42px; 
             font-weight: bold; 
-            color: #FFD700; 
-            margin: 20px;
+            color: #FFFFFF; 
+            background-color: transparent;
+            margin-bottom: 10px;
         """)
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        main_layout.addWidget(title)
-
-        # Área de desplazamiento para la ruta
+        header.addWidget(title)
+        main_layout.addLayout(header)
+        
+        # --- SCROLL AREA HORIZONTAL ---
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setStyleSheet("border: none; background: transparent;")
         
-        container = QWidget()
-        path_layout = QVBoxLayout(container)
-        path_layout.setContentsMargins(50, 20, 50, 20)
-        path_layout.setSpacing(30)
+        # Usar nuestro contenedor personalizado
+        container = RoadmapContainer()
+        container.setStyleSheet("background: transparent;")
+        
+        # Layout GRID para organizar mejor el ZigZag
+        # Fila 0: Top
+        # Fila 1: Bottom
+        grid_layout = QGridLayout(container)
+        grid_layout.setContentsMargins(50, 50, 50, 50)
+        grid_layout.setSpacing(40) # Espacio entre elementos
 
-        # Generar botones en zigzag
+        ordered_widgets = []
+
+        # Generar niveles
         for i, (lesson_id, lesson) in enumerate(self.lessons):
             is_unlocked = self.progress.is_unlocked(lesson_id, i)
             
-            # Contenedor para el zigzag
-            row = QHBoxLayout()
-            pos = i % 4
+            # --- WIDGET DE LECCIÓN (Botón + Texto) ---
+            lesson_widget = QWidget()
+            v_box = QVBoxLayout(lesson_widget)
+            v_box.setContentsMargins(0,0,0,0)
+            v_box.setSpacing(5)
             
-            # Lógica de posición: Derecha, Centro, Izquierda, Centro
-            if pos == 0: row.addStretch(2)
-            elif pos == 1 or pos == 3: row.addStretch(1)
-            
-            # Botón circular
             btn = QPushButton(str(i + 1))
-            btn.setFixedSize(120, 120)
+            btn.setFixedSize(120, 120) # Tamaño ligeramente menor para que quepa mejor
+            
+            # Estilo base
+            base_style = """
+                QPushButton {
+                    border-radius: 60px;
+                    border: 5px solid #FFFFFF;
+                    font-family: 'Comic Sans MS', 'Arial';
+                    font-size: 45px;
+                    font-weight: bold;
+                    color: white;
+                }
+                QPushButton:hover {
+                    border: 7px solid #FFFFFF;
+                    background-color: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 %COLOR_LIGHT%, stop:1 %COLOR_MAIN%);
+                    margin: -3px; 
+                }
+            """
             
             if is_unlocked:
-                # Colores vivos (Verde para pares, Azul para impares)
-                color = "#58CC02" if i % 2 == 0 else "#1CB0F6"
-                btn.setStyleSheet(f"""
-                    QPushButton {{
-                        background-color: {color};
-                        border-bottom: 8px solid rgba(0,0,0,0.2);
-                        border-radius: 60px;
-                        font-size: 35px;
-                        font-weight: bold;
-                        color: white;
-                    }}
-                    QPushButton:hover {{ background-color: #78D932; transform: scale(1.1); }}
-                """)
+                colors = [
+                    ("#FF7043", "#F4511E"), # Naranja
+                    ("#66BB6A", "#43A047"), # Verde
+                    ("#42A5F5", "#1E88E5"), # Azul
+                    ("#FFCA28", "#FFB300"), # Amarillo
+                    ("#AB47BC", "#8E24AA"), # Violeta
+                    ("#EC407A", "#D81B60")  # Rosa
+                ]
+                bg_light, bg_main = colors[i % len(colors)]
+                
+                style = base_style.replace("%COLOR_MAIN%", bg_main).replace("%COLOR_LIGHT%", bg_light)
+                btn.setStyleSheet(style + f"QPushButton {{ background-color: {bg_main}; }}")
+                btn.setCursor(Qt.CursorShape.PointingHandCursor)
                 btn.clicked.connect(lambda checked, lid=lesson_id: self._select(lid))
+                
             else:
-                # Color gris bloqueado
+                # Bloqueado
                 btn.setStyleSheet("""
                     QPushButton {
-                        background-color: #3c3c5a;
-                        border-bottom: 8px solid #2a2a40;
+                        background-color: #B0BEC5;
+                        color: #ECEFF1;
+                        border: 5px solid #CFD8DC;
                         border-radius: 60px;
-                        color: #666680;
-                        font-size: 35px;
+                        font-family: 'Comic Sans MS';
+                        font-size: 30px;
+                        font-weight: bold;
                     }
                 """)
+                btn.setText("") 
                 btn.setEnabled(False)
+            
+            v_box.addWidget(btn, 0, Qt.AlignmentFlag.AlignCenter)
+            
+            lbl_name = QLabel(lesson.name)
+            lbl_name.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            lbl_name.setWordWrap(True)
+            lbl_name.setStyleSheet("""
+                color: #37474F; 
+                font-family: 'Comic Sans MS';
+                font-weight: bold;
+                font-size: 13px;
+                background-color: rgba(255,255,255,0.9);
+                border-radius: 8px;
+                padding: 4px;
+            """)
+            lbl_name.setFixedWidth(130)
+            v_box.addWidget(lbl_name, 0, Qt.AlignmentFlag.AlignCenter)
+            
+            # POSICIONAMIENTO EN GRID (ZigZag)
+            # Columna = i
+            # Fila = 0 si es par, 1 si es impar
+            row = 1 if i % 2 != 0 else 0
+            
+            grid_layout.addWidget(lesson_widget, row, i)
+            ordered_widgets.append(btn) # Guardamos el BOTÓN para calcular líneas al centro
 
-            row.addWidget(btn)
-            
-            if pos == 2: row.addStretch(2)
-            elif pos == 1 or pos == 3: row.addStretch(1)
-            
-            path_layout.addLayout(row)
-            
-            # Etiqueta con el nombre de la lección
-            label = QLabel(lesson.name.upper())
-            label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            label.setStyleSheet("color: white; font-weight: bold; font-size: 14px;")
-            path_layout.addWidget(label)
+        # Establecer conexiones para dibujar líneas
+        # Nota: llamamos esto con un delay o al mostrar, pero QPaintEvent lo manejará
+        container.set_connections(ordered_widgets)
 
         scroll.setWidget(container)
         main_layout.addWidget(scroll)
-
-        # Botón para salir
-        exit_btn = QPushButton("VOLVER AL PIANO")
+        
+        # --- FOOTER ---
+        footer_layout = QHBoxLayout()
+        footer_layout.addStretch()
+        
+        exit_btn = QPushButton("VOLVER A CASA")
+        exit_btn.setFixedSize(200, 50)
         exit_btn.setStyleSheet("""
-            background-color: #FF4B4B; 
-            color: white; 
-            padding: 15px; 
-            border-radius: 10px; 
-            font-weight: bold;
+            QPushButton {
+                background-color: #FB8C00;
+                color: white;
+                font-family: 'Comic Sans MS';
+                font-size: 16px;
+                font-weight: bold;
+                border-radius: 25px;
+                border: 3px solid #FFF3E0;
+            }
+            QPushButton:hover {
+                background-color: #F57C00;
+            }
         """)
         exit_btn.clicked.connect(self.reject)
-        main_layout.addWidget(exit_btn)
+        footer_layout.addWidget(exit_btn)
+        
+        footer_layout.addStretch()
+        main_layout.addLayout(footer_layout)
 
     def _select(self, lesson_id):
         self.selected_lesson_id = lesson_id
         self.accept()
 
-# ESTA FUNCIÓN ES LA QUE LLAMA MAIN.PY
 def show_theory_menu(lessons) -> Optional[str]:
     app = QApplication.instance()
     if app is None:

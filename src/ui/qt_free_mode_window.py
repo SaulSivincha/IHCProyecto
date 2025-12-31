@@ -201,27 +201,29 @@ class FreeModeWindow(QMainWindow):
         
         # 2. PROCESAMIENTO PERSONALIZADO 
         # (Replicamos lógica de KeyboardProcessor para poder extraer datos para la UI)
+        # B. APLICAR ESPEJO PARA VISUALIZACIÓN (Hacerlo ANTES del try para asegurar que existe)
+        frame_left_display = StereoConfig.apply_display_transform(frame_left)
+        
+        # 2. PROCESAMIENTO PERSONALIZADO 
         try:
-            # A. Detección de manos
-            self.hand_detector_left.findHands(frame_left)
-            self.hand_detector_right.findHands(frame_right)
-            
-            hl_hands, hl_tips = self.hand_detector_left.getFingerTipsPos()
-            hr_hands, hr_tips = self.hand_detector_right.getFingerTipsPos()
-            
-            # B. APLICAR ESPEJO PARA VISUALIZACIÓN
-            # Espejamos el frame ANTES de dibujar overlays para que el texto salga bien
-            # y el movimiento sea intuitivo.
-            frame_left_display = StereoConfig.apply_display_transform(frame_left)
+            # A. Detección de manos (Solo si hay detectores)
+            if self.hand_detector_left and self.hand_detector_right:
+                self.hand_detector_left.findHands(frame_left)
+                self.hand_detector_right.findHands(frame_right)
+                
+                hl_hands, hl_tips = self.hand_detector_left.getFingerTipsPos()
+                hr_hands, hr_tips = self.hand_detector_right.getFingerTipsPos()
+                
+                # Dibujar manos (con rotate_180=True)
+                self.hand_detector_left.drawHands(frame_left_display, rotate_180=True)
+                self.hand_detector_left.drawTips(frame_left_display, rotate_180=True)
+            else:
+                hl_hands, hl_tips = [], []
+                hr_hands, hr_tips = [], []
             
             # C. DIBUJAR SOBRE EL FRAME ESPEJADO
-            
-            # 1. Dibujar teclado (se dibuja normal sobre frame espejado -> texto sale bien)
+            # 1. Dibujar teclado (se dibuja normal sobre frame espejado)
             self.virtual_keyboard.draw_virtual_keyboard(frame_left_display)
-            
-            # 2. Dibujar manos (con rotate_180=True para corregir coordenadas)
-            self.hand_detector_left.drawHands(frame_left_display, rotate_180=True)
-            self.hand_detector_left.drawTips(frame_left_display, rotate_180=True)
             
             # D. Procesar teclas y audio
             if len(hl_tips) > 0 and len(hr_tips) > 0:

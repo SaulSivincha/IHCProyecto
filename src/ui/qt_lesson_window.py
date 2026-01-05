@@ -14,9 +14,9 @@ from PyQt6.QtWidgets import (
     QLabel, QPushButton, QProgressBar, QTextEdit, QGridLayout, QFrame
 )
 from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QImage, QPixmap, QFont
+from PyQt6.QtGui import QImage, QPixmap, QFont, QLinearGradient, QPainter, QColor
 from src.piano.keyboard_processor import KeyboardProcessor
-
+from src.config.theme import Theme
 
 class LessonWindow(QMainWindow):
     """
@@ -60,82 +60,78 @@ class LessonWindow(QMainWindow):
         self.setWindowTitle(f"Teoría Musical - {lesson.name}")
         self.setMinimumSize(1100, 700)
         
-        self.setStyleSheet("""
-            QMainWindow {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #87CEEB, stop:1 #E0F7FA);
-            }
-            QLabel#title {
-                color: #FFFFFF;
-                font-family: 'Comic Sans MS', 'Verdana';
+        # El estilo base se maneja aquí, el gradiente en paintEvent
+        self.setStyleSheet(f"""
+            QLabel {{
+                font-family: 'Comic Sans MS', 'Arial';
+            }}
+            QLabel#title {{
+                color: {Theme.to_hex(Theme.TEXT_HIGHLIGHT)};
                 font-size: 28px;
                 font-weight: bold;
                 padding: 10px;
                 background-color: transparent;
-                text-shadow: 1px 1px #333;
-            }
-            QLabel#subtitle {
-                color: #006064;
-                font-family: 'Comic Sans MS';
-                font-size: 14px;
+            }}
+            QLabel#subtitle {{
+                color: {Theme.to_hex(Theme.TEXT_PRIMARY)};
+                font-size: 16px;
                 font-weight: bold;
                 padding: 5px;
-            }
-            QLabel#instruction {
-                color: #004D40;
-                font-family: 'Comic Sans MS';
-                font-size: 13px;
+                background-color: transparent;
+            }}
+            QLabel#instruction {{
+                color: {Theme.to_hex(Theme.TEXT_SECONDARY)};
+                font-size: 14px;
                 padding: 3px;
-            }
-            QTextEdit {
-                background-color: #FFFFFF;
-                color: #37474F;
-                border: 2px solid #B0BEC5;
+                background-color: transparent;
+            }}
+            QTextEdit {{
+                background-color: rgba(255, 255, 255, 0.9);
+                color: {Theme.to_hex(Theme.TEXT_PRIMARY)};
+                border: 2px solid {Theme.to_hex(Theme.BORDER_DEFAULT)};
                 border-radius: 10px;
                 font-family: 'Comic Sans MS', 'Arial';
                 font-size: 16px;
                 padding: 10px;
-            }
-            QPushButton {
-                background-color: #FF7043;
-                color: #FFFFFF;
-                font-family: 'Comic Sans MS';
+            }}
+            QPushButton {{
+                background-color: {Theme.to_hex(Theme.BTN_PRIMARY_BG)};
+                color: {Theme.to_hex(Theme.BTN_PRIMARY_TEXT)};
+                font-family: 'Comic Sans MS', 'Arial';
                 font-size: 14px;
                 font-weight: bold;
                 padding: 10px 20px;
-                border: 2px solid #FFAB91;
+                border: 2px solid {Theme.to_hex(Theme.BORDER_DEFAULT)};
                 border-radius: 15px;
-            }
-            QPushButton:hover {
-                background-color: #F4511E;
-            }
-            QPushButton:pressed {
-                background-color: #E64A19;
-            }
-            QPushButton#exitButton {
-                background-color: #EF5350;
-                border: 2px solid #FFCDD2;
-                color: #FFFFFF;
-            }
-            QPushButton#exitButton:hover {
-                background-color: #D32F2F;
-            }
-            QProgressBar {
-                border: 2px solid #B0BEC5;
+            }}
+            QPushButton:hover {{
+                background-color: {Theme.to_hex(Theme.BLUE_VIVID)};
+            }}
+            QPushButton#exitButton {{
+                background-color: {Theme.to_hex(Theme.BTN_DANGER_BG)};
+                border: 2px solid {Theme.to_hex(Theme.BORDER_DEFAULT)};
+                color: {Theme.to_hex(Theme.BTN_DANGER_TEXT)};
+            }}
+            QPushButton#exitButton:hover {{
+                background-color: {Theme.to_hex(Theme.RED_VIVID)};
+            }}
+            QProgressBar {{
+                border: 2px solid {Theme.to_hex(Theme.BORDER_DEFAULT)};
                 border-radius: 5px;
                 text-align: center;
-                background-color: #ECEFF1;
-                color: #37474F;
+                background-color: rgba(255, 255, 255, 0.5);
+                color: {Theme.to_hex(Theme.TEXT_PRIMARY)};
                 font-weight: bold;
-            }
-            QProgressBar::chunk {
-                background-color: #66BB6A;
+            }}
+            QProgressBar::chunk {{
+                background-color: {Theme.to_hex(Theme.SUCCESS)};
                 border-radius: 3px;
-            }
-            QFrame#cameraFrame {
-                border: 4px solid #B0BEC5;
+            }}
+            QFrame#cameraFrame {{
+                border: 4px solid {Theme.to_hex(Theme.BORDER_DEFAULT)};
                 border-radius: 15px;
                 background-color: #000000;
-            }
+            }}
         """)
         
         self._build_ui()
@@ -146,9 +142,22 @@ class LessonWindow(QMainWindow):
         
         self._start_camera_feed()
     
+    def paintEvent(self, event):
+        """Dibuja el fondo con gradiente del tema"""
+        painter = QPainter(self)
+        
+        grad_start = QColor(Theme.to_hex(Theme.BG_GRADIENT_START))
+        grad_end = QColor(Theme.to_hex(Theme.BG_GRADIENT_END))
+        
+        gradient = QLinearGradient(0, 0, 0, self.height())
+        gradient.setColorAt(0, grad_start)
+        gradient.setColorAt(1, grad_end)
+        painter.fillRect(self.rect(), gradient)
+    
     def _build_ui(self):
         """Construye la interfaz de usuario"""
         central_widget = QWidget()
+        central_widget.setStyleSheet("background: transparent;")
         self.setCentralWidget(central_widget)
         
         # Layout principal
@@ -181,11 +190,13 @@ class LessonWindow(QMainWindow):
         self.camera_frame = QFrame()
         self.camera_frame.setObjectName("cameraFrame")
         camera_frame_layout = QVBoxLayout(self.camera_frame)
+        camera_frame_layout.setContentsMargins(0, 0, 0, 0)
         
         self.camera_label = QLabel()
         self.camera_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.camera_label.setMinimumSize(640, 480) 
         self.camera_label.setScaledContents(False)
+        self.camera_label.setStyleSheet("background-color: #000000; border-radius: 11px;")
         camera_frame_layout.addWidget(self.camera_label)
         
         camera_container.addWidget(self.camera_frame)
@@ -368,7 +379,7 @@ class LessonWindow(QMainWindow):
              from src.theory.progress_manager import ProgressManager
              pm = ProgressManager()
              pm.save_completion(self.lesson_index)
-             print(f"Progreso guardado para lección índice: {self.lesson_index}")
+            #  print(f"Progreso guardado para lección índice: {self.lesson_index}")
         
         self.close()
     
@@ -437,6 +448,4 @@ def show_lesson_window(lesson, camera_left, camera_right, synth,
         while window.isVisible():
             app.processEvents()
     
-    result = window.continue_lesson
-    
-    return result
+    return window.continue_lesson

@@ -8,6 +8,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, QPoint, QRect
 from PyQt6.QtGui import QFont, QColor, QPalette, QBrush, QLinearGradient, QPainter, QPen, QPainterPath
 from src.theory.progress_manager import ProgressManager
+from src.config.theme import Theme
 
 class RoadmapContainer(QWidget):
     """Contenedor personalizado que dibuja las líneas de conexión"""
@@ -66,12 +67,13 @@ class TheoryMenuDialog(QDialog):
         self.setWindowTitle("Mi Aventura Musical")
         self.setMinimumSize(1000, 600)
         
-        # Fondo estilo cielo infantil
-        self.setStyleSheet("""
-            QDialog {
+        # Fondo estilo cielo infantil (usando Theme)
+        self.setStyleSheet(f"""
+            QDialog {{
                 background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                                          stop:0 #87CEEB, stop:1 #E0F7FA);
-            }
+                                          stop:0 {Theme.to_hex(Theme.BG_GRADIENT_START)}, 
+                                          stop:1 {Theme.to_hex(Theme.BG_GRADIENT_END)});
+            }}
         """)
         
         self._build_ui()
@@ -161,16 +163,16 @@ class TheoryMenuDialog(QDialog):
                 
             else:
                 # Bloqueado
-                btn.setStyleSheet("""
-                    QPushButton {
-                        background-color: #B0BEC5;
-                        color: #ECEFF1;
-                        border: 5px solid #CFD8DC;
+                btn.setStyleSheet(f"""
+                    QPushButton {{
+                        background-color: {Theme.to_hex(Theme.GRAY)};
+                        color: {Theme.to_hex(Theme.LIGHT_GRAY)};
+                        border: 5px solid {Theme.to_hex(Theme.LIGHT_GRAY)};
                         border-radius: 60px;
                         font-family: 'Comic Sans MS';
                         font-size: 30px;
                         font-weight: bold;
-                    }
+                    }}
                 """)
                 btn.setText("") 
                 btn.setEnabled(False)
@@ -180,8 +182,8 @@ class TheoryMenuDialog(QDialog):
             lbl_name = QLabel(lesson.name)
             lbl_name.setAlignment(Qt.AlignmentFlag.AlignCenter)
             lbl_name.setWordWrap(True)
-            lbl_name.setStyleSheet("""
-                color: #37474F; 
+            lbl_name.setStyleSheet(f"""
+                color: {Theme.to_hex(Theme.TEXT_PRIMARY)}; 
                 font-family: 'Comic Sans MS';
                 font-weight: bold;
                 font-size: 13px;
@@ -213,19 +215,19 @@ class TheoryMenuDialog(QDialog):
         
         exit_btn = QPushButton("VOLVER A CASA")
         exit_btn.setFixedSize(200, 50)
-        exit_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #FB8C00;
-                color: white;
+        exit_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {Theme.to_hex(Theme.BTN_WARNING_BG)};
+                color: {Theme.to_hex(Theme.BTN_WARNING_TEXT)};
                 font-family: 'Comic Sans MS';
                 font-size: 16px;
                 font-weight: bold;
                 border-radius: 25px;
-                border: 3px solid #FFF3E0;
-            }
-            QPushButton:hover {
-                background-color: #F57C00;
-            }
+                border: 3px solid {Theme.to_hex(Theme.BORDER_DEFAULT)};
+            }}
+            QPushButton:hover {{
+                background-color: {Theme.to_hex(Theme.ORANGE_VIVID)};
+            }}
         """)
         exit_btn.clicked.connect(self.reject)
         footer_layout.addWidget(exit_btn)

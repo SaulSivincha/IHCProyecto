@@ -9,6 +9,7 @@ import cv2
 import numpy as np
 import time
 from ..lesson_base import BaseLesson
+from src.config.theme import Theme
 
 
 class ChordsLesson(BaseLesson):
@@ -153,13 +154,13 @@ class ChordsLesson(BaseLesson):
                     cv2.addWeighted(overlay, 0.5, frame_left, 0.5, 0, frame_left)
                     
                     # Borde brillante
-                    cv2.rectangle(frame_left, (x, y), (x + w, y + h), (255, 255, 255), 2)
+                    cv2.rectangle(frame_left, (x, y), (x + w, y + h), Theme.BORDER_ACTIVE, 2)
 
         # --- Indicador visual de Información ---
         if self.show_construction:
             if int(current_time * 2) % 2 == 0:
                 cv2.putText(frame_left, "INFO: ON", (frame_left.shape[1]-160, 50),
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, Theme.INFO, 2)
         
         return frame_left, frame_right, True
 
@@ -193,7 +194,7 @@ class ChordsLesson(BaseLesson):
             y = int(vk.kb_y0)
             w = int(vk.white_key_width)
             h = int(vk.kb_y1 - vk.kb_y0)
-            return (x, y, w, h), (255, 255, 0) # Cian/Amarillo
+            return (x, y, w, h), Theme.KEY_HIGHLIGHT_WHITE
 
         # Intentar como tecla negra
         elif offset in black_semitones_map:
@@ -214,7 +215,7 @@ class ChordsLesson(BaseLesson):
             y = int(vk.kb_y0)
             w = int(vk.black_key_width)
             h = int(vk.black_key_heigth)
-            return (x, y, w, h), (255, 0, 255) # Magenta
+            return (x, y, w, h), Theme.KEY_HIGHLIGHT_BLACK
 
         return None
 

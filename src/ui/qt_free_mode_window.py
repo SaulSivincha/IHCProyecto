@@ -19,6 +19,7 @@ from PyQt6.QtGui import QImage, QPixmap, QColor
 # Importamos utilidades del proyecto
 from src.piano.keyboard_processor import KeyboardProcessor
 from src.config.app_config import AppConfig
+from src.config.theme import Theme
 
 class FreeModeWindow(QMainWindow):
     """
@@ -57,25 +58,26 @@ class FreeModeWindow(QMainWindow):
         
         # Configuración de ventana
         self.setWindowTitle("Piano Virtual - Modo Libre")
+        self.setMinimumSize(1024, 768)
         self.setMinimumSize(1200, 700)
-        self.setStyleSheet("""
-            QMainWindow, QWidget { background-color: #121212; color: #E0E0E0; }
-            QLabel#Title { font-size: 24px; font-weight: bold; color: #FFD700; margin-bottom: 10px; }
-            QLabel#NoteDisplay { font-size: 48px; font-weight: bold; color: #00FF00; }
-            QLabel#ChordDisplay { font-size: 22px; color: #00FFFF; font-style: italic; }
-            QLabel#SectionHeader { font-size: 16px; font-weight: bold; color: #AAAAAA; margin-top: 15px; }
-            QListWidget { 
-                background-color: #1E1E1E; 
-                border: 1px solid #333; 
+        self.setStyleSheet(f"""
+            QMainWindow, QWidget {{ background-color: {Theme.to_hex(Theme.BG_MAIN)}; color: {Theme.to_hex(Theme.TEXT_PRIMARY)}; }}
+            QLabel#Title {{ font-size: 24px; font-weight: bold; color: {Theme.to_hex(Theme.TEXT_HIGHLIGHT)}; margin-bottom: 10px; }}
+            QLabel#NoteDisplay {{ font-size: 48px; font-weight: bold; color: {Theme.to_hex(Theme.SUCCESS)}; }}
+            QLabel#ChordDisplay {{ font-size: 22px; color: {Theme.to_hex(Theme.INFO)}; font-style: italic; }}
+            QLabel#SectionHeader {{ font-size: 16px; font-weight: bold; color: {Theme.to_hex(Theme.TEXT_SECONDARY)}; margin-top: 15px; }}
+            QListWidget {{ 
+                background-color: {Theme.to_hex(Theme.BG_PANEL)}; 
+                border: 1px solid {Theme.to_hex(Theme.BORDER_DEFAULT)}; 
                 font-size: 14px; 
                 border-radius: 5px;
-            }
-            QPushButton#ExitBtn {
-                background-color: #CF6679; color: #000; font-weight: bold;
+            }}
+            QPushButton#ExitBtn {{
+                background-color: {Theme.to_hex(Theme.ERROR)}; color: #000; font-weight: bold;
                 border-radius: 4px; padding: 10px;
-            }
-            QPushButton#ExitBtn:hover { background-color: #FF8A80; }
-            QFrame#CameraContainer { border: 2px solid #333; border-radius: 8px; background-color: #000; }
+            }}
+            QPushButton#ExitBtn:hover {{ background-color: {Theme.to_hex(Theme.RED_SOFT)}; }}
+            QFrame#CameraContainer {{ border: 2px solid {Theme.to_hex(Theme.BORDER_DEFAULT)}; border-radius: 8px; background-color: #000; }}
         """)
         
         self._build_ui()
@@ -147,16 +149,16 @@ class FreeModeWindow(QMainWindow):
         # 5. Botón Algoritmos
         info_layout.addStretch()
         btn_algo = QPushButton("ALGORITMOS")
-        btn_algo.setStyleSheet("""
-            QPushButton {
-                background-color: #FF9800; 
+        btn_algo.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {Theme.to_hex(Theme.WARNING)}; 
                 color: #000; 
                 font-weight: bold;
                 border-radius: 4px; 
                 padding: 10px;
                 font-size: 14px;
-            }
-            QPushButton:hover { background-color: #FFB74D; }
+            }}
+            QPushButton:hover {{ background-color: {Theme.to_hex(Theme.BLUE_SOFT)}; }}
         """)
         btn_algo.clicked.connect(self._open_algorithm_config)
         info_layout.addWidget(btn_algo)
@@ -275,13 +277,13 @@ class FreeModeWindow(QMainWindow):
                                         if not hasattr(self, '_debug_counter'):
                                             self._debug_counter = 0
                                             # Mostrar configuración al inicio
-                                            print(f"\n=== CONFIGURACIÓN DE DETECCIÓN ===")
+                                            print(f"\\n=== CONFIGURACIÓN DE DETECCIÓN ===")
                                             print(f"Distancia calibrada (keyboard_distance): {keyboard_distance:.1f}cm")
                                             print(f"Umbral de activación: depth_relative <= 2.0cm")
                                             print(f"NOTA: Activa cuando el dedo está CERCA del teclado calibrado")
                                             print(f"  - Relativo NEGATIVO = dedo MÁS LEJOS de cámaras que el teclado")
                                             print(f"  - Relativo POSITIVO = dedo MÁS CERCA de cámaras que el teclado")
-                                            print(f"==================================\n")
+                                            print(f"==================================\\n")
                                         self._debug_counter += 1
                                         if self._debug_counter % 30 == 0:  # Cada 30 frames
                                             # Lógica corregida: activa cuando el dedo está sobre la mesa

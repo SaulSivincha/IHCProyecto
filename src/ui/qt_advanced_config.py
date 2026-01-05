@@ -13,13 +13,14 @@ from PyQt6.QtWidgets import (
     QGroupBox, QScrollArea, QWidget, QComboBox, QFrame, QSizePolicy
 )
 from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QFont
+from PyQt6.QtGui import QFont, QLinearGradient, QPainter, QColor
 
 # Importar configuración de algoritmos
 from src.vision.algorithms.algorithms_config import (
     ALGORITHMS_CONFIG, PRESETS, EXECUTION_ORDER,
     apply_preset, get_active_algorithms
 )
+from src.config.theme import Theme
 
 
 class AlgorithmWidget(QGroupBox):
@@ -112,7 +113,7 @@ class AlgorithmWidget(QGroupBox):
         self.enable_check = QCheckBox("Activado")
         self.enable_check.setChecked(self.algo_config.get('enabled', False))
         self.enable_check.stateChanged.connect(self._on_enabled_changed)
-        self.enable_check.setStyleSheet("QCheckBox { color: #00FF00; font-weight: bold; }")
+        self.enable_check.setStyleSheet(f"QCheckBox {{ color: {Theme.to_hex(Theme.SUCCESS)}; font-weight: bold; font-family: 'Comic Sans MS', 'Arial'; }}")
         
         header_layout.addWidget(self.enable_check)
         header_layout.addStretch()
@@ -124,31 +125,33 @@ class AlgorithmWidget(QGroupBox):
         if desc_info:
             # Descripción corta con icono
             short_label = QLabel(f"{desc_info.get('icon', '⚙️')} {desc_info.get('short', '')}")
-            short_label.setStyleSheet("""
-                color: #88CCFF; 
-                font-size: 12px; 
+            short_label.setStyleSheet(f"""
+                color: {Theme.to_hex(Theme.TEXT_HIGHLIGHT)}; 
+                font-size: 13px; 
                 font-weight: bold;
                 padding: 2px 0;
+                font-family: 'Comic Sans MS', 'Arial';
             """)
             layout.addWidget(short_label)
             
             # Descripción detallada
             detail_label = QLabel(desc_info.get('detail', ''))
             detail_label.setWordWrap(True)
-            detail_label.setStyleSheet("""
-                color: #888888; 
-                font-size: 11px; 
+            detail_label.setStyleSheet(f"""
+                color: {Theme.to_hex(Theme.TEXT_SECONDARY)}; 
+                font-size: 12px; 
                 font-style: italic;
-                padding: 4px 8px;
-                background-color: #252525;
-                border-radius: 4px;
+                padding: 6px 10px;
+                background-color: rgba(255, 255, 255, 0.5);
+                border-radius: 6px;
+                font-family: 'Comic Sans MS', 'Arial';
             """)
             layout.addWidget(detail_label)
         
         # Separador
         line = QFrame()
         line.setFrameShape(QFrame.Shape.HLine)
-        line.setStyleSheet("background-color: #555555;")
+        line.setStyleSheet(f"background-color: {Theme.to_hex(Theme.BORDER_DEFAULT)};")
         layout.addWidget(line)
         
         # Parámetros
@@ -158,26 +161,28 @@ class AlgorithmWidget(QGroupBox):
             layout.addLayout(param_layout)
         
         # Estilo del grupo
-        self.setStyleSheet("""
-            QGroupBox {
-                color: #00C8FF;
+        self.setStyleSheet(f"""
+            QGroupBox {{
+                color: {Theme.to_hex(Theme.ORANGE_VIVID)};
                 font-weight: bold;
                 font-size: 14px;
-                border: 1px solid #444444;
-                border-radius: 8px;
+                border: 2px solid {Theme.to_hex(Theme.BORDER_DEFAULT)};
+                background-color: rgba(255, 255, 255, 0.8);
+                border-radius: 10px;
                 margin-top: 12px;
                 padding-top: 10px;
-            }
-            QGroupBox::title {
+                font-family: 'Comic Sans MS', 'Arial';
+            }}
+            QGroupBox::title {{
                 subcontrol-origin: margin;
                 subcontrol-position: top left;
                 padding: 0 8px;
-                background-color: #2b2b2b;
-            }
-            QLabel {
-                color: #cccccc;
+            }}
+            QLabel {{
+                color: {Theme.to_hex(Theme.TEXT_PRIMARY)};
                 font-size: 12px;
-            }
+                font-family: 'Comic Sans MS', 'Arial';
+            }}
         """)
         
     def _create_param_widget(self, param_name: str, param_value) -> QHBoxLayout:
@@ -187,6 +192,7 @@ class AlgorithmWidget(QGroupBox):
         # Etiqueta del parámetro
         label = QLabel(self._format_param_name(param_name) + ":")
         label.setMinimumWidth(180)
+        label.setStyleSheet(f"color: {Theme.to_hex(Theme.TEXT_PRIMARY)}; font-weight: bold;")
         layout.addWidget(label)
         
         # Determinar tipo de widget según el valor
@@ -215,33 +221,34 @@ class AlgorithmWidget(QGroupBox):
             if param_value in options:
                 widget.setCurrentText(param_value)
             widget.currentTextChanged.connect(lambda v: self._on_param_changed(param_name, v))
-            widget.setStyleSheet("""
-                QComboBox {
-                    background-color: #3b3b3b;
-                    color: #ffffff;
-                    border: 1px solid #555555;
+            widget.setStyleSheet(f"""
+                QComboBox {{
+                    background-color: rgba(255, 255, 255, 0.9);
+                    color: {Theme.to_hex(Theme.TEXT_PRIMARY)};
+                    border: 1px solid {Theme.to_hex(Theme.BORDER_DEFAULT)};
                     border-radius: 4px;
                     padding: 4px 8px;
                     min-width: 100px;
-                }
+                }}
             """)
         else:
             # Fallback: mostrar como texto (no editable)
             widget = QLabel(str(param_value))
             widget._is_label = True  # Marcar para ignorar en update_config
         
-        widget.setStyleSheet("""
-            QSpinBox, QDoubleSpinBox {
-                background-color: #3b3b3b;
-                color: #ffffff;
-                border: 1px solid #555555;
+        # Estilos comunes para spinboxes
+        widget.setStyleSheet(f"""
+            QSpinBox, QDoubleSpinBox {{
+                background-color: rgba(255, 255, 255, 0.9);
+                color: {Theme.to_hex(Theme.TEXT_PRIMARY)};
+                border: 1px solid {Theme.to_hex(Theme.BORDER_DEFAULT)};
                 border-radius: 4px;
                 padding: 4px 8px;
                 min-width: 100px;
-            }
-            QSpinBox:focus, QDoubleSpinBox:focus {
-                border: 1px solid #00C8FF;
-            }
+            }}
+            QSpinBox:focus, QDoubleSpinBox:focus {{
+                border: 1px solid {Theme.to_hex(Theme.ORANGE_VIVID)};
+            }}
         """)
         
         self.param_widgets[param_name] = widget
@@ -272,22 +279,22 @@ class AlgorithmWidget(QGroupBox):
                     lambda v, s=slider: s.setValue(v)
                 )
             
-            slider.setStyleSheet("""
-                QSlider::groove:horizontal {
-                    background: #3b3b3b;
+            slider.setStyleSheet(f"""
+                QSlider::groove:horizontal {{
+                    background: rgba(255, 255, 255, 0.5);
                     height: 6px;
                     border-radius: 3px;
-                }
-                QSlider::handle:horizontal {
-                    background: #00C8FF;
+                }}
+                QSlider::handle:horizontal {{
+                    background: {Theme.to_hex(Theme.ORANGE_VIVID)};
                     width: 16px;
                     margin: -5px 0;
                     border-radius: 8px;
-                }
-                QSlider::sub-page:horizontal {
-                    background: #00C8FF;
+                }}
+                QSlider::sub-page:horizontal {{
+                    background: {Theme.to_hex(Theme.ORANGE_SOFT)};
                     border-radius: 3px;
-                }
+                }}
             """)
             slider.setMinimumWidth(150)
             layout.addWidget(slider)
@@ -396,81 +403,22 @@ class AdvancedConfigDialog(QDialog):
         
         self._setup_style()
         self._setup_ui()
+    
+    def paintEvent(self, event):
+        """Dibuja el fondo con gradiente del tema"""
+        painter = QPainter(self)
+        
+        grad_start = QColor(Theme.to_hex(Theme.BG_GRADIENT_START))
+        grad_end = QColor(Theme.to_hex(Theme.BG_GRADIENT_END))
+        
+        gradient = QLinearGradient(0, 0, 0, self.height())
+        gradient.setColorAt(0, grad_start)
+        gradient.setColorAt(1, grad_end)
+        painter.fillRect(self.rect(), gradient)
         
     def _setup_style(self):
-        self.setStyleSheet("""
-            QDialog {
-                background-color: #1e1e1e;
-                color: #ffffff;
-            }
-            QLabel {
-                color: #ffffff;
-            }
-            QPushButton {
-                background-color: #00C8FF;
-                color: #000000;
-                border: none;
-                padding: 10px 20px;
-                font-weight: bold;
-                border-radius: 5px;
-                font-size: 13px;
-            }
-            QPushButton:hover {
-                background-color: #33D6FF;
-            }
-            QPushButton:pressed {
-                background-color: #0099CC;
-            }
-            QPushButton#secondary {
-                background-color: #444444;
-                color: #ffffff;
-            }
-            QPushButton#secondary:hover {
-                background-color: #555555;
-            }
-            QComboBox {
-                background-color: #3b3b3b;
-                color: #ffffff;
-                border: 1px solid #555555;
-                border-radius: 4px;
-                padding: 8px;
-                font-size: 13px;
-                min-width: 200px;
-            }
-            QComboBox::drop-down {
-                border: none;
-                width: 30px;
-            }
-            QComboBox::down-arrow {
-                image: none;
-                border-left: 5px solid transparent;
-                border-right: 5px solid transparent;
-                border-top: 8px solid #00C8FF;
-                margin-right: 10px;
-            }
-            QComboBox QAbstractItemView {
-                background-color: #3b3b3b;
-                color: #ffffff;
-                selection-background-color: #00C8FF;
-            }
-            QScrollArea {
-                border: none;
-                background-color: transparent;
-            }
-            QScrollBar:vertical {
-                background: #2b2b2b;
-                width: 12px;
-                border-radius: 6px;
-            }
-            QScrollBar::handle:vertical {
-                background: #555555;
-                border-radius: 6px;
-                min-height: 30px;
-            }
-            QScrollBar::handle:vertical:hover {
-                background: #00C8FF;
-            }
-        """)
+        # El estilo general se maneja en cada widget para asegurar consistencia
+        pass
         
     def _setup_ui(self):
         main_layout = QVBoxLayout(self)
@@ -479,21 +427,28 @@ class AdvancedConfigDialog(QDialog):
         
         # === HEADER ===
         header = QLabel("⚙️ CONFIGURACIÓN DE ALGORITMOS")
-        header.setFont(QFont("Arial", 18, QFont.Weight.Bold))
-        header.setStyleSheet("color: #00C8FF; margin-bottom: 10px;")
+        header.setStyleSheet(f"""
+            color: {Theme.to_hex(Theme.TEXT_HIGHLIGHT)};
+            font-size: 24px;
+            font-weight: bold;
+            font-family: 'Comic Sans MS', 'Arial';
+            background: transparent;
+        """)
         header.setAlignment(Qt.AlignmentFlag.AlignCenter)
         main_layout.addWidget(header)
         
         # Descripción
         desc = QLabel("Ajusta los parámetros de detección en tiempo real.\n"
                      "Los cambios se aplican inmediatamente.")
-        desc.setStyleSheet("color: #888888; font-size: 12px;")
+        desc.setStyleSheet(f"color: {Theme.to_hex(Theme.TEXT_SECONDARY)}; font-size: 14px; font-family: 'Comic Sans MS', 'Arial'; background: transparent;")
         desc.setAlignment(Qt.AlignmentFlag.AlignCenter)
         main_layout.addWidget(desc)
         
         # === PRESETS ===
         preset_layout = QHBoxLayout()
-        preset_layout.addWidget(QLabel("Preset rápido:"))
+        preset_label = QLabel("Preset rápido:")
+        preset_label.setStyleSheet(f"color: {Theme.to_hex(Theme.TEXT_PRIMARY)}; font-weight: bold; font-family: 'Comic Sans MS', 'Arial'; background: transparent;")
+        preset_layout.addWidget(preset_label)
         
         self.preset_combo = QComboBox()
         self.preset_combo.addItem("-- Seleccionar Preset --", None)
@@ -502,14 +457,49 @@ class AdvancedConfigDialog(QDialog):
         self.preset_combo.addItem("🛡️ Estable (Menos errores)", "stable")
         self.preset_combo.addItem("📦 Mínimo (Solo esenciales)", "minimal")
         self.preset_combo.currentIndexChanged.connect(self._on_preset_selected)
+        self.preset_combo.setStyleSheet(f"""
+            QComboBox {{
+                background-color: rgba(255, 255, 255, 0.9);
+                color: {Theme.to_hex(Theme.TEXT_PRIMARY)};
+                border: 2px solid {Theme.to_hex(Theme.BORDER_DEFAULT)};
+                border-radius: 5px;
+                padding: 8px;
+                font-size: 14px;
+                font-family: 'Comic Sans MS', 'Arial';
+            }}
+            QComboBox::drop-down {{
+                border: none;
+                width: 30px;
+            }}
+            QComboBox QAbstractItemView {{
+                background-color: rgba(255, 255, 255, 0.95);
+                color: {Theme.to_hex(Theme.TEXT_PRIMARY)};
+                selection-background-color: {Theme.to_hex(Theme.ORANGE_VIVID)};
+            }}
+        """)
         preset_layout.addWidget(self.preset_combo)
         
         preset_layout.addStretch()
         
         # Botón de reset
         reset_btn = QPushButton("🔄 Reset")
-        reset_btn.setObjectName("secondary")
         reset_btn.clicked.connect(self._reset_to_default)
+        reset_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {Theme.to_hex(Theme.BTN_WARNING_BG)};
+                color: {Theme.to_hex(Theme.BTN_SECONDARY_TEXT)};
+                border: 2px solid {Theme.to_hex(Theme.BTN_SECONDARY_BG)};
+                padding: 10px 20px;
+                font-weight: bold;
+                border-radius: 15px;
+                font-size: 13px;
+                font-family: 'Comic Sans MS', 'Arial';
+            }}
+            QPushButton:hover {{
+                background-color: {Theme.to_hex(Theme.ORANGE_VIVID)};
+                color: #FFFFFF;
+            }}
+        """)
         preset_layout.addWidget(reset_btn)
         
         main_layout.addLayout(preset_layout)
@@ -518,8 +508,10 @@ class AdvancedConfigDialog(QDialog):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setStyleSheet("QScrollArea { background-color: transparent; border: none; }")
         
         scroll_content = QWidget()
+        scroll_content.setStyleSheet("background-color: transparent;")
         self.algorithms_layout = QVBoxLayout(scroll_content)
         self.algorithms_layout.setSpacing(15)
         
@@ -541,6 +533,7 @@ class AdvancedConfigDialog(QDialog):
         
         # Info de algoritmos activos
         self.active_label = QLabel()
+        self.active_label.setStyleSheet("background: transparent; font-family: 'Comic Sans MS', 'Arial';")
         self._update_active_count()
         footer_layout.addWidget(self.active_label)
         
@@ -549,6 +542,21 @@ class AdvancedConfigDialog(QDialog):
         # Botón cerrar
         close_btn = QPushButton("✓ Cerrar")
         close_btn.clicked.connect(self.accept)
+        close_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {Theme.to_hex(Theme.BTN_DANGER_BG)};
+                color: {Theme.to_hex(Theme.BTN_DANGER_TEXT)};
+                border: 3px solid {Theme.to_hex(Theme.BORDER_DEFAULT)};
+                padding: 10px 30px;
+                font-weight: bold;
+                border-radius: 20px;
+                font-size: 14px;
+                font-family: 'Comic Sans MS', 'Arial';
+            }}
+            QPushButton:hover {{
+                background-color: {Theme.to_hex(Theme.RED_VIVID)};
+            }}
+        """)
         footer_layout.addWidget(close_btn)
         
         main_layout.addLayout(footer_layout)
@@ -596,8 +604,10 @@ class AdvancedConfigDialog(QDialog):
         active = len(get_active_algorithms())
         total = len(ALGORITHMS_CONFIG)
         self.active_label.setText(f"Algoritmos activos: {active}/{total}")
+        
+        color = Theme.to_hex(Theme.SUCCESS) if active > 0 else Theme.to_hex(Theme.ERROR)
         self.active_label.setStyleSheet(
-            f"color: {'#00FF00' if active > 0 else '#FF6666'}; font-weight: bold;"
+            f"color: {color}; font-weight: bold; font-family: 'Comic Sans MS', 'Arial'; font-size: 14px; background: transparent;"
         )
         
     def _reset_to_default(self):
@@ -636,15 +646,32 @@ def show_advanced_config(on_config_change: Callable = None) -> None:
     Args:
         on_config_change: Callback llamado cuando cambia la configuración
     """
-    app = QApplication.instance()
-    if app is None:
-        app = QApplication(sys.argv)
-    
-    # Crear nuevo diálogo cada vez (modal)
-    dialog = AdvancedConfigDialog(on_config_change=on_config_change)
-    dialog.setModal(True)
-    dialog.exec()  # Bloqueante: espera hasta que se cierre
-
+    try:
+        app = QApplication.instance()
+        if app is None:
+            app = QApplication(sys.argv)
+        
+        # Crear nuevo diálogo cada vez (modal)
+        dialog = AdvancedConfigDialog(on_config_change=on_config_change)
+        dialog.setModal(True)
+        dialog.exec()  # Bloqueante: espera hasta que se cierre
+    except Exception as e:
+        import traceback
+        from PyQt6.QtWidgets import QMessageBox
+        error_msg = traceback.format_exc()
+        print(f"ERROR lanzando AdvancedConfig: {e}")
+        print(error_msg)
+        
+        # Intentar mostrar popup
+        try:
+            msg = QMessageBox()
+            msg.setIcon(QMessageBox.Icon.Critical)
+            msg.setWindowTitle("Error")
+            msg.setText("Error al abrir Configuración Avanzada")
+            msg.setDetailedText(error_msg)
+            msg.exec()
+        except:
+            pass
 
 if __name__ == '__main__':
     # Test independiente
@@ -658,4 +685,3 @@ if __name__ == '__main__':
     dialog = AdvancedConfigDialog(on_config_change=on_change)
     dialog.show()
     sys.exit(app.exec())
-

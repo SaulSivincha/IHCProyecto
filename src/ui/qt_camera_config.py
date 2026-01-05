@@ -17,7 +17,8 @@ from PyQt6.QtWidgets import (
     QPushButton, QComboBox, QGroupBox, QMessageBox
 )
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QImage, QPixmap
+from PyQt6.QtGui import QImage, QPixmap, QLinearGradient, QPainter, QColor
+from src.config.theme import Theme
 
 
 class CameraConfigDialog(QDialog):
@@ -42,6 +43,18 @@ class CameraConfigDialog(QDialog):
         self._take_left_photo()
         self._take_right_photo()
     
+    def paintEvent(self, event):
+        """Dibuja el fondo con gradiente del tema"""
+        painter = QPainter(self)
+        
+        grad_start = QColor(Theme.to_hex(Theme.BG_GRADIENT_START))
+        grad_end = QColor(Theme.to_hex(Theme.BG_GRADIENT_END))
+        
+        gradient = QLinearGradient(0, 0, 0, self.height())
+        gradient.setColorAt(0, grad_start)
+        gradient.setColorAt(1, grad_end)
+        painter.fillRect(self.rect(), gradient)
+        
     def _load_current_config(self):
         """Carga la configuración actual de cámaras desde calibration.json."""
         calib_path = Path("camcalibration/calibration.json")
@@ -62,112 +75,104 @@ class CameraConfigDialog(QDialog):
     
     def _setup_style(self):
         """Configura el estilo del diálogo."""
-        self.setStyleSheet("""
-            QDialog {
-                background-color: #2b2b2b;
-                color: #ffffff;
-            }
-            QLabel {
-                color: #ffffff;
+        self.setStyleSheet(f"""
+            QLabel {{
+                color: {Theme.to_hex(Theme.TEXT_PRIMARY)};
                 font-size: 14px;
-            }
-            QLabel#title {
-                color: #00C8FF;
-                font-size: 20px;
+                font-family: 'Comic Sans MS', 'Arial';
+            }}
+            QLabel#title {{
+                color: {Theme.to_hex(Theme.TEXT_HIGHLIGHT)};
+                font-size: 24px;
                 font-weight: bold;
-            }
-            QLabel#subtitle {
-                color: #888888;
-                font-size: 12px;
-            }
-            QLabel#preview {
-                background-color: #1a1a1a;
-                border: 2px solid #444444;
-                border-radius: 6px;
-            }
-            QGroupBox {
-                color: #00C8FF;
-                font-weight: bold;
+            }}
+            QLabel#subtitle {{
+                color: {Theme.to_hex(Theme.TEXT_SECONDARY)};
                 font-size: 14px;
-                border: 1px solid #00C8FF;
-                border-radius: 5px;
-                margin-top: 10px;
-                padding-top: 10px;
-            }
-            QGroupBox::title {
+            }}
+            QLabel#preview {{
+                background-color: rgba(0, 0, 0, 0.1);
+                border: 3px solid {Theme.to_hex(Theme.BORDER_DEFAULT)};
+                border-radius: 10px;
+            }}
+            QGroupBox {{
+                color: {Theme.to_hex(Theme.ORANGE_VIVID)};
+                font-weight: bold;
+                font-size: 16px;
+                border: 2px solid {Theme.to_hex(Theme.BORDER_DEFAULT)};
+                border-radius: 12px;
+                margin-top: 12px;
+                padding-top: 15px;
+                background-color: rgba(255, 255, 255, 0.6);
+                font-family: 'Comic Sans MS', 'Arial';
+            }}
+            QGroupBox::title {{
                 subcontrol-origin: margin;
                 subcontrol-position: top center;
-                padding: 0 8px;
-            }
-            QComboBox {
-                background-color: #3b3b3b;
-                color: #ffffff;
-                border: 1px solid #555555;
-                border-radius: 4px;
+                padding: 0 10px;
+            }}
+            QComboBox {{
+                background-color: rgba(255, 255, 255, 0.9);
+                color: {Theme.to_hex(Theme.TEXT_PRIMARY)};
+                border: 1px solid {Theme.to_hex(Theme.BORDER_DEFAULT)};
+                border-radius: 6px;
                 padding: 6px 12px;
-                font-size: 13px;
+                font-size: 14px;
                 min-width: 100px;
-            }
-            QComboBox:hover {
-                border-color: #00C8FF;
-            }
-            QComboBox::drop-down {
+                font-family: 'Comic Sans MS', 'Arial';
+            }}
+            QComboBox:hover {{
+                border-color: {Theme.to_hex(Theme.ORANGE_VIVID)};
+            }}
+            QComboBox::drop-down {{
                 border: none;
                 width: 24px;
-            }
-            QComboBox::down-arrow {
-                image: none;
-                border-left: 5px solid transparent;
-                border-right: 5px solid transparent;
-                border-top: 6px solid #00C8FF;
-                margin-right: 8px;
-            }
-            QComboBox QAbstractItemView {
-                background-color: #3b3b3b;
-                color: #ffffff;
-                selection-background-color: #00C8FF;
-                selection-color: #000000;
-                border: 1px solid #555555;
-            }
-            QPushButton {
-                background-color: #00C8FF;
-                color: #000000;
-                font-size: 13px;
+            }}
+            QComboBox QAbstractItemView {{
+                background-color: rgba(255, 255, 255, 0.95);
+                color: {Theme.to_hex(Theme.TEXT_PRIMARY)};
+                selection-background-color: {Theme.to_hex(Theme.ORANGE_VIVID)};
+            }}
+            QPushButton {{
+                background-color: {Theme.to_hex(Theme.BTN_PRIMARY_BG)};
+                color: {Theme.to_hex(Theme.BTN_PRIMARY_TEXT)};
+                font-size: 14px;
                 font-weight: bold;
-                border: none;
-                border-radius: 4px;
+                border: 2px solid {Theme.to_hex(Theme.BORDER_DEFAULT)};
+                border-radius: 15px;
                 padding: 10px 24px;
-            }
-            QPushButton:hover {
-                background-color: #33D6FF;
-            }
-            QPushButton:pressed {
-                background-color: #0099CC;
-            }
-            QPushButton#cancelButton {
-                background-color: #555555;
-                color: #ffffff;
-            }
-            QPushButton#cancelButton:hover {
-                background-color: #666666;
-            }
-            QPushButton#swapButton {
-                background-color: #FF9800;
-                color: #000000;
+                font-family: 'Comic Sans MS', 'Arial';
+            }}
+            QPushButton:hover {{
+                background-color: {Theme.to_hex(Theme.BLUE_VIVID)};
+            }}
+            QPushButton#cancelButton {{
+                background-color: {Theme.to_hex(Theme.BTN_SECONDARY_BG)};
+                color: {Theme.to_hex(Theme.BTN_SECONDARY_TEXT)};
+                border: 2px solid {Theme.to_hex(Theme.BORDER_DEFAULT)};
+            }}
+            QPushButton#cancelButton:hover {{
+                background-color: {Theme.to_hex(Theme.LIGHT_GRAY)};
+            }}
+            QPushButton#swapButton {{
+                background-color: {Theme.to_hex(Theme.BTN_WARNING_BG)};
+                color: {Theme.to_hex(Theme.BTN_WARNING_TEXT)};
                 padding: 8px 16px;
-            }
-            QPushButton#swapButton:hover {
-                background-color: #FFB74D;
-            }
-            QPushButton#photoButton {
-                background-color: #4CAF50;
-                color: #ffffff;
-                padding: 6px 16px;
-                font-size: 12px;
-            }
-            QPushButton#photoButton:hover {
-                background-color: #66BB6A;
-            }
+                border-radius: 18px;
+            }}
+            QPushButton#swapButton:hover {{
+                background-color: {Theme.to_hex(Theme.ORANGE_VIVID)};
+            }}
+            QPushButton#photoButton {{
+                background-color: {Theme.to_hex(Theme.BTN_SUCCESS_BG)};
+                color: {Theme.to_hex(Theme.BTN_SUCCESS_TEXT)};
+                padding: 8px 16px;
+                font-size: 14px;
+                border-radius: 15px;
+            }}
+            QPushButton#photoButton:hover {{
+                background-color: {Theme.to_hex(Theme.GREEN_VIVID)};
+            }}
         """)
     
     def _setup_ui(self):
@@ -180,11 +185,13 @@ class CameraConfigDialog(QDialog):
         title = QLabel("Configuracion de Camaras")
         title.setObjectName("title")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        title.setStyleSheet(f"background: transparent;")
         layout.addWidget(title)
         
         subtitle = QLabel("Selecciona que camara sera la izquierda y cual la derecha")
         subtitle.setObjectName("subtitle")
         subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        subtitle.setStyleSheet(f"background: transparent;")
         layout.addWidget(subtitle)
         
         layout.addSpacing(8)
@@ -206,7 +213,10 @@ class CameraConfigDialog(QDialog):
         left_layout.addWidget(self.left_preview, alignment=Qt.AlignmentFlag.AlignCenter)
         
         left_controls = QHBoxLayout()
-        left_controls.addWidget(QLabel("Camara:"))
+        label_l = QLabel("Camara:")
+        label_l.setStyleSheet("background: transparent;")
+        left_controls.addWidget(label_l)
+        
         self.left_combo = QComboBox()
         self._populate_combo(self.left_combo, self.left_camera_id)
         self.left_combo.currentIndexChanged.connect(self._on_left_changed)
@@ -225,7 +235,7 @@ class CameraConfigDialog(QDialog):
         swap_layout.addStretch()
         self.swap_btn = QPushButton("<->")
         self.swap_btn.setObjectName("swapButton")
-        self.swap_btn.setFixedSize(50, 36)
+        self.swap_btn.setFixedSize(60, 40)
         self.swap_btn.setToolTip("Intercambiar camaras")
         self.swap_btn.clicked.connect(self._swap_cameras)
         swap_layout.addWidget(self.swap_btn)
@@ -245,7 +255,10 @@ class CameraConfigDialog(QDialog):
         right_layout.addWidget(self.right_preview, alignment=Qt.AlignmentFlag.AlignCenter)
         
         right_controls = QHBoxLayout()
-        right_controls.addWidget(QLabel("Camara:"))
+        label_r = QLabel("Camara:")
+        label_r.setStyleSheet("background: transparent;")
+        right_controls.addWidget(label_r)
+        
         self.right_combo = QComboBox()
         self._populate_combo(self.right_combo, self.right_camera_id)
         self.right_combo.currentIndexChanged.connect(self._on_right_changed)
@@ -268,25 +281,59 @@ class CameraConfigDialog(QDialog):
         info_label.setObjectName("subtitle")
         info_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         info_label.setWordWrap(True)
+        info_label.setStyleSheet("background: transparent;")
         layout.addWidget(info_label)
         
         layout.addSpacing(8)
         
         # Botones
+        # Botones
         buttons_layout = QHBoxLayout()
+        # Spacer izquierdo para centrar
         buttons_layout.addStretch()
         
         self.cancel_btn = QPushButton("Cancelar")
         self.cancel_btn.setObjectName("cancelButton")
         self.cancel_btn.clicked.connect(self.reject)
+        # Estilo directo para asegurar que se aplique, ya que el stylesheet global puede tener problemas
+        self.cancel_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {Theme.to_hex(Theme.BTN_DANGER_BG)};
+                color: {Theme.to_hex(Theme.BTN_DANGER_TEXT)};
+                border: 2px solid {Theme.to_hex(Theme.BORDER_DEFAULT)};
+                padding: 10px 20px;
+                border-radius: 15px;
+                font-family: 'Comic Sans MS', 'Arial';
+                font-weight: bold;
+            }}
+            QPushButton:hover {{
+                background-color: {Theme.to_hex(Theme.RED_VIVID)};
+            }}
+        """)
         buttons_layout.addWidget(self.cancel_btn)
         
-        buttons_layout.addSpacing(12)
+        buttons_layout.addSpacing(20)
         
         self.save_btn = QPushButton("Guardar Configuracion")
+        self.save_btn.setObjectName("saveButton")
         self.save_btn.clicked.connect(self._save_and_close)
+        self.save_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {Theme.to_hex(Theme.BTN_SUCCESS_BG)};
+                color: {Theme.to_hex(Theme.BTN_SUCCESS_TEXT)};
+                border: 2px solid {Theme.to_hex(Theme.BORDER_DEFAULT)};
+                padding: 10px 20px;
+                border-radius: 15px;
+                font-family: 'Comic Sans MS', 'Arial';
+                font-weight: bold;
+            }}
+            QPushButton:hover {{
+                background-color: {Theme.to_hex(Theme.GREEN_VIVID)};
+            }}
+        """)
         buttons_layout.addWidget(self.save_btn)
         
+        # Spacer derecho para centrar
         buttons_layout.addStretch()
         layout.addLayout(buttons_layout)
     
@@ -454,14 +501,32 @@ class CameraConfigDialog(QDialog):
 
 def show_camera_config() -> bool:
     """Muestra el diálogo de configuración de cámaras."""
-    app = QApplication.instance()
-    if app is None:
-        app = QApplication(sys.argv)
-    
-    dialog = CameraConfigDialog()
-    result = dialog.exec()
-    
-    return result == QDialog.DialogCode.Accepted
+    try:
+        app = QApplication.instance()
+        if app is None:
+            app = QApplication(sys.argv)
+        
+        dialog = CameraConfigDialog()
+        result = dialog.exec()
+        
+        return result == QDialog.DialogCode.Accepted
+    except Exception as e:
+        import traceback
+        from PyQt6.QtWidgets import QMessageBox
+        error_msg = traceback.format_exc()
+        print(f"ERROR lanzando CameraConfig: {e}")
+        print(error_msg)
+        
+        try:
+            msg = QMessageBox()
+            msg.setIcon(QMessageBox.Icon.Critical)
+            msg.setWindowTitle("Error")
+            msg.setText("Error al abrir Configuración de Cámaras")
+            msg.setDetailedText(error_msg)
+            msg.exec()
+        except:
+            pass
+        return False
 
 
 if __name__ == "__main__":

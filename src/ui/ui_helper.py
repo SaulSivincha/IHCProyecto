@@ -7,6 +7,7 @@ Módulo de ayuda para interfaz de usuario mejorada
 import cv2
 import numpy as np
 from src.vision.stereo_config import StereoConfig
+from src.config.theme import Theme
 
 
 class UIHelper:
@@ -48,29 +49,29 @@ class UIHelper:
         cv2.rectangle(overlay, 
                      (panel_x, panel_y), 
                      (panel_x + panel_width, panel_y + panel_height),
-                     (0, 0, 0), -1)
+                     Theme.BG_PANEL, -1)
         frame = cv2.addWeighted(frame, 0.7, overlay, 0.3, 0)
         
         cv2.rectangle(frame,
                      (panel_x, panel_y),
                      (panel_x + panel_width, panel_y + panel_height),
-                     (0, 255, 0), 3)
+                     Theme.BORDER_DEFAULT, 3)
         
         cv2.putText(frame, "STATUS", (panel_x + 15, panel_y + 35),
-                   cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 2)
+                   cv2.FONT_HERSHEY_SIMPLEX, 1.0, Theme.TEXT_HIGHLIGHT, 2)
         
         y_offset = panel_y + 70
         line_height = 35
         font_scale = 0.7
         
-        fps_color = (0, 255, 0) if (fps1 + fps2) / 2 > 20 else (0, 165, 255) if (fps1 + fps2) / 2 > 15 else (0, 0, 255)
+        fps_color = Theme.SUCCESS if (fps1 + fps2) / 2 > 20 else Theme.WARNING if (fps1 + fps2) / 2 > 15 else Theme.ERROR
         fps_text = f"FPS: {fps1}/{fps2} (Prom: {(fps1+fps2)//2})"
         cv2.putText(frame, fps_text, (panel_x + 15, y_offset),
                    cv2.FONT_HERSHEY_SIMPLEX, font_scale, fps_color, 2)
         y_offset += line_height
         
         cv2.putText(frame, f"CPS: {cps}", (panel_x + 15, y_offset),
-                   cv2.FONT_HERSHEY_SIMPLEX, font_scale, (255, 255, 255), 2)
+                   cv2.FONT_HERSHEY_SIMPLEX, font_scale, Theme.TEXT_PRIMARY, 2)
         y_offset += line_height
         
         cv2.putText(frame, f"Posicion: X:{X:.1f} Y:{Y:.1f}", 
@@ -99,14 +100,14 @@ class UIHelper:
                 
                 overlay = frame.copy()
                 cv2.rectangle(overlay, (key_x, keyboard_y0), 
-                             (key_x + key_w, keyboard_y1), (0, 255, 0), -1)
+                             (key_x + key_w, keyboard_y1), Theme.KEY_HIGHLIGHT_WHITE, -1)
                 frame = cv2.addWeighted(frame, 0.7, overlay, 0.3, 0)
         
         return frame
     
     def draw_fps_indicator(self, frame, fps, position=(20, 40)):
         """Dibuja indicador de FPS grande y visible"""
-        fps_color = (0, 255, 0) if fps >= 25 else (0, 165, 255) if fps >= 20 else (0, 0, 255)
+        fps_color = Theme.SUCCESS if fps >= 25 else Theme.WARNING if fps >= 20 else Theme.ERROR
         
         text = f"FPS: {fps}"
         font_scale = 1.0
@@ -117,7 +118,7 @@ class UIHelper:
         cv2.rectangle(overlay,
                      (position[0] - 10, position[1] - text_height - 10),
                      (position[0] + text_width + 10, position[1] + 10),
-                     (0, 0, 0), -1)
+                     Theme.BG_PANEL, -1)
         frame = cv2.addWeighted(frame, 0.7, overlay, 0.3, 0)
         
         cv2.putText(frame, text, position,

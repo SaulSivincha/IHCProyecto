@@ -15,8 +15,9 @@ from PyQt6.QtWidgets import (
     QLabel, QPushButton, QProgressBar, QFrame, QGridLayout, QDialog
 )
 from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QImage, QPixmap, QFont
+from PyQt6.QtGui import QImage, QPixmap, QFont, QLinearGradient, QPainter, QColor
 from src.piano.keyboard_processor import KeyboardProcessor
+from src.config.theme import Theme
 
 
 class ResultsDialog(QDialog):
@@ -29,44 +30,60 @@ class ResultsDialog(QDialog):
         self.setWindowTitle("Resultados")
         self.setModal(True)
         self.setFixedSize(450, 500)
+        # self.setWindowState(Qt.WindowState.WindowMaximized) # Dialogo pequeño, no maximizar
         
-        self.setStyleSheet("""
-            QDialog {
-                background-color: #1a1a2e;
-                color: #ffffff;
-            }
-            QLabel {
-                color: #ffffff;
-            }
-            QPushButton {
-                background-color: #16213e;
-                color: #ffffff;
-                border: 2px solid #00c8ff;
-                border-radius: 8px;
+        self.setStyleSheet(f"""
+            QDialog {{
+                background-color: {Theme.to_hex(Theme.BG_MAIN)};
+            }}
+            QLabel {{
+                color: {Theme.to_hex(Theme.TEXT_PRIMARY)};
+                font-family: 'Comic Sans MS', 'Arial';
+            }}
+            QPushButton {{
+                background-color: {Theme.to_hex(Theme.BTN_PRIMARY_BG)};
+                color: {Theme.to_hex(Theme.BTN_PRIMARY_TEXT)};
+                border: 2px solid {Theme.to_hex(Theme.BORDER_DEFAULT)};
+                border-radius: 12px;
                 padding: 12px 24px;
                 font-size: 14px;
                 font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #0f3460;
-                border-color: #00ffff;
-            }
-            QPushButton#retry {
-                border-color: #00ff88;
-            }
-            QPushButton#retry:hover {
-                background-color: #004422;
-            }
-            QPushButton#songs {
-                border-color: #ffaa00;
-            }
-            QPushButton#songs:hover {
-                background-color: #443300;
-            }
+                font-family: 'Comic Sans MS', 'Arial';
+            }}
+            QPushButton:hover {{
+                background-color: {Theme.to_hex(Theme.BLUE_VIVID)};
+            }}
+            QPushButton#retry {{
+                background-color: {Theme.to_hex(Theme.BTN_SUCCESS_BG)};
+                color: {Theme.to_hex(Theme.BTN_SUCCESS_TEXT)};
+            }}
+            QPushButton#retry:hover {{
+                background-color: {Theme.to_hex(Theme.GREEN_VIVID)};
+            }}
+            QPushButton#songs {{
+                background-color: {Theme.to_hex(Theme.BTN_WARNING_BG)};
+                color: {Theme.to_hex(Theme.BTN_SECONDARY_TEXT)}; 
+            }}
+            QPushButton#songs:hover {{
+                background-color: {Theme.to_hex(Theme.ORANGE_VIVID)};
+                color: #FFFFFF;
+            }}
         """)
         
         self._build_ui(stats, song_name)
     
+    def paintEvent(self, event):
+        """Dibuja el fondo con gradiente del tema"""
+        painter = QPainter(self)
+        
+        grad_start = QColor(Theme.to_hex(Theme.BG_GRADIENT_START))
+        grad_end = QColor(Theme.to_hex(Theme.BG_GRADIENT_END))
+        
+        gradient = QLinearGradient(0, 0, 0, self.height())
+        gradient.setColorAt(0, grad_start)
+        gradient.setColorAt(1, grad_end)
+        painter.fillRect(self.rect(), gradient)
+        
     def _build_ui(self, stats, song_name):
         layout = QVBoxLayout(self)
         layout.setSpacing(15)
@@ -75,13 +92,13 @@ class ResultsDialog(QDialog):
         # Titulo
         title = QLabel("RESULTADOS")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        title.setStyleSheet("font-size: 28px; font-weight: bold; color: #00c8ff;")
+        title.setStyleSheet(f"font-size: 28px; font-weight: bold; color: {Theme.to_hex(Theme.TEXT_HIGHLIGHT)}; background: transparent;")
         layout.addWidget(title)
         
         # Nombre de cancion
         song_label = QLabel(song_name)
         song_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        song_label.setStyleSheet("font-size: 16px; color: #aaaaaa;")
+        song_label.setStyleSheet(f"font-size: 18px; color: {Theme.to_hex(Theme.TEXT_SECONDARY)}; background: transparent;")
         layout.addWidget(song_label)
         
         layout.addSpacing(20)
@@ -89,31 +106,32 @@ class ResultsDialog(QDialog):
         # Calificacion
         accuracy = stats.get('accuracy', 0)
         if accuracy >= 95:
-            grade, grade_color = "S", "#ffd700"
+            grade, grade_color = "S", Theme.to_hex(Theme.ORANGE_VIVID)
         elif accuracy >= 90:
-            grade, grade_color = "A", "#00ff88"
+            grade, grade_color = "A", Theme.to_hex(Theme.SUCCESS)
         elif accuracy >= 80:
-            grade, grade_color = "B", "#00c8ff"
+            grade, grade_color = "B", Theme.to_hex(Theme.INFO)
         elif accuracy >= 70:
-            grade, grade_color = "C", "#ffaa00"
+            grade, grade_color = "C", Theme.to_hex(Theme.WARNING)
         else:
-            grade, grade_color = "D", "#ff5555"
+            grade, grade_color = "D", Theme.to_hex(Theme.ERROR)
         
         grade_label = QLabel(grade)
         grade_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        grade_label.setStyleSheet(f"font-size: 72px; font-weight: bold; color: {grade_color};")
+        grade_label.setStyleSheet(f"font-size: 72px; font-weight: bold; color: {grade_color}; background: transparent;")
         layout.addWidget(grade_label)
         
         # Estadisticas
         stats_widget = QWidget()
+        stats_widget.setStyleSheet("background: rgba(255, 255, 255, 0.5); border-radius: 10px;")
         stats_layout = QGridLayout(stats_widget)
         stats_layout.setSpacing(10)
         
-        self._add_stat(stats_layout, 0, "Puntaje:", f"{stats.get('score', 0):,}", "#ffd700")
-        self._add_stat(stats_layout, 1, "Max Combo:", f"{stats.get('combo', 0)}x", "#00ffff")
-        self._add_stat(stats_layout, 2, "PERFECT:", str(stats.get('perfect', 0)), "#00ff88")
-        self._add_stat(stats_layout, 3, "GOOD:", str(stats.get('good', 0)), "#ffaa00")
-        self._add_stat(stats_layout, 4, "MISS:", str(stats.get('miss', 0)), "#ff5555")
+        self._add_stat(stats_layout, 0, "Puntaje:", f"{stats.get('score', 0):,}", Theme.to_hex(Theme.ORANGE_VIVID))
+        self._add_stat(stats_layout, 1, "Max Combo:", f"{stats.get('combo', 0)}x", Theme.to_hex(Theme.BLUE_SOFT))
+        self._add_stat(stats_layout, 2, "PERFECT:", str(stats.get('perfect', 0)), Theme.to_hex(Theme.SUCCESS))
+        self._add_stat(stats_layout, 3, "GOOD:", str(stats.get('good', 0)), Theme.to_hex(Theme.WARNING))
+        self._add_stat(stats_layout, 4, "MISS:", str(stats.get('miss', 0)), Theme.to_hex(Theme.ERROR))
         self._add_stat(stats_layout, 5, "Precision:", f"{accuracy:.1f}%", grade_color)
         
         layout.addWidget(stats_widget)
@@ -137,11 +155,11 @@ class ResultsDialog(QDialog):
     
     def _add_stat(self, layout, row, label, value, color):
         lbl = QLabel(label)
-        lbl.setStyleSheet("font-size: 14px; color: #888888;")
+        lbl.setStyleSheet(f"font-size: 14px; color: {Theme.to_hex(Theme.TEXT_SECONDARY)}; background: transparent;")
         layout.addWidget(lbl, row, 0)
         
         val = QLabel(value)
-        val.setStyleSheet(f"font-size: 16px; font-weight: bold; color: {color};")
+        val.setStyleSheet(f"font-size: 16px; font-weight: bold; color: {color}; background: transparent;")
         val.setAlignment(Qt.AlignmentFlag.AlignRight)
         layout.addWidget(val, row, 1)
     
@@ -191,78 +209,95 @@ class SongWindow(QMainWindow):
         self.setWindowTitle(f"Modo Ritmo - {song.name}")
         self.setMinimumSize(1400, 800)
         
-        self.setStyleSheet("""
-            QMainWindow, QWidget {
-                background-color: #0d1117;
-            }
-            QLabel {
-                color: #c9d1d9;
-            }
-            QLabel#title {
-                color: #00c8ff;
-                font-size: 20px;
-                font-weight: bold;
-            }
-            QLabel#score {
-                color: #ffd700;
-                font-size: 32px;
-                font-weight: bold;
-            }
-            QLabel#combo {
-                color: #00ffff;
+        self.setStyleSheet(f"""
+            QLabel {{
+                color: {Theme.to_hex(Theme.TEXT_PRIMARY)};
+                font-family: 'Comic Sans MS', 'Arial';
+            }}
+            QLabel#title {{
+                color: {Theme.to_hex(Theme.TEXT_HIGHLIGHT)};
                 font-size: 24px;
                 font-weight: bold;
-            }
-            QLabel#perfect { color: #00ff88; font-size: 14px; }
-            QLabel#good { color: #ffaa00; font-size: 14px; }
-            QLabel#miss { color: #ff5555; font-size: 14px; }
-            QPushButton {
-                background-color: #21262d;
-                color: #c9d1d9;
-                border: 1px solid #30363d;
-                border-radius: 6px;
-                padding: 8px 16px;
+                background: transparent;
+            }}
+            QLabel#score {{
+                color: {Theme.to_hex(Theme.ORANGE_VIVID)};
+                font-size: 36px;
                 font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #30363d;
-                border-color: #8b949e;
-            }
-            QPushButton#exit {
-                border-color: #f85149;
-                color: #f85149;
-            }
-            QPushButton#exit:hover {
-                background-color: #3d1418;
-            }
-            QProgressBar {
-                border: 1px solid #30363d;
-                border-radius: 4px;
-                background-color: #21262d;
+                background: transparent;
+            }}
+            QLabel#combo {{
+                color: {Theme.to_hex(Theme.BLUE_SOFT)};
+                font-size: 28px;
+                font-weight: bold;
+                background: transparent;
+            }}
+            QLabel#perfect {{ color: {Theme.to_hex(Theme.SUCCESS)}; font-size: 14px; background: transparent;}}
+            QLabel#good {{ color: {Theme.to_hex(Theme.WARNING)}; font-size: 14px; background: transparent;}}
+            QLabel#miss {{ color: {Theme.to_hex(Theme.ERROR)}; font-size: 14px; background: transparent;}}
+            QPushButton {{
+                background-color: {Theme.to_hex(Theme.BG_PANEL)};
+                color: {Theme.to_hex(Theme.TEXT_PRIMARY)};
+                border: 2px solid {Theme.to_hex(Theme.BORDER_DEFAULT)};
+                border-radius: 12px;
+                padding: 10px 20px;
+                font-weight: bold;
+                font-family: 'Comic Sans MS', 'Arial';
+            }}
+            QPushButton:hover {{
+                background-color: {Theme.to_hex(Theme.LIGHT_GRAY)};
+            }}
+            QPushButton#exit {{
+                background-color: {Theme.to_hex(Theme.BTN_DANGER_BG)};
+                color: {Theme.to_hex(Theme.BTN_DANGER_TEXT)};
+                border: 2px solid {Theme.to_hex(Theme.BORDER_DEFAULT)};
+            }}
+            QPushButton#exit:hover {{
+                background-color: {Theme.to_hex(Theme.RED_VIVID)};
+            }}
+            QProgressBar {{
+                border: 2px solid {Theme.to_hex(Theme.BORDER_DEFAULT)};
+                border-radius: 8px;
+                background-color: rgba(255, 255, 255, 0.5);
                 text-align: center;
-                color: #c9d1d9;
-            }
-            QProgressBar::chunk {
-                background-color: #00c8ff;
-                border-radius: 3px;
-            }
-            QFrame#camera {
-                border: 2px solid #30363d;
-                border-radius: 8px;
+                color: {Theme.to_hex(Theme.TEXT_PRIMARY)};
+                font-weight: bold;
+                min-height: 20px;
+            }}
+            QProgressBar::chunk {{
+                background-color: {Theme.to_hex(Theme.SUCCESS)};
+                border-radius: 6px;
+            }}
+            QFrame#camera {{
+                border: 4px solid {Theme.to_hex(Theme.BORDER_DEFAULT)};
+                border-radius: 15px;
                 background-color: #000000;
-            }
-            QFrame#stats {
-                background-color: #161b22;
-                border: 1px solid #30363d;
-                border-radius: 8px;
-            }
+            }}
+            QFrame#stats {{
+                background-color: rgba(255, 255, 255, 0.6);
+                border: 2px solid {Theme.to_hex(Theme.BORDER_DEFAULT)};
+                border-radius: 15px;
+            }}
         """)
         
         self._build_ui()
         self._start_game()
+        
+    def paintEvent(self, event):
+        """Dibuja el fondo con gradiente del tema"""
+        painter = QPainter(self)
+        
+        grad_start = QColor(Theme.to_hex(Theme.BG_GRADIENT_START))
+        grad_end = QColor(Theme.to_hex(Theme.BG_GRADIENT_END))
+        
+        gradient = QLinearGradient(0, 0, 0, self.height())
+        gradient.setColorAt(0, grad_start)
+        gradient.setColorAt(1, grad_end)
+        painter.fillRect(self.rect(), gradient) 
     
     def _build_ui(self):
         central = QWidget()
+        central.setStyleSheet("background: transparent;") # Para que se vea el gradiente
         self.setCentralWidget(central)
         main_layout = QVBoxLayout(central)
         main_layout.setSpacing(15)
@@ -276,7 +311,7 @@ class SongWindow(QMainWindow):
         header.addStretch()
         
         mode_label = QLabel("MODO RITMO")
-        mode_label.setStyleSheet("color: #8b949e; font-size: 14px;")
+        mode_label.setStyleSheet(f"color: {Theme.to_hex(Theme.TEXT_SECONDARY)}; font-size: 16px; background: transparent;")
         header.addWidget(mode_label)
         main_layout.addLayout(header)
         
@@ -292,20 +327,21 @@ class SongWindow(QMainWindow):
         self.camera_label = QLabel()
         self.camera_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.camera_label.setMinimumSize(800, 500)
+        self.camera_label.setStyleSheet("background-color: #000000;")
         camera_layout.addWidget(self.camera_label)
         content.addWidget(camera_frame, 3)
         
         # Panel de estadisticas
         stats_frame = QFrame()
         stats_frame.setObjectName("stats")
-        stats_frame.setMaximumWidth(300)
+        stats_frame.setMaximumWidth(320)
         stats_layout = QVBoxLayout(stats_frame)
         stats_layout.setSpacing(15)
         stats_layout.setContentsMargins(20, 20, 20, 20)
         
         # Score
         score_title = QLabel("PUNTAJE")
-        score_title.setStyleSheet("color: #8b949e; font-size: 12px;")
+        score_title.setStyleSheet(f"color: {Theme.to_hex(Theme.TEXT_SECONDARY)}; font-size: 14px; background: transparent;")
         stats_layout.addWidget(score_title)
         
         self.score_label = QLabel("0")
@@ -314,7 +350,7 @@ class SongWindow(QMainWindow):
         
         # Combo
         combo_title = QLabel("COMBO")
-        combo_title.setStyleSheet("color: #8b949e; font-size: 12px;")
+        combo_title.setStyleSheet(f"color: {Theme.to_hex(Theme.TEXT_SECONDARY)}; font-size: 14px; background: transparent;")
         stats_layout.addWidget(combo_title)
         
         self.combo_label = QLabel("0x")
@@ -324,7 +360,7 @@ class SongWindow(QMainWindow):
         # Separador
         sep = QFrame()
         sep.setFrameShape(QFrame.Shape.HLine)
-        sep.setStyleSheet("background-color: #30363d;")
+        sep.setStyleSheet(f"background-color: {Theme.to_hex(Theme.BORDER_DEFAULT)};")
         stats_layout.addWidget(sep)
         
         # Estadisticas
@@ -342,12 +378,12 @@ class SongWindow(QMainWindow):
         
         # Precision
         self.accuracy_label = QLabel("Precision: 0%")
-        self.accuracy_label.setStyleSheet("font-size: 16px; font-weight: bold;")
+        self.accuracy_label.setStyleSheet(f"font-size: 18px; font-weight: bold; color: {Theme.to_hex(Theme.TEXT_PRIMARY)}; background: transparent;")
         stats_layout.addWidget(self.accuracy_label)
         
         # Progreso
         progress_title = QLabel("PROGRESO")
-        progress_title.setStyleSheet("color: #8b949e; font-size: 12px; margin-top: 10px;")
+        progress_title.setStyleSheet(f"color: {Theme.to_hex(Theme.TEXT_SECONDARY)}; font-size: 14px; margin-top: 10px; background: transparent;")
         stats_layout.addWidget(progress_title)
         
         self.progress_bar = QProgressBar()
@@ -370,7 +406,7 @@ class SongWindow(QMainWindow):
         # Footer
         footer = QLabel("ESC para salir | Toca las teclas cuando las notas lleguen a la linea")
         footer.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        footer.setStyleSheet("color: #484f58; font-size: 12px;")
+        footer.setStyleSheet(f"color: {Theme.to_hex(Theme.TEXT_SECONDARY)}; font-size: 14px; background: transparent;")
         main_layout.addWidget(footer)
     
     def _start_game(self):
@@ -448,14 +484,14 @@ class SongWindow(QMainWindow):
             
             accuracy = stats.get('accuracy', 0)
             if accuracy >= 90:
-                acc_color = "#00ff88"
+                acc_color = Theme.to_hex(Theme.SUCCESS)
             elif accuracy >= 70:
-                acc_color = "#ffaa00"
+                acc_color = Theme.to_hex(Theme.WARNING)
             else:
-                acc_color = "#ff5555"
+                acc_color = Theme.to_hex(Theme.ERROR)
             
             self.accuracy_label.setText(f"Precision: {accuracy:.1f}%")
-            self.accuracy_label.setStyleSheet(f"font-size: 16px; font-weight: bold; color: {acc_color};")
+            self.accuracy_label.setStyleSheet(f"font-size: 18px; font-weight: bold; color: {acc_color}; background: transparent;")
             
             self.progress_bar.setValue(state['progress'])
             
@@ -528,22 +564,40 @@ def show_song_window(song, camera_left, camera_right, synth,
     Returns:
         str: 'retry', 'songs', o 'menu'
     """
-    app = QApplication.instance()
-    owns_app = False
-    if app is None:
-        app = QApplication(sys.argv)
-        owns_app = True
-    
-    window = SongWindow(song, camera_left, camera_right, synth,
-                       virtual_keyboard, hand_detector_left, hand_detector_right,
-                       keyboard_mapper, angler, depth_estimator, octave_base, 
-                       keyboard_total_keys, camera_separation)
-    window.show()
-    
-    if owns_app:
-        app.exec()
-    else:
-        while window.isVisible():
-            app.processEvents()
-    
-    return window.result_action
+    try:
+        app = QApplication.instance()
+        owns_app = False
+        if app is None:
+            app = QApplication(sys.argv)
+            owns_app = True
+        
+        window = SongWindow(song, camera_left, camera_right, synth,
+                           virtual_keyboard, hand_detector_left, hand_detector_right,
+                           keyboard_mapper, angler, depth_estimator, octave_base, 
+                           keyboard_total_keys, camera_separation)
+        window.show()
+        
+        if owns_app:
+            app.exec()
+        else:
+            while window.isVisible():
+                app.processEvents()
+        
+        return window.result_action
+    except Exception as e:
+        import traceback
+        from PyQt6.QtWidgets import QMessageBox
+        error_msg = traceback.format_exc()
+        print(f"ERROR lanzando SongWindow: {e}")
+        print(error_msg)
+        
+        try:
+            msg = QMessageBox()
+            msg.setIcon(QMessageBox.Icon.Critical)
+            msg.setWindowTitle("Error")
+            msg.setText("Error al iniciar el Juego de Ritmo")
+            msg.setDetailedText(error_msg)
+            msg.exec()
+        except:
+            pass
+        return 'menu'

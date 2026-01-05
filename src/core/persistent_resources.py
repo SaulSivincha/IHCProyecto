@@ -97,9 +97,16 @@ class PersistentResources:
         """Inicializa las cámaras"""
         left_id = self.config.LEFT_CAMERA_SOURCE
         right_id = self.config.RIGHT_CAMERA_SOURCE
+    def _init_cameras(self):
+        """Inicializa las cámaras"""
+        left_id = self.config.LEFT_CAMERA_SOURCE
+        right_id = self.config.RIGHT_CAMERA_SOURCE
         print(f"  Iniciando camaras (LEFT={left_id}, RIGHT={right_id})...")
+        print("  NOTA: Iniciando secuencialmente para garantizar carga dual...")
         
         try:
+            # 1. Iniciar Cámara Izquierda
+            print(f"  > Iniciando Izquierda ({left_id})...")
             self.cam_left = video_thread.VideoThread(
                 video_source=left_id,
                 video_width=self.config.PIXEL_WIDTH,
@@ -108,7 +115,13 @@ class PersistentResources:
                 buffer_all=False,
                 try_to_reconnect=False
             )
+            self.cam_left.start()
             
+            # ESPERA CRÍTICA
+            time.sleep(1.0)
+            
+            # 2. Iniciar Cámara Derecha
+            print(f"  > Iniciando Derecha ({right_id})...")
             self.cam_right = video_thread.VideoThread(
                 video_source=right_id,
                 video_width=self.config.PIXEL_WIDTH,
@@ -117,8 +130,6 @@ class PersistentResources:
                 buffer_all=False,
                 try_to_reconnect=False
             )
-            
-            self.cam_left.start()
             self.cam_right.start()
             
             # Esperar para estabilizar

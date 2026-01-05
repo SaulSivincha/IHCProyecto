@@ -5,8 +5,9 @@ from PyQt6.QtWidgets import (
     QLabel, QPushButton, QSpacerItem, QSizePolicy, QWidget, QStackedWidget
 )
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QFont, QPixmap, QPainter
+from PyQt6.QtGui import QFont, QPixmap, QPainter, QColor, QLinearGradient
 from pathlib import Path
+from src.config.theme import Theme
 
 
 class MainMenuDialog(QDialog):
@@ -18,51 +19,80 @@ class MainMenuDialog(QDialog):
         super().__init__()
 
         # Cargar el fondo
-        img_path = Path(__file__).parent / "imagenes" / "fondoPiano.png"
-        self.bg_pixmap = QPixmap(str(img_path))
+        self.img_path = Path(__file__).parent / "imagenes" / "fondoPiano.png"
+        self.bg_pixmap = QPixmap()
+        if self.img_path.exists():
+            self.bg_pixmap = QPixmap(str(self.img_path))
 
         self.choice: Optional[str] = None
 
         self.setWindowTitle("Piano Virtual")
         self.setMinimumSize(900, 500)
 
-        self.setStyleSheet("""
-            QLabel#titleMain {
-                color: #ffffff;
+        # Aplicar tema GLOBAL (Estilo Aventura / Kids)
+        # Usamos Theme.BG_MAIN como base si no hay imagen
+        # Y definimos estilos para botones y textos
+        self.setStyleSheet(f"""
+            QDialog {{
+                background-color: {Theme.to_hex(Theme.BG_MAIN)};
+            }}
+            QLabel#titleMain {{
+                color: #FFFFFF; /* Título siempre blanco para contraste con fondo/imagen */
                 font-size: 52px;
                 font-weight: bold;
-            }
-            QLabel#titleSub {
-                color: #ffffff;
+                font-family: 'Comic Sans MS', 'Arial';
+            }}
+            QLabel#titleSub {{
+                color: #FFFFFF;
                 font-size: 52px;
-            }
-            QLabel#subtitle {
-                color: #16c79a;
+                font-family: 'Comic Sans MS', 'Arial';
+            }}
+            QLabel#subtitle {{
+                color: {Theme.to_hex(Theme.TEXT_HIGHLIGHT)};
                 font-size: 28px;
                 font-weight: bold;
                 margin-bottom: 10px;
-            }
-            QPushButton {
-                background-color: transparent;
-                color: #ffffff;
+                font-family: 'Comic Sans MS', 'Arial';
+            }}
+            QPushButton {{
+                background-color: rgba(255, 255, 255, 0.2);
+                color: {Theme.to_hex(Theme.TEXT_ON_DARK)};
                 font-size: 22px;
                 font-weight: bold;
-                border: none;
-                padding: 8px 16px;
+                border: 2px solid {Theme.to_hex(Theme.BORDER_DEFAULT)};
+                border-radius: 12px;
+                padding: 10px 20px;
                 text-align: left;
-            }
-            QPushButton:hover {
-                color: #16c79a;
-            }
-            QPushButton:pressed {
-                color: #1dd3af;
-            }
+                font-family: 'Comic Sans MS', 'Arial';
+                margin: 4px;
+            }}
+            QPushButton:hover {{
+                background-color: {Theme.to_hex(Theme.SELECTION_BG)};
+                color: #FFFFFF;
+                border: 2px solid #FFFFFF;
+            }}
+            QPushButton:pressed {{
+                background-color: {Theme.to_hex(Theme.SUCCESS)};
+            }}
         """)
 
         self._build_ui()
     
     def paintEvent(self, event):
         painter = QPainter(self)
+        
+        # 1. Dibujar Fondo (Gradiente del Tema)
+        # Si Theme define gradiente, lo usamos como base
+        grad_start = QColor(Theme.to_hex(Theme.BG_GRADIENT_START))
+        grad_end = QColor(Theme.to_hex(Theme.BG_GRADIENT_END))
+        
+        # Rellenar con Gradiente vertical
+        gradient = QLinearGradient(0, 0, 0, self.height())
+        gradient.setColorAt(0, grad_start)
+        gradient.setColorAt(1, grad_end)
+        painter.fillRect(self.rect(), gradient)
+        
+        # 2. Dibujar Imagen (si existe) encima
         if not self.bg_pixmap.isNull():
             scaled = self.bg_pixmap.scaled(
                 self.size(),
@@ -71,7 +101,15 @@ class MainMenuDialog(QDialog):
             )
             x = (self.width() - scaled.width()) // 2
             y = (self.height() - scaled.height()) // 2
+            
+            # Dibujar con opacidad opcional si se quiere mezclar
+            painter.setOpacity(0.3) # Mezclar imagen con el color bonito del tema
             painter.drawPixmap(x, y, scaled)
+            painter.setOpacity(1.0)
+            
+        else:
+            # Si no hay imagen, el gradiente ya se dibujó
+            pass
 
     def _build_ui(self):
         root = QHBoxLayout()
@@ -84,12 +122,10 @@ class MainMenuDialog(QDialog):
 
         lbl1 = QLabel("PIANO")
         lbl1.setObjectName("titleMain")
-        lbl1.setFont(QFont("Arial", 48, QFont.Weight.Bold))
-
+        
         lbl2 = QLabel("VIRTUAL")
         lbl2.setObjectName("titleSub")
-        lbl2.setFont(QFont("Arial", 48, QFont.Weight.Bold))
-
+        
         left.addWidget(lbl1)
         left.addWidget(lbl2)
         left.addSpacerItem(QSpacerItem(20, 40, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding))
@@ -98,6 +134,7 @@ class MainMenuDialog(QDialog):
 
         # --- Columna derecha: Stacked Widget ---
         self.right_stack = QStackedWidget()
+        self.right_stack.setStyleSheet("background-color: transparent;") 
         
         # === PAGINA 1: MENÚ PRINCIPAL ===
         self.page_main = QWidget()
@@ -200,7 +237,7 @@ class MainMenuDialog(QDialog):
         
         self.hint = QLabel("Usa ↑ / ↓ y ENTER, o haz clic con el mouse")
         self.hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.hint.setStyleSheet("color: #ffffff; font-size: 14px;")
+        self.hint.setStyleSheet(f"color: {Theme.to_hex(Theme.TEXT_ON_DARK)}; font-size: 14px; font-weight: bold;")
         right_container.addWidget(self.hint)
 
         root.addLayout(right_container, 1)
@@ -258,8 +295,32 @@ class MainMenuDialog(QDialog):
             if i == self._current_index:
                 btn.setText("▶  " + text_clean)
                 btn.setFocus()
+                # Highlight explícito
+                btn.setStyleSheet(f"""
+                    background-color: {Theme.to_hex(Theme.SELECTION_BG)};
+                    color: #FFFFFF;
+                    border: 2px solid #FFFFFF;
+                    border-radius: 12px;
+                    padding: 10px 20px;
+                    text-align: left;
+                    font-size: 22px;
+                    font-weight: bold;
+                    font-family: 'Comic Sans MS', 'Arial';
+                """)
             else:
                 btn.setText("   " + text_clean)
+                # Estilo normal
+                btn.setStyleSheet(f"""
+                    background-color: rgba(255, 255, 255, 0.2);
+                    color: {Theme.to_hex(Theme.TEXT_ON_DARK)};
+                    border: 2px solid {Theme.to_hex(Theme.BORDER_DEFAULT)};
+                    border-radius: 12px;
+                    padding: 10px 20px;
+                    text-align: left;
+                    font-size: 22px;
+                    font-weight: bold;
+                    font-family: 'Comic Sans MS', 'Arial';
+                """)
 
     def keyPressEvent(self, event):
         if self._menu_state == "theory":
@@ -288,6 +349,9 @@ class MainMenuDialog(QDialog):
     def _select(self, value: str):
         self.choice = value
         self.accept()
+        
+    # Necesario para importar QLinearGradient si no lo importe arriba
+    from PyQt6.QtGui import QLinearGradient
 
 
 def show_main_menu() -> Optional[str]:
@@ -295,12 +359,9 @@ def show_main_menu() -> Optional[str]:
     if app is None:
         app = QApplication(sys.argv)
     
-    # IMPORTANTE: Evitar que la app se cierre cuando se cierra el diálogo del menú
-    # Esto es crucial porque cerramos el menú antes de abrir la siguiente ventana (lección/modo libre)
     app.setQuitOnLastWindowClosed(False)
     
     dlg = MainMenuDialog()
     dlg.exec()
     choice = dlg.choice
-    # NO llamar app.quit() aquí - la app se reutiliza en el loop principal
     return choice

@@ -10,7 +10,8 @@ import numpy as np
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
                              QLabel, QPushButton, QProgressBar, QTextEdit)
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QImage, QPixmap, QFont
+from PyQt6.QtGui import QImage, QPixmap, QFont, QLinearGradient, QPainter, QColor
+from src.config.theme import Theme
 
 
 class CalibrationWindow(QMainWindow):
@@ -36,11 +37,22 @@ class CalibrationWindow(QMainWindow):
         self.user_input = None
         
         self._setup_ui()
+    
+    def paintEvent(self, event):
+        """Dibuja el fondo con gradiente del tema"""
+        painter = QPainter(self)
+        
+        grad_start = QColor(Theme.to_hex(Theme.BG_GRADIENT_START))
+        grad_end = QColor(Theme.to_hex(Theme.BG_GRADIENT_END))
+        
+        gradient = QLinearGradient(0, 0, 0, self.height)
+        gradient.setColorAt(0, grad_start)
+        gradient.setColorAt(1, grad_end)
+        painter.fillRect(self.rect(), gradient)
         
     def _setup_ui(self):
         """Configura la interfaz de usuario"""
         self.setWindowTitle("Calibración Estereoscópica - Piano Virtual")
-        self.setStyleSheet("background-color: #000000;")
         
         # Widget central
         central_widget = QWidget()
@@ -53,7 +65,13 @@ class CalibrationWindow(QMainWindow):
         
         # ========== TÍTULO ==========
         self.title_label = QLabel("CALIBRACIÓN ESTEREOSCÓPICA")
-        self.title_label.setStyleSheet("color: #00C8FF; font-size: 24px; font-weight: bold;")
+        self.title_label.setStyleSheet(f"""
+            color: {Theme.to_hex(Theme.TEXT_HIGHLIGHT)};
+            font-size: 24px;
+            font-weight: bold;
+            font-family: 'Comic Sans MS', 'Arial';
+            background: transparent;
+        """)
         self.title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         main_layout.addWidget(self.title_label)
         
@@ -63,7 +81,11 @@ class CalibrationWindow(QMainWindow):
         
         # Cámara izquierda
         self.camera_left_label = QLabel()
-        self.camera_left_label.setStyleSheet("border: 2px solid #00C8FF; background-color: #1a1a1a;")
+        self.camera_left_label.setStyleSheet(f"""
+            border: 3px solid {Theme.to_hex(Theme.BORDER_DEFAULT)};
+            border-radius: 10px;
+            background-color: rgba(0,0,0,0.3);
+        """)
         self.camera_left_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.camera_left_label.setMinimumSize(self.width // 2, self.height // 2)
         self.camera_left_label.setScaledContents(True)
@@ -71,7 +93,11 @@ class CalibrationWindow(QMainWindow):
         
         # Cámara derecha
         self.camera_right_label = QLabel()
-        self.camera_right_label.setStyleSheet("border: 2px solid #00C8FF; background-color: #1a1a1a;")
+        self.camera_right_label.setStyleSheet(f"""
+            border: 3px solid {Theme.to_hex(Theme.BORDER_DEFAULT)};
+            border-radius: 10px;
+            background-color: rgba(0,0,0,0.3);
+        """)
         self.camera_right_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.camera_right_label.setMinimumSize(self.width // 2, self.height // 2)
         self.camera_right_label.setScaledContents(True)
@@ -83,23 +109,29 @@ class CalibrationWindow(QMainWindow):
         progress_layout = QVBoxLayout()
         
         self.progress_label = QLabel("Progreso: 0/25")
-        self.progress_label.setStyleSheet("color: #FFFFFF; font-size: 14px;")
+        self.progress_label.setStyleSheet(f"""
+            color: {Theme.to_hex(Theme.TEXT_PRIMARY)};
+            font-size: 14px;
+            font-weight: bold;
+            background: transparent;
+        """)
         progress_layout.addWidget(self.progress_label)
         
         self.progress_bar = QProgressBar()
-        self.progress_bar.setStyleSheet("""
-            QProgressBar {
-                border: 2px solid #00C8FF;
-                border-radius: 5px;
+        self.progress_bar.setStyleSheet(f"""
+            QProgressBar {{
+                border: 2px solid {Theme.to_hex(Theme.BORDER_DEFAULT)};
+                border-radius: 8px;
                 text-align: center;
-                background-color: #1a1a1a;
-                color: #FFFFFF;
+                background-color: rgba(255,255,255,0.3);
+                color: {Theme.to_hex(Theme.TEXT_PRIMARY)};
                 font-size: 12px;
-            }
-            QProgressBar::chunk {
-                background-color: #00FF00;
-                border-radius: 3px;
-            }
+                font-weight: bold;
+            }}
+            QProgressBar::chunk {{
+                background-color: {Theme.to_hex(Theme.SUCCESS)};
+                border-radius: 6px;
+            }}
         """)
         self.progress_bar.setMinimum(0)
         self.progress_bar.setMaximum(100)
@@ -111,22 +143,29 @@ class CalibrationWindow(QMainWindow):
         # ========== PANEL DE INSTRUCCIONES ==========
         self.instructions_panel = QTextEdit()
         self.instructions_panel.setReadOnly(True)
-        self.instructions_panel.setStyleSheet("""
-            QTextEdit {
-                background-color: #1a1a1a;
-                border: 2px solid #00C8FF;
-                border-radius: 5px;
-                color: #FFFFFF;
+        self.instructions_panel.setStyleSheet(f"""
+            QTextEdit {{
+                background-color: rgba(255,255,255,0.9);
+                border: 2px solid {Theme.to_hex(Theme.ORANGE_VIVID)};
+                border-radius: 10px;
+                color: {Theme.to_hex(Theme.TEXT_PRIMARY)};
                 font-size: 13px;
                 padding: 10px;
-            }
+                font-family: 'Comic Sans MS', 'Arial';
+            }}
         """)
         self.instructions_panel.setMaximumHeight(150)
         main_layout.addWidget(self.instructions_panel)
         
         # ========== ESTADO DE DETECCIÓN ==========
         self.status_label = QLabel("Preparando cámaras...")
-        self.status_label.setStyleSheet("color: #FFA500; font-size: 16px; font-weight: bold;")
+        self.status_label.setStyleSheet(f"""
+            color: {Theme.to_hex(Theme.TEXT_HIGHLIGHT)};
+            font-size: 16px;
+            font-weight: bold;
+            font-family: 'Comic Sans MS', 'Arial';
+            background: transparent;
+        """)
         self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         main_layout.addWidget(self.status_label)
         
@@ -135,80 +174,88 @@ class CalibrationWindow(QMainWindow):
         button_layout.setSpacing(10)
         
         self.capture_button = QPushButton("CAPTURAR [ESPACIO]")
-        self.capture_button.setStyleSheet("""
-            QPushButton {
-                background-color: #00FF00;
+        self.capture_button.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {Theme.to_hex(Theme.SUCCESS)};
                 color: #000000;
                 font-size: 16px;
                 font-weight: bold;
-                padding: 10px;
-                border-radius: 5px;
-            }
-            QPushButton:hover {
-                background-color: #00DD00;
-            }
-            QPushButton:disabled {
-                background-color: #555555;
+                padding: 12px;
+                border-radius: 20px;
+                border: 3px solid #FFFFFF;
+                font-family: 'Comic Sans MS', 'Arial';
+            }}
+            QPushButton:hover {{
+                background-color: {Theme.to_hex(Theme.GREEN_SOFT)};
+            }}
+            QPushButton:disabled {{
+                background-color: {Theme.to_hex(Theme.GRAY)};
                 color: #888888;
-            }
+            }}
         """)
         self.capture_button.clicked.connect(self._on_capture_clicked)
         self.capture_button.setEnabled(False)
         button_layout.addWidget(self.capture_button)
         
         self.continue_button = QPushButton("CONTINUAR [ENTER]")
-        self.continue_button.setStyleSheet("""
-            QPushButton {
-                background-color: #00C8FF;
-                color: #000000;
+        self.continue_button.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {Theme.to_hex(Theme.BTN_SUCCESS_BG)};
+                color: {Theme.to_hex(Theme.BTN_SUCCESS_TEXT)};
                 font-size: 16px;
                 font-weight: bold;
-                padding: 10px;
-                border-radius: 5px;
-            }
-            QPushButton:hover {
-                background-color: #00B0DD;
-            }
-            QPushButton:disabled {
-                background-color: #555555;
+                padding: 12px;
+                border-radius: 20px;
+                border: 3px solid #FFFFFF;
+                font-family: 'Comic Sans MS', 'Arial';
+            }}
+            QPushButton:hover {{
+                background-color: {Theme.to_hex(Theme.GREEN_VIVID)};
+            }}
+            QPushButton:disabled {{
+                background-color: {Theme.to_hex(Theme.GRAY)};
                 color: #888888;
-            }
+            }}
         """)
         self.continue_button.clicked.connect(self._on_continue_clicked)
         self.continue_button.setVisible(False)
         button_layout.addWidget(self.continue_button)
         
         self.retry_button = QPushButton("REINTENTAR [R]")
-        self.retry_button.setStyleSheet("""
-            QPushButton {
-                background-color: #FFA500;
-                color: #000000;
+        self.retry_button.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {Theme.to_hex(Theme.BTN_PRIMARY_BG)};
+                color: {Theme.to_hex(Theme.BTN_PRIMARY_TEXT)};
                 font-size: 16px;
                 font-weight: bold;
-                padding: 10px;
-                border-radius: 5px;
-            }
-            QPushButton:hover {
-                background-color: #DD9000;
-            }
+                padding: 12px;
+                border-radius: 20px;
+                border: 3px solid #FFFFFF;
+                font-family: 'Comic Sans MS', 'Arial';
+            }}
+            QPushButton:hover {{
+                background-color: {Theme.to_hex(Theme.BLUE_VIVID)};
+            }}
         """)
         self.retry_button.clicked.connect(self._on_retry_clicked)
         self.retry_button.setVisible(False)
         button_layout.addWidget(self.retry_button)
         
         self.cancel_button = QPushButton("CANCELAR [ESC]")
-        self.cancel_button.setStyleSheet("""
-            QPushButton {
-                background-color: #FF0000;
+        self.cancel_button.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {Theme.to_hex(Theme.ERROR)};
                 color: #FFFFFF;
                 font-size: 16px;
                 font-weight: bold;
-                padding: 10px;
-                border-radius: 5px;
-            }
-            QPushButton:hover {
-                background-color: #DD0000;
-            }
+                padding: 12px;
+                border-radius: 20px;
+                border: 3px solid #FFFFFF;
+                font-family: 'Comic Sans MS', 'Arial';
+            }}
+            QPushButton:hover {{
+                background-color: {Theme.to_hex(Theme.RED_SOFT)};
+            }}
         """)
         self.cancel_button.clicked.connect(self._on_cancel_clicked)
         button_layout.addWidget(self.cancel_button)
@@ -330,16 +377,24 @@ class CalibrationWindow(QMainWindow):
         """
         self.instructions_panel.setHtml(instructions_html)
     
-    def set_status(self, status_text, color="#FFA500"):
+    def set_status(self, status_text, color=None):
         """
         Actualiza el texto de estado
         
         Args:
             status_text: Texto del estado
-            color: Color en formato hex
+            color: Color en formato hex (opcional, usa Theme por defecto)
         """
+        if color is None:
+            color = Theme.to_hex(Theme.TEXT_HIGHLIGHT)
         self.status_label.setText(status_text)
-        self.status_label.setStyleSheet(f"color: {color}; font-size: 16px; font-weight: bold;")
+        self.status_label.setStyleSheet(f"""
+            color: {color};
+            font-size: 16px;
+            font-weight: bold;
+            font-family: 'Comic Sans MS', 'Arial';
+            background: transparent;
+        """)
     
     def enable_capture(self, enabled=True):
         """Habilita/deshabilita el botón de captura"""
@@ -364,14 +419,19 @@ class CalibrationWindow(QMainWindow):
         """
         self.title_label.setText(phase_title)
         
-        html = "<h3 style='color: #00C8FF;'>INSTRUCCIONES:</h3><ul>"
+        # Colores del tema para instrucciones
+        highlight_color = Theme.to_hex(Theme.ORANGE_VIVID)
+        text_color = Theme.to_hex(Theme.TEXT_PRIMARY)
+        success_color = Theme.to_hex(Theme.SUCCESS)
+        
+        html = f"<h3 style='color: {highlight_color};'>INSTRUCCIONES:</h3><ul>"
         for instruction in instructions:
-            html += f"<li style='margin: 5px 0;'>{instruction}</li>"
+            html += f"<li style='margin: 5px 0; color: {text_color};'>{instruction}</li>"
         html += "</ul>"
-        html += "<p style='color: #00FF00; margin-top: 10px;'><b>Presiona CONTINUAR o ENTER cuando estés listo</b></p>"
+        html += f"<p style='color: {success_color}; margin-top: 10px;'><b>Presiona CONTINUAR o ENTER cuando estés listo</b></p>"
         
         self.set_instructions(html)
-        self.set_status("Esperando confirmación...", "#00C8FF")
+        self.set_status("Esperando confirmación...", Theme.to_hex(Theme.ORANGE_VIVID))
         self.show_continue_button(True)
     
     def show_capture_instructions(self, category_title, specific_instruction, objective, photo_num, total_photos):
@@ -385,9 +445,13 @@ class CalibrationWindow(QMainWindow):
             photo_num: Número de foto actual
             total_photos: Total de fotos
         """
-        html = f"<h3 style='color: #FFA500;'>{category_title}</h3>"
-        html += f"<p style='font-size: 14px; margin: 10px 0;'><b>{specific_instruction}</b></p>"
-        html += f"<p style='color: #00FF00; font-size: 12px;'><i>Objetivo: {objective}</i></p>"
+        highlight_color = Theme.to_hex(Theme.ORANGE_VIVID)
+        text_color = Theme.to_hex(Theme.TEXT_PRIMARY)
+        success_color = Theme.to_hex(Theme.SUCCESS)
+        
+        html = f"<h3 style='color: {highlight_color};'>{category_title}</h3>"
+        html += f"<p style='font-size: 14px; margin: 10px 0; color: {text_color};'><b>{specific_instruction}</b></p>"
+        html += f"<p style='color: {success_color}; font-size: 12px;'><i>Objetivo: {objective}</i></p>"
         
         self.set_instructions(html)
         self.update_progress(photo_num, total_photos, f"Foto {photo_num + 1} de {total_photos}")
@@ -400,12 +464,15 @@ class CalibrationWindow(QMainWindow):
             pair_num: Número de par actual
             total_pairs: Total de pares necesarios
         """
-        html = "<h3 style='color: #00C8FF;'>CALIBRACIÓN ESTÉREO</h3>"
-        html += "<p><b>Coloca el tablero visible en AMBAS cámaras</b></p>"
+        highlight_color = Theme.to_hex(Theme.ORANGE_VIVID)
+        text_color = Theme.to_hex(Theme.TEXT_PRIMARY)
+        
+        html = f"<h3 style='color: {highlight_color};'>CALIBRACIÓN ESTÉREO</h3>"
+        html += f"<p style='color: {text_color};'><b>Coloca el tablero visible en AMBAS cámaras</b></p>"
         html += "<ul>"
-        html += "<li>El tablero debe verse COMPLETO en ambas vistas</li>"
-        html += "<li>Varía la posición y orientación del tablero</li>"
-        html += "<li>Mantén buena iluminación</li>"
+        html += f"<li style='color: {text_color};'>El tablero debe verse COMPLETO en ambas vistas</li>"
+        html += f"<li style='color: {text_color};'>Varía la posición y orientación del tablero</li>"
+        html += f"<li style='color: {text_color};'>Mantén buena iluminación</li>"
         html += "</ul>"
         
         self.set_instructions(html)
@@ -420,12 +487,15 @@ class CalibrationWindow(QMainWindow):
             step: Paso actual
             total_steps: Total de pasos
         """
-        html = "<h3 style='color: #00FF00;'>CALIBRACIÓN DE PROFUNDIDAD</h3>"
-        html += f"<p style='font-size: 16px; margin: 10px 0;'><b>Coloca tu DEDO ÍNDICE a {target_distance} cm de la CÁMARA IZQUIERDA</b></p>"
+        highlight_color = Theme.to_hex(Theme.SUCCESS)
+        text_color = Theme.to_hex(Theme.TEXT_PRIMARY)
+        
+        html = f"<h3 style='color: {highlight_color};'>CALIBRACIÓN DE PROFUNDIDAD</h3>"
+        html += f"<p style='font-size: 16px; margin: 10px 0; color: {text_color};'><b>Coloca tu DEDO ÍNDICE a {target_distance} cm de la CÁMARA IZQUIERDA</b></p>"
         html += "<ul>"
-        html += "<li>Usa una regla para medir la distancia exacta desde el lente izquierdo</li>"
-        html += "<li>Mantén el dedo quieto</li>"
-        html += "<li>Presiona CAPTURAR cuando esté en posición</li>"
+        html += f"<li style='color: {text_color};'>Usa una regla para medir la distancia exacta desde el lente izquierdo</li>"
+        html += f"<li style='color: {text_color};'>Mantén el dedo quieto</li>"
+        html += f"<li style='color: {text_color};'>Presiona CAPTURAR cuando esté en posición</li>"
         html += "</ul>"
         
         self.set_instructions(html)
@@ -440,8 +510,12 @@ class CalibrationWindow(QMainWindow):
         """
         self.title_label.setText("✓ CALIBRACIÓN COMPLETADA")
         
-        html = "<h3 style='color: #00FF00;'>RESULTADOS:</h3>"
-        html += "<table style='width: 100%; color: #FFFFFF;'>"
+        success_color = Theme.to_hex(Theme.SUCCESS)
+        text_color = Theme.to_hex(Theme.TEXT_PRIMARY)
+        muted_color = Theme.to_hex(Theme.TEXT_SECONDARY)
+        
+        html = f"<h3 style='color: {success_color};'>RESULTADOS:</h3>"
+        html += f"<table style='width: 100%; color: {text_color};'>"
         
         if 'board_config' in summary_data:
             html += f"<tr><td><b>Configuración:</b></td><td>{summary_data['board_config']}</td></tr>"
@@ -462,10 +536,10 @@ class CalibrationWindow(QMainWindow):
             html += f"<tr><td><b>Factor de corrección:</b></td><td>{summary_data['correction_factor']:.4f}</td></tr>"
         
         html += "</table>"
-        html += "<p style='color: #00FF00; margin-top: 20px;'><b>¡Calibración guardada exitosamente!</b></p>"
-        html += "<p style='color: #AAAAAA; font-size: 12px;'>Presiona CONTINUAR o ENTER para finalizar</p>"
+        html += f"<p style='color: {success_color}; margin-top: 20px;'><b>¡Calibración guardada exitosamente!</b></p>"
+        html += f"<p style='color: {muted_color}; font-size: 12px;'>Presiona CONTINUAR o ENTER para finalizar</p>"
         
         self.set_instructions(html)
-        self.set_status("✓ Proceso completado", "#00FF00")
+        self.set_status("✓ Proceso completado", Theme.to_hex(Theme.SUCCESS))
         self.show_continue_button(True)
         self.progress_bar.setValue(100)

@@ -9,6 +9,7 @@ Parámetros de app, modos, audio y UI general
 
 import os
 from pathlib import Path
+from src.config.theme import Theme
 
 
 class AppConfig:
@@ -59,9 +60,9 @@ class AppConfig:
     MAIN_WINDOW_NAME = "Virtual Piano - Rhythm Game"
     
     # Colors para UI general (no específicos del juego)
-    COLOR_INSTRUCTIONS_BG = (20, 40, 60)
-    COLOR_INSTRUCTIONS_TEXT = (200, 220, 255)
-    COLOR_DASHBOARD_TEXT = (0, 255, 0)
+    COLOR_INSTRUCTIONS_BG = Theme.BG_OVERLAY
+    COLOR_INSTRUCTIONS_TEXT = Theme.TEXT_PRIMARY
+    COLOR_DASHBOARD_TEXT = Theme.INFO
     
     # ==================== CÁMARAS ====================
     CAMERA_INIT_WAIT = 0.5                # Tiempo de espera para inicialización de cámaras (segundos)

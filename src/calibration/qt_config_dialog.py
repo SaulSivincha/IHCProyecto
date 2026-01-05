@@ -7,6 +7,8 @@ Diálogo de configuración para parámetros de calibración
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
                              QSpinBox, QDoubleSpinBox, QPushButton, QGroupBox, QComboBox)
 from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QLinearGradient, QPainter, QColor
+from src.config.theme import Theme
 
 class CalibrationConfigDialog(QDialog):
     """
@@ -29,81 +31,79 @@ class CalibrationConfigDialog(QDialog):
         self.enable_phase3 = enable_phase3
         self.selected_phase = 1
         
-        self.setStyleSheet("""
-            QDialog {
-                background-color: #2b2b2b;
-                color: #ffffff;
-            }
-            QLabel {
-                color: #ffffff;
-                font-size: 14px;
-            }
-            QGroupBox {
-                color: #00C8FF;
-                font-weight: bold;
-                border: 1px solid #00C8FF;
-                border-radius: 5px;
-                margin-top: 10px;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                subcontrol-position: top center;
-                padding: 0 3px;
-            }
-            QSpinBox, QDoubleSpinBox {
-                background-color: #3b3b3b;
-                color: #ffffff;
-                border: 1px solid #555555;
-                padding: 5px;
-                font-size: 14px;
-            }
-            QPushButton {
-                background-color: #00C8FF;
-                color: #000000;
-                border: none;
-                padding: 8px 16px;
-                font-weight: bold;
-                border-radius: 4px;
-            }
-            QPushButton:hover {
-                background-color: #33D6FF;
-            }
-            QPushButton#cancelButton {
-                background-color: #555555;
-                color: #ffffff;
-            }
-            QPushButton#cancelButton:hover {
-                background-color: #777777;
-            }
-        """)
-        
-        self.rows = default_rows
-        self.cols = default_cols
-        self.size_mm = default_size_mm
-        
         self._setup_ui()
+    
+    def paintEvent(self, event):
+        """Dibuja el fondo con gradiente del tema"""
+        painter = QPainter(self)
+        
+        grad_start = QColor(Theme.to_hex(Theme.BG_GRADIENT_START))
+        grad_end = QColor(Theme.to_hex(Theme.BG_GRADIENT_END))
+        
+        gradient = QLinearGradient(0, 0, 0, self.height())
+        gradient.setColorAt(0, grad_start)
+        gradient.setColorAt(1, grad_end)
+        painter.fillRect(self.rect(), gradient)
         
     def _setup_ui(self):
         layout = QVBoxLayout(self)
         layout.setSpacing(20)
         layout.setContentsMargins(20, 20, 20, 20)
         
+        # Colores del tema
+        text_color = Theme.to_hex(Theme.TEXT_PRIMARY)
+        highlight_color = Theme.to_hex(Theme.TEXT_HIGHLIGHT)
+        muted_color = Theme.to_hex(Theme.TEXT_SECONDARY)
+        
         # Título
         title = QLabel("Parámetros del Tablero de Ajedrez")
-        title.setStyleSheet("font-size: 18px; font-weight: bold; color: #00C8FF;")
+        title.setStyleSheet(f"""
+            font-size: 18px;
+            font-weight: bold;
+            color: {highlight_color};
+            font-family: 'Comic Sans MS', 'Arial';
+            background: transparent;
+        """)
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(title)
         
         # Grupo de dimensiones
         dim_group = QGroupBox("Dimensiones (Esquinas Internas)")
+        dim_group.setStyleSheet(f"""
+            QGroupBox {{
+                color: {highlight_color};
+                font-weight: bold;
+                border: 2px solid {Theme.to_hex(Theme.BORDER_DEFAULT)};
+                border-radius: 10px;
+                margin-top: 10px;
+                background-color: rgba(255,255,255,0.8);
+                font-family: 'Comic Sans MS', 'Arial';
+            }}
+            QGroupBox::title {{
+                subcontrol-origin: margin;
+                subcontrol-position: top center;
+                padding: 0 8px;
+            }}
+        """)
         dim_layout = QVBoxLayout()
         
         # Filas
         row_layout = QHBoxLayout()
         row_label = QLabel("Filas (Alto):")
+        row_label.setStyleSheet(f"color: {text_color}; font-size: 14px; background: transparent;")
         self.row_spin = QSpinBox()
         self.row_spin.setRange(3, 20)
         self.row_spin.setValue(self.rows)
+        self.row_spin.setStyleSheet(f"""
+            QSpinBox {{
+                background-color: rgba(255,255,255,0.9);
+                color: {text_color};
+                border: 2px solid {Theme.to_hex(Theme.BORDER_DEFAULT)};
+                border-radius: 5px;
+                padding: 5px;
+                font-size: 14px;
+            }}
+        """)
         row_layout.addWidget(row_label)
         row_layout.addWidget(self.row_spin)
         dim_layout.addLayout(row_layout)
@@ -111,9 +111,20 @@ class CalibrationConfigDialog(QDialog):
         # Columnas
         col_layout = QHBoxLayout()
         col_label = QLabel("Columnas (Ancho):")
+        col_label.setStyleSheet(f"color: {text_color}; font-size: 14px; background: transparent;")
         self.col_spin = QSpinBox()
         self.col_spin.setRange(3, 20)
         self.col_spin.setValue(self.cols)
+        self.col_spin.setStyleSheet(f"""
+            QSpinBox {{
+                background-color: rgba(255,255,255,0.9);
+                color: {text_color};
+                border: 2px solid {Theme.to_hex(Theme.BORDER_DEFAULT)};
+                border-radius: 5px;
+                padding: 5px;
+                font-size: 14px;
+            }}
+        """)
         col_layout.addWidget(col_label)
         col_layout.addWidget(self.col_spin)
         dim_layout.addLayout(col_layout)
@@ -123,24 +134,50 @@ class CalibrationConfigDialog(QDialog):
         
         # Grupo de tamaño físico
         size_group = QGroupBox("Tamaño Físico")
+        size_group.setStyleSheet(f"""
+            QGroupBox {{
+                color: {highlight_color};
+                font-weight: bold;
+                border: 2px solid {Theme.to_hex(Theme.BORDER_DEFAULT)};
+                border-radius: 10px;
+                margin-top: 10px;
+                background-color: rgba(255,255,255,0.8);
+                font-family: 'Comic Sans MS', 'Arial';
+            }}
+            QGroupBox::title {{
+                subcontrol-origin: margin;
+                subcontrol-position: top center;
+                padding: 0 8px;
+            }}
+        """)
         size_layout = QVBoxLayout()
         
         size_h_layout = QHBoxLayout()
         size_label = QLabel("Tamaño de cuadro (mm):")
+        size_label.setStyleSheet(f"color: {text_color}; font-size: 14px; background: transparent;")
         self.size_spin = QDoubleSpinBox()
         self.size_spin.setRange(5.0, 100.0)
         self.size_spin.setSingleStep(0.5)
-        self.size_spin.setDecimals(2)  # Asegurar 2 decimales
+        self.size_spin.setDecimals(2)
         self.size_spin.setValue(self.size_mm)
-        # Conectar señal para actualizar valor interno inmediatamente
         self.size_spin.valueChanged.connect(self._on_size_changed)
+        self.size_spin.setStyleSheet(f"""
+            QDoubleSpinBox {{
+                background-color: rgba(255,255,255,0.9);
+                color: {text_color};
+                border: 2px solid {Theme.to_hex(Theme.BORDER_DEFAULT)};
+                border-radius: 5px;
+                padding: 5px;
+                font-size: 14px;
+            }}
+        """)
         size_h_layout.addWidget(size_label)
         size_h_layout.addWidget(self.size_spin)
         size_layout.addLayout(size_h_layout)
         
         # Nota informativa
         note = QLabel("Nota: Mide el lado de un cuadrado negro con una regla.")
-        note.setStyleSheet("color: #aaaaaa; font-style: italic; font-size: 12px;")
+        note.setStyleSheet(f"color: {muted_color}; font-style: italic; font-size: 12px; background: transparent;")
         note.setWordWrap(True)
         size_layout.addWidget(note)
         
@@ -149,25 +186,42 @@ class CalibrationConfigDialog(QDialog):
         
         # Grupo de Fase de Inicio
         phase_group = QGroupBox("Iniciar desde")
+        phase_group.setStyleSheet(f"""
+            QGroupBox {{
+                color: {highlight_color};
+                font-weight: bold;
+                border: 2px solid {Theme.to_hex(Theme.BORDER_DEFAULT)};
+                border-radius: 10px;
+                margin-top: 10px;
+                background-color: rgba(255,255,255,0.8);
+                font-family: 'Comic Sans MS', 'Arial';
+            }}
+            QGroupBox::title {{
+                subcontrol-origin: margin;
+                subcontrol-position: top center;
+                padding: 0 8px;
+            }}
+        """)
         phase_layout = QVBoxLayout()
         
         self.phase_combo = QComboBox()
-        self.phase_combo.setStyleSheet("""
-            QComboBox {
-                background-color: #3b3b3b;
-                color: #ffffff;
-                border: 1px solid #555555;
-                padding: 5px;
+        self.phase_combo.setStyleSheet(f"""
+            QComboBox {{
+                background-color: rgba(255,255,255,0.9);
+                color: {text_color};
+                border: 2px solid {Theme.to_hex(Theme.BORDER_DEFAULT)};
+                border-radius: 5px;
+                padding: 8px;
                 font-size: 14px;
-            }
-            QComboBox::drop-down {
+            }}
+            QComboBox::drop-down {{
                 border: none;
-            }
-            QComboBox QAbstractItemView {
-                background-color: #3b3b3b;
-                color: #ffffff;
-                selection-background-color: #00C8FF;
-            }
+            }}
+            QComboBox QAbstractItemView {{
+                background-color: rgba(255,255,255,0.95);
+                color: {text_color};
+                selection-background-color: {highlight_color};
+            }}
         """)
         
         self.phase_combo.addItem("Fase 1: Calibración Individual (Completa)", 1)
@@ -178,9 +232,6 @@ class CalibrationConfigDialog(QDialog):
         if self.enable_phase3:
             self.phase_combo.addItem("Fase 3: Calibración de Profundidad", 3)
             
-        # Seleccionar la fase más avanzada disponible por defecto
-        # self.phase_combo.setCurrentIndex(self.phase_combo.count() - 1)
-        
         phase_layout.addWidget(self.phase_combo)
         phase_group.setLayout(phase_layout)
         layout.addWidget(phase_group)
@@ -189,13 +240,40 @@ class CalibrationConfigDialog(QDialog):
         btn_layout = QHBoxLayout()
         
         cancel_btn = QPushButton("Cancelar")
-        cancel_btn.setObjectName("cancelButton")
+        cancel_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {Theme.to_hex(Theme.BTN_DANGER_BG)};
+                color: {Theme.to_hex(Theme.BTN_DANGER_TEXT)};
+                border: 2px solid {Theme.to_hex(Theme.BORDER_DEFAULT)};
+                padding: 10px 20px;
+                font-weight: bold;
+                border-radius: 15px;
+                font-family: 'Comic Sans MS', 'Arial';
+            }}
+            QPushButton:hover {{
+                background-color: {Theme.to_hex(Theme.RED_VIVID)};
+            }}
+        """)
         cancel_btn.clicked.connect(self.reject)
-        cancel_btn.setAutoDefault(False)  # Evitar que se active con Enter
+        cancel_btn.setAutoDefault(False)
         
         accept_btn = QPushButton("Iniciar Calibración")
+        accept_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {highlight_color};
+                color: #FFFFFF;
+                border: 3px solid #FFFFFF;
+                padding: 10px 20px;
+                font-weight: bold;
+                border-radius: 15px;
+                font-family: 'Comic Sans MS', 'Arial';
+            }}
+            QPushButton:hover {{
+                background-color: {Theme.to_hex(Theme.SELECTION_BG)};
+            }}
+        """)
         accept_btn.clicked.connect(self.accept_values)
-        accept_btn.setDefault(True)  # Este es el botón principal
+        accept_btn.setDefault(True)
         accept_btn.setAutoDefault(True)
         
         btn_layout.addWidget(cancel_btn)
@@ -204,7 +282,7 @@ class CalibrationConfigDialog(QDialog):
         layout.addLayout(btn_layout)
         
         # Conectar spinboxes para que Enter llame a accept_values
-        self.row_spin.editingFinished.connect(lambda: None)  # Solo actualizar valor
+        self.row_spin.editingFinished.connect(lambda: None)
         self.col_spin.editingFinished.connect(lambda: None)
         self.size_spin.editingFinished.connect(lambda: None)
         

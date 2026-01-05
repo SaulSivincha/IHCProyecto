@@ -11,8 +11,8 @@ from PyQt6.QtWidgets import (
     QLabel, QPushButton, QSpacerItem, QSizePolicy, QScrollArea, QWidget
 )
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QFont
-
+from PyQt6.QtGui import QFont, QLinearGradient, QPainter, QColor
+from src.config.theme import Theme
 
 class SongsMenuDialog(QDialog):
     """
@@ -34,80 +34,90 @@ class SongsMenuDialog(QDialog):
         self.setWindowTitle("Modo Ritmo - Selección de Canción")
         self.setMinimumSize(900, 600)
         
-        self.setStyleSheet("""
-            QDialog {
-                background-color: #000000;
-            }
-            QLabel#title {
-                color: #ffffff;
-                font-size: 28px;
+        # El estilo principal se maneja en paintEvent para el gradiente
+        self.setStyleSheet(f"""
+            QLabel {{
+                font-family: 'Comic Sans MS', 'Arial';
+            }}
+            QLabel#title {{
+                color: {Theme.to_hex(Theme.TEXT_HIGHLIGHT)};
+                font-size: 32px;
                 font-weight: bold;
-            }
-            QLabel#subtitle {
-                color: #ffffff;
-                font-size: 14px;
-            }
-            QLabel#songName {
-                color: #ffffff;
+                background: transparent;
+            }}
+            QLabel#subtitle {{
+                color: {Theme.to_hex(Theme.TEXT_SECONDARY)};
+                font-size: 16px;
+                background: transparent;
+            }}
+            QLabel#songName {{
+                color: {Theme.to_hex(Theme.TEXT_PRIMARY)};
                 font-size: 18px;
                 font-weight: bold;
-            }
-            QLabel#songInfo {
-                color: #cccccc;
-                font-size: 13px;
-            }
-            QLabel#difficulty {
-                font-size: 13px;
-                font-weight: bold;
-                padding: 4px 12px;
-            }
-            QPushButton {
-                background-color: #333333;
-                color: #ffffff;
+            }}
+            QLabel#songInfo {{
+                color: {Theme.to_hex(Theme.TEXT_SECONDARY)};
+                font-size: 14px;
+            }}
+            QPushButton {{
+                background-color: {Theme.to_hex(Theme.BTN_PRIMARY_BG)};
+                color: {Theme.to_hex(Theme.BTN_PRIMARY_TEXT)};
                 font-size: 14px;
                 padding: 10px 18px;
-                border: 1px solid #ffffff;
-            }
-            QPushButton:hover {
-                background-color: #555555;
-            }
-            QPushButton:pressed {
-                background-color: #777777;
-            }
-            QPushButton#playButton {
-                background-color: #333333;
-                border: 1px solid #00ff00;
-                color: #00ff00;
-                font-size: 16px;
+                border: 2px solid {Theme.to_hex(Theme.BORDER_DEFAULT)};
+                border-radius: 10px;
+                font-family: 'Comic Sans MS', 'Arial';
                 font-weight: bold;
-            }
-            QPushButton#playButton:hover {
-                background-color: #003300;
-                color: #ffffff;
-            }
-            QPushButton#backButton {
-                background-color: #333333;
-                border: 1px solid #ff0000;
-                color: #ff0000;
-            }
-            QPushButton#backButton:hover {
-                background-color: #330000;
-                color: #ffffff;
-            }
-            QWidget#songCard {
-                background-color: #1a1a1a;
-                border: 1px solid #555555;
-                padding: 10px;
-            }
-            QWidget#songCardSelected {
-                background-color: #2a2a2a;
-                border: 2px solid #ffffff;
-                padding: 10px;
-            }
+            }}
+            QPushButton:hover {{
+                background-color: {Theme.to_hex(Theme.BLUE_VIVID)};
+            }}
+            QPushButton#playButton {{
+                background-color: {Theme.to_hex(Theme.BTN_SUCCESS_BG)};
+                border: 3px solid {Theme.to_hex(Theme.BORDER_DEFAULT)};
+                color: {Theme.to_hex(Theme.BTN_SUCCESS_TEXT)};
+                font-size: 18px;
+                border-radius: 20px;
+                padding: 12px 30px;
+            }}
+            QPushButton#playButton:hover {{
+                background-color: {Theme.to_hex(Theme.GREEN_VIVID)};
+            }}
+            QPushButton#backButton {{
+                background-color: {Theme.to_hex(Theme.BTN_WARNING_BG)};
+                border: 2px solid {Theme.to_hex(Theme.BORDER_DEFAULT)};
+                color: {Theme.to_hex(Theme.BTN_SECONDARY_TEXT)};
+            }}
+            QPushButton#backButton:hover {{
+                background-color: {Theme.to_hex(Theme.ORANGE_VIVID)};
+                color: {Theme.to_hex(Theme.WHITE)};
+            }}
+            QWidget#songCard {{
+                background-color: rgba(255, 255, 255, 0.6);
+                border: 2px solid {Theme.to_hex(Theme.BORDER_DEFAULT)};
+                border-radius: 12px;
+            }}
+            QWidget#songCardSelected {{
+                background-color: rgba(255, 255, 255, 0.9);
+                border: 3px solid {Theme.to_hex(Theme.ORANGE_VIVID)};
+                border-radius: 12px;
+            }}
         """)
         
         self._build_ui()
     
+    def paintEvent(self, event):
+        """Dibuja el fondo con gradiente del tema"""
+        painter = QPainter(self)
+        
+        grad_start = QColor(Theme.to_hex(Theme.BG_GRADIENT_START))
+        grad_end = QColor(Theme.to_hex(Theme.BG_GRADIENT_END))
+        
+        gradient = QLinearGradient(0, 0, 0, self.height())
+        gradient.setColorAt(0, grad_start)
+        gradient.setColorAt(1, grad_end)
+        painter.fillRect(self.rect(), gradient)
+        
     def _build_ui(self):
         """Construye la interfaz de usuario"""
         main_layout = QVBoxLayout()
@@ -131,9 +141,10 @@ class SongsMenuDialog(QDialog):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        scroll.setStyleSheet("QScrollArea { border: none; background-color: #000000; }")
+        scroll.setStyleSheet("QScrollArea { border: none; background-color: transparent; }")
         
         scroll_content = QWidget()
+        scroll_content.setStyleSheet("background-color: transparent;")
         self.songs_layout = QVBoxLayout(scroll_content)
         self.songs_layout.setSpacing(10)
         
@@ -186,16 +197,18 @@ class SongsMenuDialog(QDialog):
         # Nombre
         name_label = QLabel(f"{index + 1}. {song.name}")
         name_label.setObjectName("songName")
+        name_label.setStyleSheet("background: transparent; border: none;")
         card_layout.addWidget(name_label)
         
         # Info (BPM, dificultad, tonalidad)
         info_text = f"{song.bpm} BPM  •  {song.difficulty}  •  Tonalidad: {song.music_key}"
         info_label = QLabel(info_text)
         info_label.setObjectName("songInfo")
+        info_label.setStyleSheet("background: transparent; border: none;")
         card_layout.addWidget(info_label)
         
         card.setLayout(card_layout)
-        card.setMinimumHeight(80)
+        card.setMinimumHeight(90)
         
         return card
     
@@ -204,16 +217,20 @@ class SongsMenuDialog(QDialog):
         # Deseleccionar anterior
         if 0 <= self.selected_index < len(self.song_buttons):
             self.song_buttons[self.selected_index].setObjectName("songCard")
-            self.song_buttons[self.selected_index].setStyleSheet(self.styleSheet())
+            # Forzar actualización de estilo
+            self.song_buttons[self.selected_index].style().unpolish(self.song_buttons[self.selected_index])
+            self.song_buttons[self.selected_index].style().polish(self.song_buttons[self.selected_index])
         
         # Seleccionar nueva
         self.selected_index = index
         self.song_buttons[index].setObjectName("songCardSelected")
-        self.song_buttons[index].setStyleSheet(self.styleSheet())
+        # Forzar actualización de estilo
+        self.song_buttons[index].style().unpolish(self.song_buttons[index])
+        self.song_buttons[index].style().polish(self.song_buttons[index])
         
         # Guardar nombre
         self.selected_song_name = self.songs_list[index].name
-        print(f"Seleccionada: {self.selected_song_name}")
+        # print(f"Seleccionada: {self.selected_song_name}")
     
     def _on_play(self):
         """Inicia la canción seleccionada"""
@@ -251,13 +268,31 @@ def show_songs_menu(songs):
     Returns:
         str or None: Nombre de la canción seleccionada, o None si canceló
     """
-    app = QApplication.instance()
-    if app is None:
-        app = QApplication(sys.argv)
-    
-    dialog = SongsMenuDialog(songs)
-    result = dialog.exec()
-    
-    selected = dialog.selected_song_name if result == QDialog.DialogCode.Accepted else None
-    
-    return selected
+    try:
+        app = QApplication.instance()
+        if app is None:
+            app = QApplication(sys.argv)
+        
+        dialog = SongsMenuDialog(songs)
+        result = dialog.exec()
+        
+        selected = dialog.selected_song_name if result == QDialog.DialogCode.Accepted else None
+        
+        return selected
+    except Exception as e:
+        import traceback
+        from PyQt6.QtWidgets import QMessageBox
+        error_msg = traceback.format_exc()
+        print(f"ERROR lanzando SongsMenu: {e}")
+        print(error_msg)
+        
+        try:
+            msg = QMessageBox()
+            msg.setIcon(QMessageBox.Icon.Critical)
+            msg.setWindowTitle("Error")
+            msg.setText("Error al abrir el Menú de Canciones")
+            msg.setDetailedText(error_msg)
+            msg.exec()
+        except:
+            pass
+        return None

@@ -5,6 +5,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
+from src.config.theme import Theme
 
 
 class InitialMenuDialog(QDialog):
@@ -15,42 +16,42 @@ class InitialMenuDialog(QDialog):
 
         self.setWindowTitle("Configuración Inicial")
         self.setMinimumSize(800, 400)
-        self.setStyleSheet("""
-            QDialog {
-                background-color: #1a0f0f;
-            }
-            QLabel#titleLabel {
-                color: #ffcc00;
+        self.setStyleSheet(f"""
+            QDialog {{
+                background-color: {Theme.to_hex(Theme.BG_MAIN)};
+            }}
+            QLabel#titleLabel {{
+                color: {Theme.to_hex(Theme.TEXT_HIGHLIGHT)};
                 font-size: 32px;
                 font-weight: bold;
-            }
-            QLabel#hintLabel {
-                color: #00ff66;
+            }}
+            QLabel#hintLabel {{
+                color: {Theme.to_hex(Theme.SUCCESS)};
                 font-size: 18px;
-            }
-            QPushButton {
+            }}
+            QPushButton {{
                 border-radius: 6px;
                 padding: 12px 18px;
                 font-size: 20px;
                 text-align: left;
-                color: white;
-                border: 2px solid #444444;
-            }
-            QPushButton#btn1 {
-                background-color: #00c853;
-                border-color: #00e676;
-            }
-            QPushButton#btn2 {
-                background-color: #2962ff;
-                border-color: #448aff;
-            }
-            QPushButton#btn3 {
-                background-color: #5e35b1;
-                border-color: #7e57c2;
-            }
-            QPushButton:hover {
-                border-color: #ffffff;
-            }
+                color: {Theme.to_hex(Theme.TEXT_PRIMARY)};
+                border: 2px solid {Theme.to_hex(Theme.BORDER_DEFAULT)};
+            }}
+            QPushButton#btn1 {{
+                background-color: {Theme.to_hex(Theme.SUCCESS)};
+                border-color: {Theme.to_hex(Theme.GREEN_SOFT)};
+            }}
+            QPushButton#btn2 {{
+                background-color: {Theme.to_hex(Theme.INFO)};
+                border-color: {Theme.to_hex(Theme.BLUE_SOFT)};
+            }}
+            QPushButton#btn3 {{
+                background-color: {Theme.to_hex(Theme.WARNING)};
+                border-color: {Theme.to_hex(Theme.ORANGE_SOFT)};
+            }}
+            QPushButton:hover {{
+                border-color: {Theme.to_hex(Theme.TEXT_PRIMARY)};
+            }}
         """)
 
         self._build_ui()

@@ -4,7 +4,8 @@ from PyQt6.QtWidgets import (
     QSpacerItem, QSizePolicy, QFrame, QWidget
 )
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QFont, QColor, QPalette
+from PyQt6.QtGui import QFont, QColor, QPalette, QLinearGradient, QPainter
+from src.config.theme import Theme
 
 class CalibrationSummaryDialog(QDialog):
     # Return codes
@@ -21,93 +22,51 @@ class CalibrationSummaryDialog(QDialog):
         
         self.setWindowTitle("Resumen de Calibración")
         self.setMinimumSize(900, 700)
-        self.setStyleSheet("""
-            QDialog {
-                background-color: #2b2b2b;
-                color: #ffffff;
-            }
-            QLabel {
-                color: #ffffff;
-                font-size: 14px;
-            }
-            QLabel.title {
-                color: #00C8FF;
-                font-size: 28px;
-                font-weight: bold;
-            }
-            QLabel.subtitle {
-                color: #cccccc;
-                font-size: 14px;
-            }
-            QLabel.section-title {
-                color: #00C8FF;
-                font-size: 20px;
-                font-weight: bold;
-                margin-top: 10px;
-            }
-            QLabel.label-key {
-                color: #aaaaff;
-                font-size: 16px;
-                font-weight: bold;
-            }
-            QLabel.label-value {
-                color: #ffffff;
-                font-size: 16px;
-            }
-            QLabel.status-ok {
-                color: #00ff00;
-                font-weight: bold;
-            }
-            QLabel.status-warn {
-                color: #ffaa00;
-                font-weight: bold;
-            }
-            QFrame.separator {
-                background-color: #444444;
-                max-height: 2px;
-            }
-            QFrame.box {
-                border: 1px solid #00C8FF;
-                border-radius: 5px;
-                background-color: #3b3b3b;
-                padding: 10px;
-            }
-            QPushButton {
-                background-color: #00C8FF;
-                color: #000000;
-                border: none;
-                padding: 12px 20px;
-                font-size: 16px;
-                font-weight: bold;
-                border-radius: 4px;
-            }
-            QPushButton:hover {
-                background-color: #33D6FF;
-            }
-            QPushButton#btn-exit {
-                background-color: #555555;
-                color: #ffffff;
-            }
-            QPushButton#btn-exit:hover {
-                background-color: #777777;
-            }
-        """)
         
         self._build_ui()
+    
+    def paintEvent(self, event):
+        """Dibuja el fondo con gradiente del tema"""
+        painter = QPainter(self)
+        
+        grad_start = QColor(Theme.to_hex(Theme.BG_GRADIENT_START))
+        grad_end = QColor(Theme.to_hex(Theme.BG_GRADIENT_END))
+        
+        gradient = QLinearGradient(0, 0, 0, self.height())
+        gradient.setColorAt(0, grad_start)
+        gradient.setColorAt(1, grad_end)
+        painter.fillRect(self.rect(), gradient)
 
     def _build_ui(self):
         main_layout = QVBoxLayout()
         main_layout.setContentsMargins(40, 30, 40, 30)
         main_layout.setSpacing(15)
         
+        # Colors from theme
+        text_color = Theme.to_hex(Theme.TEXT_PRIMARY)
+        highlight_color = Theme.to_hex(Theme.TEXT_HIGHLIGHT)
+        success_color = Theme.to_hex(Theme.SUCCESS)
+        warning_color = Theme.to_hex(Theme.WARNING)
+        muted_color = Theme.to_hex(Theme.TEXT_SECONDARY)
+        
         # Header
         header_layout = QVBoxLayout()
         title = QLabel("CALIBRACIÓN COMPLETA")
-        title.setProperty("class", "title")
+        title.setStyleSheet(f"""
+            color: {highlight_color};
+            font-size: 28px;
+            font-weight: bold;
+            font-family: 'Comic Sans MS', 'Arial';
+            background: transparent;
+        """)
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         
         subtitle = QLabel(f"Fecha: {self.summary.get('fecha', 'N/A')}   |   Versión: {self.summary.get('version', '2.0')}")
-        subtitle.setProperty("class", "subtitle")
+        subtitle.setStyleSheet(f"""
+            color: {muted_color};
+            font-size: 14px;
+            background: transparent;
+        """)
         subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
         
         header_layout.addWidget(title)
@@ -118,7 +77,14 @@ class CalibrationSummaryDialog(QDialog):
         
         # Phase 1 Section
         lbl_p1 = QLabel("FASE 1: CALIBRACIÓN INDIVIDUAL")
-        lbl_p1.setProperty("class", "section-title")
+        lbl_p1.setStyleSheet(f"""
+            color: {highlight_color};
+            font-size: 20px;
+            font-weight: bold;
+            font-family: 'Comic Sans MS', 'Arial';
+            margin-top: 10px;
+            background: transparent;
+        """)
         main_layout.addWidget(lbl_p1)
         
         p1_layout = QVBoxLayout()
@@ -126,19 +92,27 @@ class CalibrationSummaryDialog(QDialog):
         
         # Left Camera
         row_left = QHBoxLayout()
-        row_left.addWidget(QLabel("Cámara IZQUIERDA:"))
+        lbl_left = QLabel("Cámara IZQUIERDA:")
+        lbl_left.setStyleSheet(f"color: {text_color}; font-size: 14px; background: transparent;")
+        row_left.addWidget(lbl_left)
         err_left = self.summary.get('error_left', 'N/A')
         val_left = f"{err_left:.6f} px" if isinstance(err_left, float) else str(err_left)
-        row_left.addWidget(QLabel(val_left))
+        lbl_val_left = QLabel(val_left)
+        lbl_val_left.setStyleSheet(f"color: {text_color}; font-size: 14px; background: transparent;")
+        row_left.addWidget(lbl_val_left)
         row_left.addStretch()
         p1_layout.addLayout(row_left)
         
         # Right Camera
         row_right = QHBoxLayout()
-        row_right.addWidget(QLabel("Cámara DERECHA:"))
+        lbl_right = QLabel("Cámara DERECHA:")
+        lbl_right.setStyleSheet(f"color: {text_color}; font-size: 14px; background: transparent;")
+        row_right.addWidget(lbl_right)
         err_right = self.summary.get('error_right', 'N/A')
         val_right = f"{err_right:.6f} px" if isinstance(err_right, float) else str(err_right)
-        row_right.addWidget(QLabel(val_right))
+        lbl_val_right = QLabel(val_right)
+        lbl_val_right.setStyleSheet(f"color: {text_color}; font-size: 14px; background: transparent;")
+        row_right.addWidget(lbl_val_right)
         row_right.addStretch()
         p1_layout.addLayout(row_right)
         
@@ -148,35 +122,48 @@ class CalibrationSummaryDialog(QDialog):
         
         # Phase 2 Section
         lbl_p2 = QLabel("FASE 2: CALIBRACIÓN ESTÉREO")
-        lbl_p2.setProperty("class", "section-title")
+        lbl_p2.setStyleSheet(f"""
+            color: {highlight_color};
+            font-size: 20px;
+            font-weight: bold;
+            font-family: 'Comic Sans MS', 'Arial';
+            margin-top: 10px;
+            background: transparent;
+        """)
         main_layout.addWidget(lbl_p2)
         
         p2_layout = QVBoxLayout()
         
         # Baseline
         row_base = QHBoxLayout()
-        row_base.addWidget(QLabel("Baseline (distancia):"))
+        lbl_base_title = QLabel("Baseline (distancia):")
+        lbl_base_title.setStyleSheet(f"color: {text_color}; font-size: 14px; background: transparent;")
+        row_base.addWidget(lbl_base_title)
         base_val = self.summary.get('baseline_cm', 'N/A')
         val_base = f"{base_val:.2f} cm" if isinstance(base_val, float) else str(base_val)
         lbl_base = QLabel(val_base)
-        lbl_base.setStyleSheet("color: #00C8FF; font-weight: bold; font-size: 18px;")
+        lbl_base.setStyleSheet(f"color: {highlight_color}; font-weight: bold; font-size: 18px; background: transparent;")
         row_base.addWidget(lbl_base)
         row_base.addStretch()
         p2_layout.addLayout(row_base)
         
         # RMS Error
         row_rms = QHBoxLayout()
-        row_rms.addWidget(QLabel("Error RMS:"))
+        lbl_rms_title = QLabel("Error RMS:")
+        lbl_rms_title.setStyleSheet(f"color: {text_color}; font-size: 14px; background: transparent;")
+        row_rms.addWidget(lbl_rms_title)
         rms_val = self.summary.get('error_stereo', 'N/A')
         val_rms = f"{rms_val:.4f}" if isinstance(rms_val, float) else str(rms_val)
-        row_rms.addWidget(QLabel(val_rms))
+        lbl_rms = QLabel(val_rms)
+        lbl_rms.setStyleSheet(f"color: {text_color}; font-size: 14px; background: transparent;")
+        row_rms.addWidget(lbl_rms)
         
         # Quality indicator
         if isinstance(rms_val, float):
             quality = "EXCELENTE" if rms_val < 0.3 else "BUENA" if rms_val < 0.5 else "REGULAR" if rms_val < 1.0 else "MALA"
-            color = "#00ff00" if rms_val < 0.5 else "#ffff00" if rms_val < 1.0 else "#ff0000"
+            color = success_color if rms_val < 0.5 else warning_color if rms_val < 1.0 else Theme.to_hex(Theme.ERROR)
             lbl_qual = QLabel(quality)
-            lbl_qual.setStyleSheet(f"color: {color}; font-weight: bold; margin-left: 20px;")
+            lbl_qual.setStyleSheet(f"color: {color}; font-weight: bold; margin-left: 20px; background: transparent;")
             row_rms.addWidget(lbl_qual)
             
         row_rms.addStretch()
@@ -188,14 +175,23 @@ class CalibrationSummaryDialog(QDialog):
         
         # Phase 3 Section (NEW)
         lbl_p3 = QLabel("FASE 3: PROFUNDIDAD")
-        lbl_p3.setProperty("class", "section-title")
+        lbl_p3.setStyleSheet(f"""
+            color: {success_color};
+            font-size: 20px;
+            font-weight: bold;
+            font-family: 'Comic Sans MS', 'Arial';
+            margin-top: 10px;
+            background: transparent;
+        """)
         main_layout.addWidget(lbl_p3)
         
         p3_layout = QVBoxLayout()
         
         # Distancia del teclado calibrada
         row_distance = QHBoxLayout()
-        row_distance.addWidget(QLabel("Distancia del Teclado:"))
+        lbl_dist_title = QLabel("Distancia del Teclado:")
+        lbl_dist_title.setStyleSheet(f"color: {text_color}; font-size: 14px; background: transparent;")
+        row_distance.addWidget(lbl_dist_title)
         
         keyboard_dist = self.summary.get('keyboard_distance_cm', 'N/A')
         keyboard_samples = self.summary.get('keyboard_samples', 'N/A')
@@ -203,17 +199,17 @@ class CalibrationSummaryDialog(QDialog):
         if isinstance(keyboard_dist, (int, float)):
             val_dist = f"{keyboard_dist:.2f} cm"
             lbl_dist = QLabel(val_dist)
-            lbl_dist.setStyleSheet("color: #00ff00; font-weight: bold; font-size: 16px;")
+            lbl_dist.setStyleSheet(f"color: {success_color}; font-weight: bold; font-size: 16px; background: transparent;")
         else:
             lbl_dist = QLabel("N/A")
-            lbl_dist.setStyleSheet("color: #ffaa00; font-weight: bold; font-size: 16px;")
+            lbl_dist.setStyleSheet(f"color: {warning_color}; font-weight: bold; font-size: 16px; background: transparent;")
         
         row_distance.addWidget(lbl_dist)
         
         # Muestras usadas
         if isinstance(keyboard_samples, int) and keyboard_samples > 0:
             lbl_samples = QLabel(f"({keyboard_samples} muestras)")
-            lbl_samples.setStyleSheet("color: #aaaaaa; font-size: 14px;")
+            lbl_samples.setStyleSheet(f"color: {muted_color}; font-size: 14px; background: transparent;")
             row_distance.addWidget(lbl_samples)
         
         row_distance.addStretch()
@@ -223,9 +219,11 @@ class CalibrationSummaryDialog(QDialog):
         correction_factor = self.summary.get('correction_factor', None)
         if correction_factor is not None and correction_factor != 1.0:
             row_factor = QHBoxLayout()
-            row_factor.addWidget(QLabel("Factor de Correccion:"))
+            lbl_factor_title = QLabel("Factor de Correccion:")
+            lbl_factor_title.setStyleSheet(f"color: {text_color}; font-size: 14px; background: transparent;")
+            row_factor.addWidget(lbl_factor_title)
             lbl_factor = QLabel(f"{correction_factor:.4f}")
-            lbl_factor.setStyleSheet("color: #00C8FF; font-weight: bold; font-size: 16px;")
+            lbl_factor.setStyleSheet(f"color: {highlight_color}; font-weight: bold; font-size: 16px; background: transparent;")
             row_factor.addWidget(lbl_factor)
             row_factor.addStretch()
             p3_layout.addLayout(row_factor)
@@ -237,42 +235,48 @@ class CalibrationSummaryDialog(QDialog):
         
         if real_dist is not None and measured_dist is not None:
             row_comparison = QHBoxLayout()
-            row_comparison.addWidget(QLabel("Medicion del Sistema:"))
+            lbl_meas = QLabel("Medicion del Sistema:")
+            lbl_meas.setStyleSheet(f"color: {text_color}; font-size: 14px; background: transparent;")
+            row_comparison.addWidget(lbl_meas)
             lbl_measured = QLabel(f"{measured_dist:.2f} cm")
-            lbl_measured.setStyleSheet("color: #aaaaaa; font-size: 14px;")
+            lbl_measured.setStyleSheet(f"color: {muted_color}; font-size: 14px; background: transparent;")
             row_comparison.addWidget(lbl_measured)
             
-            row_comparison.addWidget(QLabel("  vs  Distancia Real:"))
+            lbl_vs = QLabel("  vs  Distancia Real:")
+            lbl_vs.setStyleSheet(f"color: {text_color}; font-size: 14px; background: transparent;")
+            row_comparison.addWidget(lbl_vs)
             lbl_real = QLabel(f"{real_dist:.2f} cm")
-            lbl_real.setStyleSheet("color: #00C8FF; font-size: 14px;")
+            lbl_real.setStyleSheet(f"color: {highlight_color}; font-size: 14px; background: transparent;")
             row_comparison.addWidget(lbl_real)
             row_comparison.addStretch()
             p3_layout.addLayout(row_comparison)
             
             if error_percent is not None:
                 row_error = QHBoxLayout()
-                row_error.addWidget(QLabel("Error de Medicion:"))
+                lbl_err_title = QLabel("Error de Medicion:")
+                lbl_err_title.setStyleSheet(f"color: {text_color}; font-size: 14px; background: transparent;")
+                row_error.addWidget(lbl_err_title)
                 
                 # Color según el error
                 if error_percent < 5:
-                    error_color = "#00ff00"  # Verde - excelente
+                    error_color = success_color  # Verde - excelente
                     quality = "EXCELENTE"
                 elif error_percent < 10:
-                    error_color = "#ffff00"  # Amarillo - bueno
+                    error_color = warning_color  # Amarillo - bueno
                     quality = "BUENO"
                 elif error_percent < 20:
-                    error_color = "#ffaa00"  # Naranja - regular
+                    error_color = Theme.to_hex(Theme.ORANGE_VIVID)  # Naranja - regular
                     quality = "REGULAR"
                 else:
-                    error_color = "#ff0000"  # Rojo - malo
+                    error_color = Theme.to_hex(Theme.ERROR)  # Rojo - malo
                     quality = "ALTO"
                 
                 lbl_error = QLabel(f"{error_percent:.1f}%")
-                lbl_error.setStyleSheet(f"color: {error_color}; font-weight: bold; font-size: 16px;")
+                lbl_error.setStyleSheet(f"color: {error_color}; font-weight: bold; font-size: 16px; background: transparent;")
                 row_error.addWidget(lbl_error)
                 
                 lbl_quality = QLabel(f"({quality})")
-                lbl_quality.setStyleSheet(f"color: {error_color}; font-size: 14px; margin-left: 10px;")
+                lbl_quality.setStyleSheet(f"color: {error_color}; font-size: 14px; margin-left: 10px; background: transparent;")
                 row_error.addWidget(lbl_quality)
                 
                 row_error.addStretch()
@@ -284,17 +288,25 @@ class CalibrationSummaryDialog(QDialog):
         
         # Warning Box
         warn_frame = QFrame()
-        warn_frame.setProperty("class", "box")
+        warn_frame.setStyleSheet(f"""
+            QFrame {{
+                border: 2px solid {highlight_color};
+                border-radius: 10px;
+                background-color: rgba(255,255,255,0.9);
+                padding: 10px;
+            }}
+        """)
         warn_layout = QVBoxLayout(warn_frame)
         
         lbl_warn_title = QLabel("ESTA CALIBRACIÓN ES VÁLIDA PARA:")
-        lbl_warn_title.setStyleSheet("color: #00C8FF; font-weight: bold;")
+        lbl_warn_title.setStyleSheet(f"color: {highlight_color}; font-weight: bold; background: transparent;")
         lbl_warn_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         
         lbl_warn1 = QLabel("- La misma ubicación física de las cámaras")
+        lbl_warn1.setStyleSheet(f"color: {text_color}; background: transparent;")
         lbl_warn1.setAlignment(Qt.AlignmentFlag.AlignCenter)
         lbl_warn2 = QLabel("- Si moviste las cámaras, RE-CALIBRA")
-        lbl_warn2.setStyleSheet("color: #ffaa00;")
+        lbl_warn2.setStyleSheet(f"color: {Theme.to_hex(Theme.ORANGE_VIVID)}; font-weight: bold; background: transparent;")
         lbl_warn2.setAlignment(Qt.AlignmentFlag.AlignCenter)
         
         warn_layout.addWidget(lbl_warn_title)
@@ -309,12 +321,40 @@ class CalibrationSummaryDialog(QDialog):
         btn_layout = QVBoxLayout()
         
         btn_recalibrate = QPushButton("RE-CALIBRAR")
-        btn_recalibrate.setObjectName("btn-all")
+        btn_recalibrate.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {highlight_color};
+                color: #FFFFFF;
+                border: 3px solid #FFFFFF;
+                padding: 12px 20px;
+                font-size: 16px;
+                font-weight: bold;
+                border-radius: 20px;
+                font-family: 'Comic Sans MS', 'Arial';
+            }}
+            QPushButton:hover {{
+                background-color: {Theme.to_hex(Theme.SELECTION_BG)};
+            }}
+        """)
         btn_recalibrate.clicked.connect(lambda: self._finish(self.ACTION_RECALIBRATE_ALL))
         btn_layout.addWidget(btn_recalibrate)
         
         btn_exit = QPushButton("VOLVER")
-        btn_exit.setObjectName("btn-exit")
+        btn_exit.setStyleSheet(f"""
+            QPushButton {{
+                background-color: rgba(255,255,255,0.3);
+                color: {text_color};
+                border: 2px solid {Theme.to_hex(Theme.BORDER_DEFAULT)};
+                padding: 12px 20px;
+                font-size: 16px;
+                font-weight: bold;
+                border-radius: 20px;
+                font-family: 'Comic Sans MS', 'Arial';
+            }}
+            QPushButton:hover {{
+                background-color: rgba(255,255,255,0.5);
+            }}
+        """)
         btn_exit.clicked.connect(lambda: self._finish(self.ACTION_EXIT))
         btn_layout.addWidget(btn_exit)
         
@@ -326,7 +366,7 @@ class CalibrationSummaryDialog(QDialog):
         line = QFrame()
         line.setFrameShape(QFrame.Shape.HLine)
         line.setFrameShadow(QFrame.Shadow.Sunken)
-        line.setProperty("class", "separator")
+        line.setStyleSheet(f"background-color: {Theme.to_hex(Theme.BORDER_DEFAULT)}; max-height: 2px;")
         layout.addWidget(line)
 
     def _finish(self, action):

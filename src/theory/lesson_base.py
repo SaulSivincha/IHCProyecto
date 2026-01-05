@@ -8,6 +8,7 @@ Cada lección debe heredar de BaseLesson e implementar run()
 from abc import ABC, abstractmethod
 import cv2
 import numpy as np
+from src.config.theme import Theme
 
 
 class BaseLesson(ABC):
@@ -90,16 +91,16 @@ class BaseLesson(ABC):
         
         # Fondo semi-transparente para header
         overlay = frame.copy()
-        cv2.rectangle(overlay, (0, 0), (w, 60), (40, 40, 40), -1)
+        cv2.rectangle(overlay, (0, 0), (w, 60), Theme.BG_HEADER, -1)
         cv2.addWeighted(overlay, 0.7, frame, 0.3, 0, frame)
         
         # Título
         cv2.putText(frame, title_text, (10, 35),
-                   cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2, cv2.LINE_AA)
+                   cv2.FONT_HERSHEY_SIMPLEX, 1.0, Theme.TEXT_PRIMARY, 2, cv2.LINE_AA)
         
         # Controles
         cv2.putText(frame, "ESC: Volver | Q: Salir", (w - 300, 35),
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 200, 200), 1, cv2.LINE_AA)
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, Theme.TEXT_SECONDARY, 1, cv2.LINE_AA)
         
         return frame
     
@@ -115,7 +116,7 @@ class BaseLesson(ABC):
         for i, instruction in enumerate(instructions):
             y = y_start + (i * 30)
             cv2.putText(frame, instruction, (20, y),
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1, cv2.LINE_AA)
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, Theme.TEXT_PRIMARY, 1, cv2.LINE_AA)
         
         return frame
     
@@ -131,18 +132,18 @@ class BaseLesson(ABC):
             width, height: Dimensiones
         """
         # Fondo
-        cv2.rectangle(frame, (x, y), (x + width, y + height), (50, 50, 50), -1)
+        cv2.rectangle(frame, (x, y), (x + width, y + height), Theme.PROGRESS_BG, -1)
         
         # Progreso
         progress_width = int((current / total) * width) if total > 0 else 0
-        cv2.rectangle(frame, (x, y), (x + progress_width, y + height), (0, 200, 0), -1)
+        cv2.rectangle(frame, (x, y), (x + progress_width, y + height), Theme.PROGRESS_FILL, -1)
         
         # Borde
-        cv2.rectangle(frame, (x, y), (x + width, y + height), (200, 200, 200), 2)
+        cv2.rectangle(frame, (x, y), (x + width, y + height), Theme.PROGRESS_BORDER, 2)
         
         # Texto
         text = f"{current}/{total}"
         cv2.putText(frame, text, (x + width + 10, y + 15),
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, Theme.TEXT_PRIMARY, 1, cv2.LINE_AA)
         
         return frame

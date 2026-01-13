@@ -248,12 +248,12 @@ class SongWindow(QMainWindow):
                 background-color: {Theme.to_hex(Theme.LIGHT_GRAY)};
             }}
             QPushButton#exit {{
-                background-color: {Theme.to_hex(Theme.BTN_DANGER_BG)};
-                color: {Theme.to_hex(Theme.BTN_DANGER_TEXT)};
+                background-color: {Theme.to_hex(Theme.BTN_PRIMARY_BG)};
+                color: {Theme.to_hex(Theme.BTN_PRIMARY_TEXT)};
                 border: 2px solid {Theme.to_hex(Theme.BORDER_DEFAULT)};
             }}
             QPushButton#exit:hover {{
-                background-color: {Theme.to_hex(Theme.RED_VIVID)};
+                background-color: {Theme.to_hex(Theme.ORANGE_VIVID)};
             }}
             QProgressBar {{
                 border: 2px solid {Theme.to_hex(Theme.BORDER_DEFAULT)};

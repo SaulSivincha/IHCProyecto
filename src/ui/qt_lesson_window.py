@@ -11,12 +11,57 @@ import numpy as np
 from typing import Optional
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QLabel, QPushButton, QProgressBar, QTextEdit, QGridLayout, QFrame
+    QLabel, QPushButton, QProgressBar, QTextEdit, QTextBrowser, QGridLayout, QFrame, QDialog
 )
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QImage, QPixmap, QFont, QLinearGradient, QPainter, QColor
 from src.piano.keyboard_processor import KeyboardProcessor
 from src.config.theme import Theme
+
+class GlossaryPopup(QDialog):
+    """Diálogo personalizado silencioso para definiciones"""
+    def __init__(self, title, content, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        self.setFixedWidth(400)
+        self.setStyleSheet(f"""
+            QDialog {{
+                background-color: #FFFFFF;
+                border: 2px solid {Theme.to_hex(Theme.BORDER_DEFAULT)};
+                border-radius: 10px;
+            }}
+            QLabel {{
+                color: {Theme.to_hex(Theme.TEXT_PRIMARY)};
+                font-family: 'Comic Sans MS', 'Arial';
+                font-size: 16px;
+                padding: 10px;
+            }}
+            QPushButton {{
+                background-color: {Theme.to_hex(Theme.BTN_PRIMARY_BG)};
+                color: {Theme.to_hex(Theme.BTN_PRIMARY_TEXT)};
+                border-radius: 15px;
+                padding: 8px 20px;
+                font-weight: bold;
+                border: 1px solid {Theme.to_hex(Theme.BORDER_DEFAULT)};
+            }}
+            QPushButton:hover {{
+                background-color: {Theme.to_hex(Theme.ORANGE_VIVID)};
+            }}
+        """)
+        
+        layout = QVBoxLayout()
+        layout.setSpacing(20)
+        layout.setContentsMargins(20, 20, 20, 20)
+        
+        lbl = QLabel(content)
+        lbl.setWordWrap(True)
+        layout.addWidget(lbl)
+        
+        btn_close = QPushButton("Entendido")
+        btn_close.clicked.connect(self.accept)
+        layout.addWidget(btn_close, 0, Qt.AlignmentFlag.AlignCenter)
+        
+        self.setLayout(layout)
 
 class LessonWindow(QMainWindow):
     """
@@ -85,7 +130,7 @@ class LessonWindow(QMainWindow):
                 padding: 3px;
                 background-color: transparent;
             }}
-            QTextEdit {{
+            QTextEdit, QTextBrowser {{
                 background-color: rgba(255, 255, 255, 0.9);
                 color: {Theme.to_hex(Theme.TEXT_PRIMARY)};
                 border: 2px solid {Theme.to_hex(Theme.BORDER_DEFAULT)};
@@ -108,12 +153,12 @@ class LessonWindow(QMainWindow):
                 background-color: {Theme.to_hex(Theme.BLUE_VIVID)};
             }}
             QPushButton#exitButton {{
-                background-color: {Theme.to_hex(Theme.BTN_DANGER_BG)};
+                background-color: {Theme.to_hex(Theme.BTN_PRIMARY_BG)};
                 border: 2px solid {Theme.to_hex(Theme.BORDER_DEFAULT)};
-                color: {Theme.to_hex(Theme.BTN_DANGER_TEXT)};
+                color: {Theme.to_hex(Theme.BTN_PRIMARY_TEXT)};
             }}
             QPushButton#exitButton:hover {{
-                background-color: {Theme.to_hex(Theme.RED_VIVID)};
+                background-color: {Theme.to_hex(Theme.ORANGE_VIVID)};
             }}
             QProgressBar {{
                 border: 2px solid {Theme.to_hex(Theme.BORDER_DEFAULT)};
@@ -211,10 +256,13 @@ class LessonWindow(QMainWindow):
         desc_label.setObjectName("subtitle")
         info_panel.addWidget(desc_label)
         
-        self.description_text = QTextEdit()
+        self.description_text = QTextBrowser()
         self.description_text.setReadOnly(True)
+        self.description_text.setOpenExternalLinks(False)
+        self.description_text.setOpenLinks(False)
+        self.description_text.anchorClicked.connect(self._on_link_clicked)
         self.description_text.setMaximumHeight(80)
-        self.description_text.setText(self.lesson.description)
+        self.description_text.setHtml(self.lesson.description)
         # EVITAR QUE ROBE FOCO (ESPACIO)
         self.description_text.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         info_panel.addWidget(self.description_text)
@@ -257,6 +305,23 @@ class LessonWindow(QMainWindow):
         self.exit_button = QPushButton("SALIR DE LA LECCIÓN")
         self.exit_button.setObjectName("exitButton")
         self.exit_button.clicked.connect(self._exit_lesson)
+        # ESTILO EXPLÍCITO para asegurar visibilidad
+        self.exit_button.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {Theme.to_hex(Theme.BTN_PRIMARY_BG)};
+                color: {Theme.to_hex(Theme.BTN_PRIMARY_TEXT)};
+                font-family: 'Comic Sans MS', 'Arial';
+                font-size: 14px;
+                font-weight: bold;
+                padding: 10px 20px;
+                border: 2px solid {Theme.to_hex(Theme.BORDER_DEFAULT)};
+                border-radius: 15px;
+            }}
+            QPushButton:hover {{
+                background-color: {Theme.to_hex(Theme.ORANGE_VIVID)};
+                color: #FFFFFF;
+            }}
+        """)
         # EVITAR QUE ROBE FOCO
         self.exit_button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         button_layout.addWidget(self.exit_button)
@@ -387,6 +452,18 @@ class LessonWindow(QMainWindow):
         
         self.close()
     
+    def _on_link_clicked(self, url):
+        """Maneja clics en enlaces del glosario"""
+        term = url.fileName()
+        
+        # Buscar definición en el glosario de la lección
+        glossary = getattr(self.lesson, 'glossary', {})
+        definition = glossary.get(term, "Definición no encontrada.")
+        
+        # Usar diálogo personalizado silencioso
+        popup = GlossaryPopup(f"¿Qué es '{term}'?", definition, self)
+        popup.exec()
+
     def keyPressEvent(self, event):
         """Maneja eventos de teclado"""
         key = event.key()

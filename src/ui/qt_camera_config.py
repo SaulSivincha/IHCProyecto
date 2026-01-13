@@ -144,24 +144,35 @@ class CameraConfigDialog(QDialog):
                 font-family: 'Comic Sans MS', 'Arial';
             }}
             QPushButton:hover {{
-                background-color: {Theme.to_hex(Theme.BLUE_VIVID)};
+                background-color: {Theme.to_hex(Theme.ORANGE_VIVID)};
+            }}
+            QPushButton:pressed {{
+                background-color: {Theme.to_hex(Theme.ORANGE_VIVID)};
+                border-color: {Theme.to_hex(Theme.BLUE_VIVID)};
             }}
             QPushButton#cancelButton {{
-                background-color: {Theme.to_hex(Theme.BTN_SECONDARY_BG)};
-                color: {Theme.to_hex(Theme.BTN_SECONDARY_TEXT)};
+                background-color: {Theme.to_hex(Theme.BTN_DANGER_BG)};
+                color: {Theme.to_hex(Theme.BTN_DANGER_TEXT)};
                 border: 2px solid {Theme.to_hex(Theme.BORDER_DEFAULT)};
             }}
             QPushButton#cancelButton:hover {{
-                background-color: {Theme.to_hex(Theme.LIGHT_GRAY)};
+                background-color: {Theme.to_hex(Theme.RED_VIVID)};
+            }}
+            QPushButton#cancelButton:pressed {{
+                background-color: #8B0000;
             }}
             QPushButton#swapButton {{
-                background-color: {Theme.to_hex(Theme.BTN_WARNING_BG)};
-                color: {Theme.to_hex(Theme.BTN_WARNING_TEXT)};
+                background-color: {Theme.to_hex(Theme.BTN_PRIMARY_BG)};
+                color: {Theme.to_hex(Theme.BTN_PRIMARY_TEXT)};
                 padding: 8px 16px;
                 border-radius: 18px;
             }}
             QPushButton#swapButton:hover {{
                 background-color: {Theme.to_hex(Theme.ORANGE_VIVID)};
+            }}
+            QPushButton#swapButton:pressed {{
+                background-color: {Theme.to_hex(Theme.ORANGE_VIVID)};
+                border-color: {Theme.to_hex(Theme.BLUE_VIVID)};
             }}
             QPushButton#photoButton {{
                 background-color: {Theme.to_hex(Theme.BTN_SUCCESS_BG)};
@@ -172,6 +183,9 @@ class CameraConfigDialog(QDialog):
             }}
             QPushButton#photoButton:hover {{
                 background-color: {Theme.to_hex(Theme.GREEN_VIVID)};
+            }}
+            QPushButton#photoButton:pressed {{
+                background-color: #2E7D32;
             }}
         """)
     
@@ -309,6 +323,9 @@ class CameraConfigDialog(QDialog):
             QPushButton:hover {{
                 background-color: {Theme.to_hex(Theme.RED_VIVID)};
             }}
+            QPushButton:pressed {{
+                background-color: #8B0000;
+            }}
         """)
         buttons_layout.addWidget(self.cancel_btn)
         
@@ -319,8 +336,8 @@ class CameraConfigDialog(QDialog):
         self.save_btn.clicked.connect(self._save_and_close)
         self.save_btn.setStyleSheet(f"""
             QPushButton {{
-                background-color: {Theme.to_hex(Theme.BTN_SUCCESS_BG)};
-                color: {Theme.to_hex(Theme.BTN_SUCCESS_TEXT)};
+                background-color: {Theme.to_hex(Theme.BTN_PRIMARY_BG)};
+                color: {Theme.to_hex(Theme.BTN_PRIMARY_TEXT)};
                 border: 2px solid {Theme.to_hex(Theme.BORDER_DEFAULT)};
                 padding: 10px 20px;
                 border-radius: 15px;
@@ -328,7 +345,11 @@ class CameraConfigDialog(QDialog):
                 font-weight: bold;
             }}
             QPushButton:hover {{
-                background-color: {Theme.to_hex(Theme.GREEN_VIVID)};
+                background-color: {Theme.to_hex(Theme.ORANGE_VIVID)};
+            }}
+            QPushButton:pressed {{
+                background-color: {Theme.to_hex(Theme.ORANGE_VIVID)};
+                border-color: {Theme.to_hex(Theme.BLUE_VIVID)};
             }}
         """)
         buttons_layout.addWidget(self.save_btn)

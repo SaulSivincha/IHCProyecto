@@ -55,8 +55,8 @@ class MainMenuDialog(QDialog):
                 font-family: 'Comic Sans MS', 'Arial';
             }}
             QPushButton {{
-                background-color: rgba(255, 255, 255, 0.2);
-                color: {Theme.to_hex(Theme.TEXT_ON_DARK)};
+                background-color: {Theme.to_hex(Theme.BTN_PRIMARY_BG)};
+                color: {Theme.to_hex(Theme.BTN_PRIMARY_TEXT)};
                 font-size: 22px;
                 font-weight: bold;
                 border: 2px solid {Theme.to_hex(Theme.BORDER_DEFAULT)};
@@ -67,9 +67,7 @@ class MainMenuDialog(QDialog):
                 margin: 4px;
             }}
             QPushButton:hover {{
-                background-color: {Theme.to_hex(Theme.SELECTION_BG)};
-                color: #FFFFFF;
-                border: 2px solid #FFFFFF;
+                background-color: {Theme.to_hex(Theme.ORANGE_VIVID)};
             }}
             QPushButton:pressed {{
                 background-color: {Theme.to_hex(Theme.SUCCESS)};
@@ -298,21 +296,7 @@ class MainMenuDialog(QDialog):
                 # Highlight explícito
                 btn.setStyleSheet(f"""
                     background-color: {Theme.to_hex(Theme.SELECTION_BG)};
-                    color: #FFFFFF;
-                    border: 2px solid #FFFFFF;
-                    border-radius: 12px;
-                    padding: 10px 20px;
-                    text-align: left;
-                    font-size: 22px;
-                    font-weight: bold;
-                    font-family: 'Comic Sans MS', 'Arial';
-                """)
-            else:
-                btn.setText("   " + text_clean)
-                # Estilo normal
-                btn.setStyleSheet(f"""
-                    background-color: rgba(255, 255, 255, 0.2);
-                    color: {Theme.to_hex(Theme.TEXT_ON_DARK)};
+                    color: {Theme.to_hex(Theme.BTN_PRIMARY_TEXT)};
                     border: 2px solid {Theme.to_hex(Theme.BORDER_DEFAULT)};
                     border-radius: 12px;
                     padding: 10px 20px;
@@ -320,7 +304,27 @@ class MainMenuDialog(QDialog):
                     font-size: 22px;
                     font-weight: bold;
                     font-family: 'Comic Sans MS', 'Arial';
-                """)
+                }}
+                QPushButton:hover {{
+                    background-color: {Theme.to_hex(Theme.ORANGE_VIVID)};
+                }}""")
+            else:
+                btn.setText("   " + text_clean)
+                # Estilo normal - AHORA SOLIDO AZUL
+                btn.setStyleSheet(f"""
+                    background-color: {Theme.to_hex(Theme.BTN_PRIMARY_BG)};
+                    color: {Theme.to_hex(Theme.BTN_PRIMARY_TEXT)};
+                    border: 2px solid {Theme.to_hex(Theme.BORDER_DEFAULT)};
+                    border-radius: 12px;
+                    padding: 10px 20px;
+                    text-align: left;
+                    font-size: 22px;
+                    font-weight: bold;
+                    font-family: 'Comic Sans MS', 'Arial';
+                }}
+                QPushButton:hover {{
+                    background-color: {Theme.to_hex(Theme.ORANGE_VIVID)};
+                }}""")
 
     def keyPressEvent(self, event):
         if self._menu_state == "theory":

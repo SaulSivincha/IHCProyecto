@@ -70,7 +70,7 @@ class SongsMenuDialog(QDialog):
                 font-weight: bold;
             }}
             QPushButton:hover {{
-                background-color: {Theme.to_hex(Theme.BLUE_VIVID)};
+                background-color: {Theme.to_hex(Theme.ORANGE_VIVID)};
             }}
             QPushButton#playButton {{
                 background-color: {Theme.to_hex(Theme.BTN_SUCCESS_BG)};
@@ -81,25 +81,29 @@ class SongsMenuDialog(QDialog):
                 padding: 12px 30px;
             }}
             QPushButton#playButton:hover {{
-                background-color: {Theme.to_hex(Theme.GREEN_VIVID)};
+                background-color: #45e645;
             }}
             QPushButton#backButton {{
-                background-color: {Theme.to_hex(Theme.BTN_WARNING_BG)};
+                background-color: {Theme.to_hex(Theme.BTN_PRIMARY_BG)};
                 border: 2px solid {Theme.to_hex(Theme.BORDER_DEFAULT)};
-                color: {Theme.to_hex(Theme.BTN_SECONDARY_TEXT)};
+                color: {Theme.to_hex(Theme.BTN_PRIMARY_TEXT)};
             }}
             QPushButton#backButton:hover {{
                 background-color: {Theme.to_hex(Theme.ORANGE_VIVID)};
-                color: {Theme.to_hex(Theme.WHITE)};
+                color: #FFFFFF;
             }}
             QWidget#songCard {{
                 background-color: rgba(255, 255, 255, 0.6);
                 border: 2px solid {Theme.to_hex(Theme.BORDER_DEFAULT)};
                 border-radius: 12px;
             }}
+            QWidget#songCard:hover {{
+                background-color: rgba(255, 255, 255, 0.8);
+                border: 2px solid #9575CD;
+            }}
             QWidget#songCardSelected {{
-                background-color: rgba(255, 255, 255, 0.9);
-                border: 3px solid {Theme.to_hex(Theme.ORANGE_VIVID)};
+                background-color: rgba(209, 196, 233, 0.95);
+                border: 3px solid #673AB7;
                 border-radius: 12px;
             }}
         """)

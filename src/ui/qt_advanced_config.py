@@ -486,9 +486,9 @@ class AdvancedConfigDialog(QDialog):
         reset_btn.clicked.connect(self._reset_to_default)
         reset_btn.setStyleSheet(f"""
             QPushButton {{
-                background-color: {Theme.to_hex(Theme.BTN_WARNING_BG)};
-                color: {Theme.to_hex(Theme.BTN_SECONDARY_TEXT)};
-                border: 2px solid {Theme.to_hex(Theme.BTN_SECONDARY_BG)};
+                background-color: {Theme.to_hex(Theme.BTN_PRIMARY_BG)};
+                color: {Theme.to_hex(Theme.BTN_PRIMARY_TEXT)};
+                border: 2px solid {Theme.to_hex(Theme.BORDER_DEFAULT)};
                 padding: 10px 20px;
                 font-weight: bold;
                 border-radius: 15px;
@@ -498,6 +498,10 @@ class AdvancedConfigDialog(QDialog):
             QPushButton:hover {{
                 background-color: {Theme.to_hex(Theme.ORANGE_VIVID)};
                 color: #FFFFFF;
+            }}
+            QPushButton:pressed {{
+                background-color: {Theme.to_hex(Theme.ORANGE_VIVID)};
+                border-color: {Theme.to_hex(Theme.BLUE_VIVID)};
             }}
         """)
         preset_layout.addWidget(reset_btn)
@@ -544,8 +548,8 @@ class AdvancedConfigDialog(QDialog):
         close_btn.clicked.connect(self.accept)
         close_btn.setStyleSheet(f"""
             QPushButton {{
-                background-color: {Theme.to_hex(Theme.BTN_DANGER_BG)};
-                color: {Theme.to_hex(Theme.BTN_DANGER_TEXT)};
+                background-color: {Theme.to_hex(Theme.BTN_SUCCESS_BG)};
+                color: {Theme.to_hex(Theme.BTN_SUCCESS_TEXT)};
                 border: 3px solid {Theme.to_hex(Theme.BORDER_DEFAULT)};
                 padding: 10px 30px;
                 font-weight: bold;
@@ -554,7 +558,10 @@ class AdvancedConfigDialog(QDialog):
                 font-family: 'Comic Sans MS', 'Arial';
             }}
             QPushButton:hover {{
-                background-color: {Theme.to_hex(Theme.RED_VIVID)};
+                background-color: {Theme.to_hex(Theme.GREEN_VIVID)};
+            }}
+            QPushButton:pressed {{
+                background-color: #2E7D32;
             }}
         """)
         footer_layout.addWidget(close_btn)

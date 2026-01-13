@@ -72,11 +72,31 @@ class FreeModeWindow(QMainWindow):
                 font-size: 14px; 
                 border-radius: 5px;
             }}
-            QPushButton#ExitBtn {{
-                background-color: {Theme.to_hex(Theme.ERROR)}; color: #000; font-weight: bold;
-                border-radius: 4px; padding: 10px;
+            QPushButton {{
+                background-color: {Theme.to_hex(Theme.BTN_PRIMARY_BG)};
+                color: {Theme.to_hex(Theme.BTN_PRIMARY_TEXT)};
+                border: 2px solid {Theme.to_hex(Theme.BORDER_DEFAULT)};
+                border-radius: 10px;
+                padding: 10px 18px;
+                font-size: 14px;
+                font-weight: bold;
+                font-family: 'Comic Sans MS', 'Arial';
             }}
-            QPushButton#ExitBtn:hover {{ background-color: {Theme.to_hex(Theme.RED_SOFT)}; }}
+            QPushButton:hover {{ 
+                background-color: {Theme.to_hex(Theme.ORANGE_VIVID)}; 
+                color: #FFFFFF;
+            }}
+            QPushButton#ExitBtn {{
+                background-color: {Theme.to_hex(Theme.BTN_DANGER_BG)}; 
+                color: {Theme.to_hex(Theme.BTN_DANGER_TEXT)}; 
+                font-weight: bold;
+                border: 2px solid {Theme.to_hex(Theme.BORDER_DEFAULT)};
+                border-radius: 10px; 
+                padding: 10px 18px;
+            }}
+            QPushButton#ExitBtn:hover {{ 
+                background-color: {Theme.to_hex(Theme.RED_VIVID)}; 
+            }}
             QFrame#CameraContainer {{ border: 2px solid {Theme.to_hex(Theme.BORDER_DEFAULT)}; border-radius: 8px; background-color: #000; }}
         """)
         
@@ -149,17 +169,7 @@ class FreeModeWindow(QMainWindow):
         # 5. Botón Algoritmos
         info_layout.addStretch()
         btn_algo = QPushButton("ALGORITMOS")
-        btn_algo.setStyleSheet(f"""
-            QPushButton {{
-                background-color: {Theme.to_hex(Theme.WARNING)}; 
-                color: #000; 
-                font-weight: bold;
-                border-radius: 4px; 
-                padding: 10px;
-                font-size: 14px;
-            }}
-            QPushButton:hover {{ background-color: {Theme.to_hex(Theme.BLUE_SOFT)}; }}
-        """)
+        # Estilo heredado del stylesheet global
         btn_algo.clicked.connect(self._open_algorithm_config)
         info_layout.addWidget(btn_algo)
         

@@ -253,6 +253,9 @@ class CalibrationConfigDialog(QDialog):
             QPushButton:hover {{
                 background-color: {Theme.to_hex(Theme.RED_VIVID)};
             }}
+            QPushButton:pressed {{
+                background-color: #8B0000;
+            }}
         """)
         cancel_btn.clicked.connect(self.reject)
         cancel_btn.setAutoDefault(False)
@@ -260,8 +263,8 @@ class CalibrationConfigDialog(QDialog):
         accept_btn = QPushButton("Iniciar Calibración")
         accept_btn.setStyleSheet(f"""
             QPushButton {{
-                background-color: {highlight_color};
-                color: #FFFFFF;
+                background-color: {Theme.to_hex(Theme.BTN_PRIMARY_BG)};
+                color: {Theme.to_hex(Theme.BTN_PRIMARY_TEXT)};
                 border: 3px solid #FFFFFF;
                 padding: 10px 20px;
                 font-weight: bold;
@@ -269,7 +272,11 @@ class CalibrationConfigDialog(QDialog):
                 font-family: 'Comic Sans MS', 'Arial';
             }}
             QPushButton:hover {{
-                background-color: {Theme.to_hex(Theme.SELECTION_BG)};
+                background-color: {Theme.to_hex(Theme.ORANGE_VIVID)};
+            }}
+            QPushButton:pressed {{
+                background-color: {Theme.to_hex(Theme.ORANGE_VIVID)};
+                border-color: {Theme.to_hex(Theme.BLUE_VIVID)};
             }}
         """)
         accept_btn.clicked.connect(self.accept_values)

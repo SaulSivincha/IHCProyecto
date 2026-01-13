@@ -217,16 +217,18 @@ class TheoryMenuDialog(QDialog):
         exit_btn.setFixedSize(200, 50)
         exit_btn.setStyleSheet(f"""
             QPushButton {{
-                background-color: {Theme.to_hex(Theme.BTN_WARNING_BG)};
-                color: {Theme.to_hex(Theme.BTN_WARNING_TEXT)};
-                font-family: 'Comic Sans MS';
+                background-color: {Theme.to_hex(Theme.BTN_PRIMARY_BG)};
+                color: {Theme.to_hex(Theme.BTN_PRIMARY_TEXT)};
+                font-family: 'Comic Sans MS', 'Arial';
                 font-size: 16px;
                 font-weight: bold;
                 border-radius: 25px;
                 border: 3px solid {Theme.to_hex(Theme.BORDER_DEFAULT)};
+                padding: 10px 30px;
             }}
             QPushButton:hover {{
                 background-color: {Theme.to_hex(Theme.ORANGE_VIVID)};
+                color: #FFFFFF;
             }}
         """)
         exit_btn.clicked.connect(self.reject)

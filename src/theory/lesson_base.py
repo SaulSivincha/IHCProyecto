@@ -31,6 +31,9 @@ class BaseLesson(ABC):
         self._instructions = ""
         self._progress = 0
         self._custom_info = ""
+        
+        # Glosario de términos (palabra -> definición)
+        self.glossary = {}
     
     def get_lesson_state(self):
         """

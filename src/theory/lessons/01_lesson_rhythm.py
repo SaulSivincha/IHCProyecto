@@ -17,8 +17,20 @@ class RhythmLesson(BaseLesson):
     def __init__(self):
         super().__init__()
         self.name = "Ritmo y Tempo"
-        self.description = "Aprende duraciones de notas, tempo (BPM) y patrones rítmicos"
+        self.description = (
+            "¡Hola! Aquí aprenderemos sobre el <a href='ritmo'>Ritmo</a> y "
+            "la velocidad de la música, llamada <a href='tempo'>Tempo</a>. "
+            "Jugaremos con diferentes notas y crearemos un <a href='patron'>Patrón</a> musical."
+        )
         self.difficulty = "Básico"
+        
+        # Glosario para niños
+        self.glossary = {
+            "ritmo": "El Ritmo es como el latido del corazón de la música. Nos dice cuándo tocar las notas.",
+            "tempo": "El Tempo es la velocidad de la música. Puede ser rápido como correr o lento como caminar.",
+            "patron": "Un Patrón es un grupo de sonidos que se repite, como cuando aplaudes tus manos.",
+            "bpm": "BPM significa 'Beats Per Minute' (Golpes por Minuto). Es como medimos la velocidad."
+        }
         
         # Conceptos de duración (en beats)
         self.note_durations = [
@@ -76,7 +88,8 @@ class RhythmLesson(BaseLesson):
         note_name, duration, symbol, note_desc = self.note_durations[self.current_duration_idx]
         pattern_name, pat_durs, pat_desc = self.rhythm_patterns[self.current_pattern_idx]
         
-        text = "--- TEMPO (Velocidad) ---\n"
+        text = "¡Ahora trata de imitar los siguientes patrones presionando 'P' y siguiendo el ritmo!\n\n"
+        text += "--- TEMPO (Velocidad) ---\n"
         text += f"Velocidad: {tempo_name} ({self.bpm} BPM)\n"
         text += f"Metrónomo: {'ENCENDIDO (M)' if self.metronome_active else 'Apagado (M)'}\n\n"
         
@@ -87,6 +100,7 @@ class RhythmLesson(BaseLesson):
         
         text += "--- PATRÓN RÍTMICO ---\n"
         text += f"Patrón: {pattern_name}\n"
+        text += f"Detalle: {pat_desc}\n\n"
         text += f"Detalle: {pat_desc}\n\n"
         
         text += "--- CONTROLES ---\n"

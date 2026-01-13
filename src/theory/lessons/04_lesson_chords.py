@@ -18,8 +18,20 @@ class ChordsLesson(BaseLesson):
     def __init__(self):
         super().__init__()
         self.name = "Acordes Basicos"
-        self.description = "Aprende acordes mayores, menores y su construccion"
+        self.description = (
+            "Aprenderemos a tocar <a href='acorde'>Acordes</a>. "
+            "Es cuando tocamos varias notas juntas, ¡como un equipo! "
+            "Veremos acordes <a href='mayor'>Mayores</a> (alegres) y <a href='menor'>Menores</a> (tristes)."
+        )
         self.difficulty = "Intermedio"
+        
+        # Glosario para niños
+        self.glossary = {
+            "acorde": "Un Acorde son tres o más notas sonando al mismo tiempo. ¡Hacen un sonido lleno y bonito!",
+            "mayor": "Un acorde Mayor suena alegre, brillante y feliz.",
+            "menor": "Un acorde Menor suena un poco triste, misterioso o melancólico.",
+            "arpegio": "Un Arpegio es tocar las notas de un acorde una por una, como una lluvia de notas."
+        }
         
         # Acordes (nombre, notas en semitonos desde tónica, tipo)
         self.chords = [
@@ -54,7 +66,9 @@ class ChordsLesson(BaseLesson):
         notes_str_list = [note_names[n % 12] for n in chord_notes]
         notes_display = " - ".join(notes_str_list)
         
-        text = f"=== ACORDE: {chord_name.upper()} ===\n"
+        text = "¡Presiona 'C' para escuchar el acorde completo, y luego 'ESPACIO' para oír las notas una por una!\n\n"
+        
+        text += f"=== ACORDE: {chord_name.upper()} ===\n"
         text += f"Notas: {notes_display}\n\n"
         
         text += "--- CONTROLES ---\n"

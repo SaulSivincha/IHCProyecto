@@ -17,8 +17,19 @@ class IntervalsLesson(BaseLesson):
     def __init__(self):
         super().__init__()
         self.name = "Intervalos Musicales"
-        self.description = "Aprende a identificar y tocar intervalos (distancia entre dos notas)"
+        self.description = (
+            "Aprenderemos qué es un <a href='intervalo'>Intervalo</a>. "
+            "Es la distancia entre dos notas, medida en <a href='semitono'>Semitonos</a>. "
+            "¡Escucha y mira la diferencia!"
+        )
         self.difficulty = "Básico"
+        
+        # Glosario para niños
+        self.glossary = {
+            "intervalo": "Un Intervalo es la distancia musical entre dos notas. Como la distancia entre dos escalones.",
+            "semitono": "Un Semitono es la distancia más pequeña en el piano. Es la distancia entre una tecla y la que está pegadita a ella.",
+            "nota": "Una Nota es un sonido musical específico."
+        }
         
         # Ejercicios
         self.intervals = [
@@ -44,7 +55,9 @@ class IntervalsLesson(BaseLesson):
         """Actualiza la interfaz de texto"""
         interval_name, semitones, example = self.intervals[self.current_interval]
         
-        text = "--- CONCEPTO ---\n"
+        text = "¡Presiona ESPACIO para escuchar las notas y luego intenta tocarlas en el piano!\n\n"
+        
+        text += "--- CONCEPTO ---\n"
         text += "Un intervalo es la distancia de altura entre dos notas musicales.\n\n"
         
         text += f"=== INTERVALO: {interval_name.upper()} ===\n"

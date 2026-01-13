@@ -17,10 +17,20 @@ class ScalesLesson(BaseLesson):
     def __init__(self):
         super().__init__()
         self.name = "Escalas Musicales"
-        self.description = "Aprende escalas mayores, menores y sus patrones"
+        self.description = (
+            "Descubre las <a href='escala'>Escalas</a> musicales. "
+            "Son como escaleras de notas que suben y bajan. "
+            "¡Sigue e imita el <a href='patron'>Patrón</a> de cada una!"
+        )
         self.difficulty = "Básico"
         
-        # Escalas (intervalos en semitonos desde la tónica)
+        # Glosario para niños
+        self.glossary = {
+            "escala": "Una Escala es una familia de notas que suenan bien juntas. ¡Como un equipo!",
+            "patron": "El Patrón es el orden de las notas. Nos dice qué teclas tocar.",
+            "tonica": "La Tónica es la nota principal, el 'capitán' del equipo."
+        }
+        
         # Escalas (intervalos en semitonos desde la tónica)
         self.scales = [
             ("Escala Mayor", [0, 2, 4, 5, 7, 9, 11, 12], "T - T - st - T - T - T - st"),
@@ -52,7 +62,9 @@ class ScalesLesson(BaseLesson):
         target_idx = self.scale_play_index if self.play_state == 'full_scale' else self.current_note_idx
         
         # Info cabecera
-        text = f"=== {scale_name.upper()} ===\n"
+        text = "¡Presiona 'R' para escuchar la escalera de notas, luego trata de tocarla tú!\n\n"
+        
+        text += f"=== {scale_name.upper()} ===\n"
         text += f"Patrón: {pattern}\n"
         text += f"Notas totales: {len(scale_notes)}\n\n"
         

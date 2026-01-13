@@ -294,34 +294,38 @@ class LessonWindow(QMainWindow):
         # Importar configuración estéreo (compartida)
         from src.vision.stereo_config import StereoConfig
 
-        # Lógica de visualización unificada
-        # Aplicamos la misma transformación a AMBOS frames
-        if getattr(StereoConfig, 'ROTATE_CAMERAS_180', False):
-            frame_left = cv2.flip(frame_left, -1)
-            frame_right = cv2.flip(frame_right, -1)
-        elif getattr(StereoConfig, 'MIRROR_HORIZONTAL', False):
-            frame_left = cv2.flip(frame_left, 1)
-            frame_right = cv2.flip(frame_right, 1)
+        # Lógica de visualización unificada - PASO A: Crear frames de visualización 180°
+        # Usamos apply_display_transform para asegurar consistencia con Modo Libre
+        frame_left_display = StereoConfig.apply_display_transform(frame_left)
+        frame_right_display = StereoConfig.apply_display_transform(frame_right)
         
-        # Procesar teclado virtual (usando el frame ya corregido)
+        # Procesar teclado virtual (usando frame display para dibujo, raw para detección)
         if self.keyboard_processor and self.hand_detector_left and self.hand_detector_right:
             try:
-                frame_left, frame_right = self.keyboard_processor.process_and_play(
+                # IMPORTANTE: Pasamos los frames de display para que dibuje sobre la imagen rotada
+                # y activamos rotate_hands=True para que ajuste las coordenadas de las manos
+                frame_left_display, _ = self.keyboard_processor.process_and_play(
                     frame_left=frame_left,
                     frame_right=frame_right,
                     virtual_keyboard=self.virtual_keyboard,
                     hand_detector_left=self.hand_detector_left,
                     hand_detector_right=self.hand_detector_right,
                     game_mode=False,
-                    rhythm_game=None
+                    rhythm_game=None,
+                    display_frame_left=frame_left_display, # DIBUJAR AQUI
+                    rotate_hands=True # Ajustar proyección de manos
                 )
+                
+                # frame_right no lo estamos mostrando en la UI, así que no es crítico actualizarlo,
+                # pero el processor podría devolverlo modificado si quisiéramos mostrarlo.
             except Exception as e:
                 print(f"Error procesando teclado: {e}")
         
         # Ejecutar lógica de la lección
         try:
-            frame_left, frame_right, _ = self.lesson.run(
-                frame_left, frame_right, 
+            # La lección también debe dibujar sobre los frames de visualización (overlays)
+            frame_left_display, frame_right_display, _ = self.lesson.run(
+                frame_left_display, frame_right_display, 
                 self.virtual_keyboard, self.synth,
                 self.hand_detector_left, self.hand_detector_right
             )
@@ -343,8 +347,8 @@ class LessonWindow(QMainWindow):
         except Exception as e:
             print(f"Error ejecutando lección: {e}")
                 
-        # Mostrar solo frame izquierdo
-        self._display_frame(frame_left)
+        # Mostrar solo frame izquierdo (el de visualización)
+        self._display_frame(frame_left_display)
     
     def _display_frame(self, frame):
         """Convierte frame OpenCV a QPixmap y lo muestra"""

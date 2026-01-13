@@ -441,32 +441,36 @@ class SongWindow(QMainWindow):
         
         # Transformaciones
         from src.vision.stereo_config import StereoConfig
-        if getattr(StereoConfig, 'ROTATE_CAMERAS_180', False):
-            frame_left = cv2.flip(frame_left, -1)
-            frame_right = cv2.flip(frame_right, -1)
-        elif getattr(StereoConfig, 'MIRROR_HORIZONTAL', False):
-            frame_left = cv2.flip(frame_left, 1)
-            frame_right = cv2.flip(frame_right, 1)
+        
+        # Lógica de visualización unificada - PASO A: Crear frames de visualización 180°
+        # Usamos apply_display_transform para asegurar consistencia con Modo Libre
+        frame_left_display = StereoConfig.apply_display_transform(frame_left)
+        frame_right_display = StereoConfig.apply_display_transform(frame_right)
         
         # Procesar teclado
         if self.keyboard_processor and self.hand_detector_left and self.hand_detector_right:
             try:
-                frame_left, frame_right = self.keyboard_processor.process_and_play(
+                # IMPORTANTE: Pasamos los frames de display para que dibuje sobre la imagen rotada
+                # y activamos rotate_hands=True para que ajuste las coordenadas de las manos
+                frame_left_display, _ = self.keyboard_processor.process_and_play(
                     frame_left=frame_left,
                     frame_right=frame_right,
                     virtual_keyboard=self.virtual_keyboard,
                     hand_detector_left=self.hand_detector_left,
                     hand_detector_right=self.hand_detector_right,
                     game_mode=True,
-                    rhythm_game=self.song.rhythm_game if self.song.rhythm_game else None
+                    rhythm_game=self.song.rhythm_game if self.song.rhythm_game else None,
+                    display_frame_left=frame_left_display, # DIBUJAR AQUI
+                    rotate_hands=True # Ajustar proyección de manos
                 )
             except Exception as e:
                 print(f"Error procesando teclado: {e}")
         
         # Ejecutar cancion
         try:
-            frame_left, frame_right, continue_running = self.song.run(
-                frame_left, frame_right, self.virtual_keyboard, self.synth
+            # Pasar frames de visualización para que el juego dibuje (notas) sobre ellos
+            frame_left_display, frame_right_display, continue_running = self.song.run(
+                frame_left_display, frame_right_display, self.virtual_keyboard, self.synth
             )
             
             if not continue_running:
@@ -498,7 +502,7 @@ class SongWindow(QMainWindow):
         except Exception as e:
             print(f"Error ejecutando cancion: {e}")
         
-        self._display_frame(frame_left)
+        self._display_frame(frame_left_display)
     
     def _display_frame(self, frame):
         try:

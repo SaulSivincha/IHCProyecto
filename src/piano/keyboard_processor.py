@@ -48,23 +48,29 @@ class KeyboardProcessor:
         
     def process_and_play(self, frame_left, frame_right, virtual_keyboard, 
                         hand_detector_left, hand_detector_right, 
-                        game_mode=False, rhythm_game=None):
+                        game_mode=False, rhythm_game=None, 
+                        display_frame_left=None, rotate_hands=False):
         """
         Procesa ambos frames, detecta manos, calcula profundidad y reproduce audio
         
         Args:
-            frame_left: Frame de cámara izquierda
-            frame_right: Frame de cámara derecha
+            frame_left: Frame de cámara izquierda (RAW para detección)
+            frame_right: Frame de cámara derecha (RAW para detección)
             virtual_keyboard: Instancia de VirtualKeyboard
             hand_detector_left: Detector de manos izquierdo
             hand_detector_right: Detector de manos derecho
             game_mode: Si está en modo juego (rhythm game)
             rhythm_game: Instancia de RhythmGame (si game_mode=True)
+            display_frame_left: Frame opcional para DIBUJAR (puede estar rotado/espejado)
+            rotate_hands: Si True, indicamos al detector que rote las coordenadas al dibujar
             
         Returns:
-            tuple: (frame_left, frame_right) con dibujos del teclado y manos
+            tuple: (frame_to_display, frame_right) frame_to_display es display_frame_left si existe, o frame_left
         """
-        # === PASO 1: Detectar manos (sin dibujar todavía) ===
+        # Frame donde vamos a dibujar (si no se pasa uno específico, usamos el original)
+        frame_draw = display_frame_left if display_frame_left is not None else frame_left
+        
+        # === PASO 1: Detectar manos (sin dibujar todavía) en frames RAW ===
         hands_detected_left = hand_detector_left.findHands(frame_left)
         hands_detected_right = hand_detector_right.findHands(frame_right)
         
@@ -80,26 +86,56 @@ class KeyboardProcessor:
             hands_right_image, fingers_right_image = hand_detector_right.getFingerTipsPos()
         
         # === PASO 2: Dibujar teclado PRIMERO (debajo de las manos) ===
-        virtual_keyboard.draw_virtual_keyboard(frame_left)
+        # Siempre dibujamos en el frame de visualización
+        virtual_keyboard.draw_virtual_keyboard(frame_draw)
         
         # === PASO 3: Si es modo juego, dibujar notas cayendo ===
         if game_mode and rhythm_game:
             rhythm_game.update()
-            frame_left = rhythm_game.draw(
-                frame_left,
+            frame_draw = rhythm_game.draw(
+                frame_draw,
                 virtual_keyboard.kb_x0,
                 virtual_keyboard.kb_x1,
                 virtual_keyboard.white_key_width
             )
         
         # === PASO 4: Dibujar manos AL FINAL (encima del teclado y notas) ===
+        # Nota: drawHands internamente dibuja sobre la imagen que se le pasa.
+        # Si rotate_hands=True y el detector lo soporta, ajustará coordenadas.
+        # Por ahora asumimos que si display_frame está rotado 180, necesitamos que
+        # las coordenadas (x,y) se inviertan visualmente 180.
+        
+        # IMPORTANTE: Los detectores actuales tienen métodos simples.
+        # Para rotar visualmente las manos en una imagen rotada sin recalcular todo,
+        # necesitamos que el detector tenga opción de rotar o hacerlo manualmente.
+        # Como parche eficiente:
+        # Si estamos rotados 180, las coordenadas (x,y) detectadas en RAW (0,0 es top-left)
+        # corresponden a (w-x, h-y) en la imagen rotada.
+        
         if hands_detected_left:
-            hand_detector_left.drawHands(frame_left)
-            hand_detector_left.drawTips(frame_left)
+            # Si se solicita rotación y el frame es diferente, idealmente el detector manejaría esto.
+            # Aquí usamos el frame de dibujo directamente.
+            
+            # NOTA: Si display_frame_left está rotado, MediaPipe dibuja en coordenadas RAW.
+            # Esto hará que las manos se vean mal (espejadas/rotadas incorrectamente) si dibujamos directo.
+            # SOLUCIÓN: Usar la función custom de dibujo con puntos transformados si es necesario.
+            if rotate_hands and display_frame_left is not None:
+                h, w, c = display_frame_left.shape
+                hand_detector_left.drawHands(frame_draw, flip_dots=True, display_w=w, display_h=h)
+                hand_detector_left.drawTips(frame_draw, flip_dots=True, display_w=w, display_h=h)
+            else:
+                hand_detector_left.drawHands(frame_draw)
+                hand_detector_left.drawTips(frame_draw)
         
         if hands_detected_right:
-            hand_detector_right.drawHands(frame_right)
-            hand_detector_right.drawTips(frame_right)
+            if rotate_hands and display_frame_left is not None:
+                h, w, c = display_frame_left.shape
+                # Solo dibujamos manos derechas si queremos debuggear, normalmente en piano solo izquierda domina visual o ambas
+                hand_detector_right.drawHands(frame_right) # Right generalmente es auxiliar, no display principal
+                # Si quisieramos mostrar ambas cámaras unidas, aquí habría lógica extra.
+            else:
+                hand_detector_right.drawHands(frame_right)
+                hand_detector_right.drawTips(frame_right)
         
         # === PASO 5: Procesar contactos con teclado si hay dedos detectados ===
         if len(fingers_left_image) > 0 and len(fingers_right_image) > 0:
@@ -167,10 +203,10 @@ class KeyboardProcessor:
                             )
         
         # === PASO 7: Dibujar centros de cámara ===
-        self.angler.frame_add_crosshairs(frame_left)
-        self.angler.frame_add_crosshairs(frame_right)
+        # Solo dibujamos crosshairs si está habilitado en config (opcional)
+        # self.angler.frame_add_crosshairs(frame_draw) 
         
-        return frame_left, frame_right
+        return frame_draw, frame_right
     
     def _calculate_depth(self, finger_left, finger_right):
         """

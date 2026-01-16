@@ -85,10 +85,16 @@ class KeyboardProcessor:
         if hands_detected_right:
             hands_right_image, fingers_right_image = hand_detector_right.getFingerTipsPos()
         
+        # [AR OCCLUSION] Obtener TODOS los landmarks de las manos para oclusión visual
+        hand_landmarks_for_occlusion = []
+        if hands_detected_left:
+            hand_landmarks_for_occlusion.extend(hand_detector_left.getAllLandmarks())
+        
         # === PASO 2: Dibujar teclado PRIMERO (debajo de las manos) ===
         # Siempre dibujamos en el frame de visualización
         # [VISUAL] Pasamos las teclas activas del frame ANTERIOR para feedback
-        virtual_keyboard.draw_virtual_keyboard(frame_draw, self.prev_active_keys)
+        # [AR] Pasamos landmarks para oclusión de manos
+        virtual_keyboard.draw_virtual_keyboard(frame_draw, self.prev_active_keys, hand_landmarks_for_occlusion)
         
         # === PASO 3: Si es modo juego, dibujar notas cayendo ===
         if game_mode and rhythm_game:

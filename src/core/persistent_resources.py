@@ -233,8 +233,36 @@ class PersistentResources:
             print(f"  [ALERTA] Calibracion no disponible: {e}")
             self._depth_ready = True
     
+    def stop_cameras(self):
+        """Detiene las cámaras y libera recursos"""
+        print("  [INFO] Deteniendo cámaras...")
+        try:
+            if self.cam_left:
+                self.cam_left.stop()
+                self.cam_left = None
+        except:
+            pass
+        
+        try:
+            if self.cam_right:
+                self.cam_right.stop()
+                self.cam_right = None
+        except:
+            pass
+        
+        self._cameras_ready = False
+        print("  [INFO] Cámaras detenidas")
+
     def reload_depth_estimator(self):
         """Recarga el estimador de profundidad (después de recalibrar)"""
+        print("  [INFO] Recargando configuración estéreo y profundidad...")
+        
+        # 1. Recargar configuración estática (StereoConfig)
+        if self.config:
+            # StereoConfig es una clase con métodos estáticos/clase
+            StereoConfig.load_calibration()
+            
+        # 2. Reiniciar estimador
         self._depth_ready = False
         self._init_depth_estimator()
     

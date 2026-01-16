@@ -32,6 +32,7 @@ except ImportError:
 try:
     from ..vision.hand_detector import HandDetector
     from ..vision.depth_estimator import load_depth_estimator
+    from ..vision.stereo_config import StereoConfig
 except ImportError:
     # Fallback por si la estructura de directorios es diferente
     import sys
@@ -39,6 +40,7 @@ except ImportError:
     sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
     from vision.hand_detector import HandDetector
     from vision.depth_estimator import load_depth_estimator
+    from vision.stereo_config import StereoConfig
 
 
 class QtCalibrationManager(QObject):
@@ -77,7 +79,7 @@ class QtCalibrationManager(QObject):
         # Cámaras
         self.cap_left = None
         self.cap_right = None
-        self._using_persistent_cameras = False  # Flag para no cerrar cámaras persistentes
+
         
         # Estado
         self.current_phase = "intro"
@@ -98,54 +100,51 @@ class QtCalibrationManager(QObject):
         # Conectar señales
         self.window.capture_requested.connect(self._on_capture)
         self.window.cancel_requested.connect(self._on_cancel)
-        self.window.continue_requested.connect(self._on_continue)
+        self.window.frame_clicked.connect(self._on_frame_clicked) # Conectar señal de clic
+        
+        self.window.continue_requested.connect(self._on_phase_continue)
         self.window.retry_requested.connect(self._on_retry)
+        
+        # Datos para definición de mesa
+        self.table_corners = [] # [TL, TR, BR, BL]
         
         # Asegurar directorios
         CalibrationConfig.ensure_directories()
     
     def _get_or_create_camera(self, camera_name):
         """
-        Obtiene una cámara, intentando reusar las persistentes primero.
+        Crea una instancia de VideoThread para la cámara especificada.
         
         Args:
             camera_name: 'left' o 'right'
             
         Returns:
-            cv2.VideoCapture o similar
+            VideoThread: Instancia con thread corriendo
         """
-        # Intentar usar cámaras persistentes
-        if PERSISTENT_RESOURCES_AVAILABLE:
-            try:
-                resources = get_resources()
-                if resources.is_ready():
-                    cam_left, cam_right = resources.get_cameras()
-                    if camera_name == "left" and cam_left and cam_left.is_available():
-                        print(f"  ✓ Reutilizando cámara {camera_name} persistente")
-                        self._using_persistent_cameras = True
-                        # Retornar el recurso de OpenCV directamente
-                        return cam_left.resource
-                    elif camera_name == "right" and cam_right and cam_right.is_available():
-                        print(f"  ✓ Reutilizando cámara {camera_name} persistente")
-                        self._using_persistent_cameras = True
-                        return cam_right.resource
-            except Exception as e:
-                print(f"  ⚠ No se pudieron usar cámaras persistentes: {e}")
+        from ..vision.video_thread import VideoThread
         
-        # Fallback: crear nueva cámara
-        print(f"  📷 Abriendo cámara {camera_name} nueva...")
         camera_id = self.cam_left_id if camera_name == "left" else self.cam_right_id
-        cap = cv2.VideoCapture(camera_id)
+        print(f"  📷 Creando VideoThread para cámara {camera_name} (ID: {camera_id})...")
         
-        if cap.isOpened():
-            cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.resolution[0])
-            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.resolution[1])
-            cap.set(cv2.CAP_PROP_AUTOFOCUS, 0)
-            # Warmup rápido
-            for _ in range(3):
-                cap.read()
+        # Crear VideoThread (maneja threading automáticamente)
+        video_thread = VideoThread(
+            video_source=camera_id,
+            video_width=self.resolution[0],
+            video_height=self.resolution[1],
+            video_frame_rate=30,
+            buffer_all=False  # Solo último frame
+        )
         
-        return cap
+        # Verificar que se abrió correctamente
+        if not video_thread.is_available():
+            print(f"  ✗ Error al abrir cámara {camera_id}")
+            return None
+        
+        # Iniciar thread de captura
+        video_thread.start()
+        print(f"  ✓ VideoThread iniciado para cámara {camera_name}")
+        
+        return video_thread
     
     def run_calibration(self, start_phase=None):
         """
@@ -179,12 +178,16 @@ class QtCalibrationManager(QObject):
         
         # ========== CONFIGURACIÓN DE TABLERO ==========
         # SIEMPRE pedir configuración al usuario para permitir recalibración
+        # Verificar si Fase 3 ya está completa para habilitar Fase 4
+        has_phase3 = self._check_phase3_complete()
+        
         dialog = CalibrationConfigDialog(
             default_rows=self.board_rows,
             default_cols=self.board_cols,
             default_size_mm=self.square_size_mm,
             enable_phase2=has_phase1,
-            enable_phase3=has_phase2
+            enable_phase3=has_phase2,
+            enable_phase4=has_phase3
         )
         
         print("[DEBUG] Diálogo de configuración creado, mostrando...")
@@ -330,6 +333,16 @@ class QtCalibrationManager(QObject):
                 print("✗ Error al cargar datos previos, volviendo a Fase 1")
                 self.window.set_status("Error al cargar calibración previa. Debes completar Fase 1.", "#FF0000")
                 self._start_intro()
+        elif selected_phase == 4:
+            print("\n✓ Iniciando directamente en Fase 4 (Definición de Mesa AR)...")
+            # Solo cargar lo mínimo (estereo no es necesario para tabla, pero phase1 sí para las cámaras)
+            phase1_ok = self._load_phase1_calibration()
+            if phase1_ok:
+                self._load_board_config()
+                self._start_table_definition()
+            else:
+                print("✗ Error al cargar Fase 1, volviendo a Fase 1")
+                self._start_intro()
         else:
             # Fase 1 (Default)
             self._start_intro()
@@ -355,25 +368,43 @@ class QtCalibrationManager(QObject):
         black_frame = np.zeros((self.resolution[1]//2, self.resolution[0]//2, 3), dtype=np.uint8)
         self.window.update_frames(black_frame, black_frame)
     
-    def _on_continue(self):
-        """Maneja el botón de continuar"""
+    def _on_phase_continue(self):
+        """Maneja el botón de continuar entre fases"""
         # Ocultar botón de reintentar al continuar
         self.window.show_retry_button(False)
         
         if self.current_phase == "intro":
             self._start_camera_calibration("left")
-        elif self.current_phase == "left_complete":
-            self._start_camera_calibration("right")
+            
         elif self.current_phase == "phase1_complete":
             self._start_phase2()
-        elif self.current_phase == "stereo_intro":
-            self._on_stereo_continue()
+            
         elif self.current_phase == "phase2_complete":
             self._start_phase3()
-        elif self.current_phase == "depth_intro":
-            self._start_depth_capture()
+            
         elif self.current_phase == "phase3_complete":
+            # IR A NUEVA FASE: Definición de Mesa
+            self._start_table_definition()
+            
+        elif self.current_phase == "table_definition_complete":
             self._finish_calibration(True)
+
+        # Lógica de reintento (si el usuario presionó Continuar en lugar de Reintentar en pantalla de error)
+        elif self.current_phase in ["capture_left", "capture_left_intro"]:
+            if self.calibrator_left and self.calibrator_left.is_calibrated:
+                self._start_camera_calibration("right")
+            
+        elif self.current_phase in ["capture_right", "capture_right_intro"]:
+            if self.calibrator_right and self.calibrator_right.is_calibrated:
+                self._start_phase2()
+            
+        elif self.current_phase == "stereo_intro":
+            # Después de las instrucciones de stereo, iniciar captura
+            self._on_stereo_continue()
+        
+        elif self.current_phase == "depth_intro":
+            # Después de las instrucciones de depth, iniciar captura
+            self._start_depth_capture()
     
     def _on_retry(self):
         """
@@ -479,16 +510,11 @@ class QtCalibrationManager(QObject):
         
         # Obtener cámara (reutiliza persistente si está disponible)
         cap = self._get_or_create_camera(camera_name)
-        if cap is None or not cap.isOpened():
+        if cap is None or not cap.is_available():
             print(f"✗ No se pudo abrir la cámara {camera_id}")
             self._finish_calibration(False)
             return
         
-        # Warmup mínimo si es cámara nueva
-        if not self._using_persistent_cameras:
-            for _ in range(3):
-                cap.read()
-                QApplication.processEvents()
         
         if camera_name == "left":
             self.cap_left = cap
@@ -521,17 +547,19 @@ class QtCalibrationManager(QObject):
             self._update_stereo_frame()
         elif self.current_phase == "depth_capture":
             self._update_depth_frame()
+        elif self.current_phase == "table_definition":
+            self._update_table_definition_frame()
     
     def _update_single_camera_frame(self):
         """Actualiza frame para calibración de cámara individual"""
         camera_name = self.current_camera
         cap = self.cap_left if camera_name == "left" else self.cap_right
         
-        if cap is None or not cap.isOpened():
+        if cap is None or not cap.is_available():
             return
         
-        ret, frame = cap.read()
-        if not ret:
+        finished, frame = cap.next(black=True, wait=0.033)
+        if frame is None:
             return
         
         # IMPORTANTE: Aplicar transformaciones antes de detectar tablero
@@ -599,12 +627,6 @@ class QtCalibrationManager(QObject):
         """Procesa la calibración de la cámara actual"""
         self.timer.stop()
         
-        # Cerrar cámara solo si NO es persistente
-        if not self._using_persistent_cameras:
-            if self.current_camera == "left" and self.cap_left:
-                self.cap_left.release()
-            elif self.current_camera == "right" and self.cap_right:
-                self.cap_right.release()
         
         # Limpiar referencias
         if self.current_camera == "left":
@@ -679,18 +701,12 @@ class QtCalibrationManager(QObject):
         self.cap_left = self._get_or_create_camera("left")
         self.cap_right = self._get_or_create_camera("right")
         
-        if not self.cap_left or not self.cap_left.isOpened() or \
-           not self.cap_right or not self.cap_right.isOpened():
+        if not self.cap_left or not self.cap_left.is_available() or \
+           not self.cap_right or not self.cap_right.is_available():
             print("✗ Error al abrir las cámaras")
             self._finish_calibration(False)
             return
         
-        # Warmup mínimo solo si no son persistentes
-        if not self._using_persistent_cameras:
-            for cap in [self.cap_left, self.cap_right]:
-                for _ in range(3):
-                    cap.read()
-                    QApplication.processEvents()
         
         # Actualizar UI
         self.current_phase = "stereo_capture"
@@ -709,10 +725,10 @@ class QtCalibrationManager(QObject):
         if not self.cap_left or not self.cap_right:
             return
         
-        ret_left, frame_left = self.cap_left.read()
-        ret_right, frame_right = self.cap_right.read()
+        finished_left, frame_left = self.cap_left.next(black=True, wait=0.033)
+        finished_right, frame_right = self.cap_right.next(black=True, wait=0.033)
         
-        if not ret_left or not ret_right:
+        if frame_left is None or frame_right is None:
             return
         
         # IMPORTANTE: Aplicar las mismas transformaciones que en runtime
@@ -787,12 +803,6 @@ class QtCalibrationManager(QObject):
         """Procesa la calibración estéreo"""
         self.timer.stop()
         
-        # Cerrar cámaras solo si NO son persistentes
-        if not self._using_persistent_cameras:
-            if self.cap_left:
-                self.cap_left.release()
-            if self.cap_right:
-                self.cap_right.release()
         
         # Limpiar referencias
         self.cap_left = None
@@ -1048,8 +1058,8 @@ class QtCalibrationManager(QObject):
             if self.cap_right is None:
                 self.cap_right = self._get_or_create_camera("right")
                 
-            if not self.cap_left or not self.cap_left.isOpened() or \
-               not self.cap_right or not self.cap_right.isOpened():
+            if not self.cap_left or not self.cap_left.is_available() or \
+               not self.cap_right or not self.cap_right.is_available():
                 print("✗ Error al abrir las cámaras para profundidad")
                 self._finish_calibration(False)
                 return
@@ -1085,10 +1095,10 @@ class QtCalibrationManager(QObject):
         if not self.cap_left or not self.cap_right:
             return
             
-        ret_left, frame_left = self.cap_left.read()
-        ret_right, frame_right = self.cap_right.read()
+        finished_left, frame_left = self.cap_left.next(black=True, wait=0.033)
+        finished_right, frame_right = self.cap_right.next(black=True, wait=0.033)
         
-        if not ret_left or not ret_right:
+        if frame_left is None or frame_right is None:
             return
         
         # Importar configuración estéreo
@@ -1286,13 +1296,6 @@ class QtCalibrationManager(QObject):
         if self.timer.isActive():
             self.timer.stop()
         
-        # Solo cerrar cámaras si NO son persistentes
-        if not self._using_persistent_cameras:
-            if self.cap_left:
-                self.cap_left.release()
-            if self.cap_right:
-                self.cap_right.release()
-        
         # Limpiar referencias (pero no cerrar si son persistentes)
         self.cap_left = None
         self.cap_right = None
@@ -1341,9 +1344,9 @@ class QtCalibrationManager(QObject):
             with open(CalibrationConfig.CALIBRATION_FILE, 'r') as f:
                 data = json.load(f)
             
-            # Verificar si existe configuración de profundidad
-            if 'depth_config' in data and data['depth_config'] is not None:
-                return 'coefficients' in data['depth_config']
+            # Verificar si existe depth_correction con keyboard_distance_cm (guardado por Fase 3)
+            if 'depth_correction' in data and data['depth_correction'] is not None:
+                return 'keyboard_distance_cm' in data['depth_correction']
             
             return False
         except:
@@ -1436,6 +1439,159 @@ class QtCalibrationManager(QObject):
             self.square_size_mm = board_config['square_size_mm']
         except:
             self.board_cols = 7
+            self.board_rows = 7
+            self.square_size_mm = CalibrationConfig.DEFAULT_SQUARE_SIZE_MM
+    
+    # ==================== FASE 4: DEFINICIÓN DE MESA (AR) ====================
+    
+    def _start_table_definition(self):
+        """Inicia la fase de definición de esquinas de la mesa"""
+        self.current_phase = "table_definition"
+        self.table_corners = []
+        
+        instructions = [
+            "<b>CONFIGURACIÓN DE PROYECCIÓN AR</b>",
+            "Para proyectar el teclado sobre tu mesa:",
+            "1. Haz CLIC en el video de la <b>CÁMARA IZQUIERDA</b> para marcar las 4 esquinas.",
+            "2. Orden: <b>Arriba-Izq -> Arriba-Der -> Abajo-Der -> Abajo-Izq</b>",
+            "¡Marca el área rectangular donde quieres que aparezca el piano!"
+        ]
+        
+        self.window.show_intro_screen(
+            "DEFINICIÓN DE SUPERFICIE",
+            instructions
+        )
+        
+        # Iniciar video
+        if not self.cap_left:
+             self.cap_left = self._get_or_create_camera("left")
+        
+        self.timer.start(33)
+        self.window.set_status("Haz clic en la CÁMARA IZQUIERDA para empezar", "#FFFFFF")
+
+    def _update_table_definition_frame(self):
+        """Muestra el video y dibuja los puntos marcados"""
+        if not self.cap_left:
+             self.cap_left = self._get_or_create_camera("left")
+             
+        frame_left = None
+        if self.cap_left:
+             _, frame_left = self.cap_left.next(wait=0.033)
+             
+        if frame_left is None:
+            return
+            
+        # Dibujar puntos y líneas
+        display = frame_left.copy()
+        
+        # Aplicar transformaciones para display (espejo si es necesario)
+        # OJO: Los clics vienen de la pantalla TRANSFORMA.
+        # ¿Debemos dibujar en el Raw y transformar? O dibujar en el Transformado?
+        # StereoConfig.apply_camera_transforms hace rectificación.
+        # StereoConfig.apply_display_transform hace espejo/resize.
+        # Si el usuario ve ESPEJO, sus clics tendrán coordenadas ESPEJO.
+        # DEBERÍAMOS guardar las coordenadas "Normalizadas" (sin espejo).
+        # PERO para visualización, dibujamos sobre lo que ve.
+        
+        # Simplificación: Usamos el frame TAL CUAL se muestra en la UI para display
+        display = StereoConfig.apply_display_transform(StereoConfig.apply_camera_transforms(display))
+
+        # Dibujar esquinas marcadas
+        for i, pt in enumerate(self.table_corners):
+            cv2.circle(display, pt, 5, (0, 255, 0), -1)
+            cv2.putText(display, str(i+1), (pt[0]+10, pt[1]-10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+            
+        # Dibujar líneas
+        if len(self.table_corners) > 1:
+            for i in range(len(self.table_corners)-1):
+                cv2.line(display, self.table_corners[i], self.table_corners[i+1], (0, 255, 0), 2)
+        
+        # Cerrar el polígono
+        if len(self.table_corners) == 4:
+            cv2.line(display, self.table_corners[3], self.table_corners[0], (0, 255, 0), 2)
+            
+        self.window.update_frames(frame_left=display) 
+        
+    def _on_frame_clicked(self, camera_name, x, y):
+        """Maneja el clic en el video"""
+        if self.current_phase != "table_definition":
+            return
+            
+        if camera_name != "left":
+            print("Por favor, marca en la cámara izquierda.")
+            return
+
+        # Ajustar coordenadas: El Label estira la imagen.
+        lbl_w = self.window.camera_left_label.width()
+        lbl_h = self.window.camera_left_label.height()
+        
+        # Recuperar tamaño del frame ACTUAL 
+        frame_w, frame_h = self.resolution
+        
+        # Intentar obtener resolución real de la cámara si está disponible
+        if self.cap_left:
+            # Si el frame mostrado ha pasado por transforms, debemos usar SUS dimensiones.
+            # Como StereoConfig.apply_display_transform solo rota 180, las dimensiones se mantienen.
+            # Pero para estar seguros, idealmente usaríamos el tamaño del 'display' frame.
+            # Aproximación segura: Usar propiedades del capture
+            cw = self.cap_left.video_width
+            ch = self.cap_left.video_height
+            if cw > 0 and ch > 0:
+                frame_w, frame_h = int(cw), int(ch)
+        
+        real_x = int(x * (frame_w / lbl_w))
+        real_y = int(y * (frame_h / lbl_h))
+        
+        print(f"[CalibrationManager] Click: ({x}, {y}) on Label ({lbl_w}x{lbl_h}) -> Frame ({frame_w}x{frame_h}) = ({real_x}, {real_y})")
+        
+        if len(self.table_corners) < 4:
+            self.table_corners.append((real_x, real_y))
+            print(f"Punto guardado: {real_x}, {real_y}")
+            
+            # Actualizar instrucciones
+            count = len(self.table_corners)
+            msgs = ["Marca Arriba-Derecha", "Marca Abajo-Derecha", "Marca Abajo-Izquierda", "¡Completo!"]
+            
+            if count < 4:
+                self.window.set_status(f"Punto {count}/4 guardado. {msgs[count-1]}", "#00C8FF")
+            else:
+                self.window.set_status("¡DEFINICIÓN COMPLETA! Se ha guardado la mesa.", "#00FF00")
+                self.current_phase = "table_definition_complete"
+                self._save_table_definition()
+                
+                # Auto-avanzar o esperar? Esperar 1seg y mostrar mensaje final
+                QTimer.singleShot(1500, lambda: self.window.show_intro_screen(
+                    "¡CALIBRACIÓN FINALIZADA!",
+                    ["Has completado todas las fases.", "Tu piano AR está listo.", "Presiona Continuar para salir."]
+                ))
+
+    def _save_table_definition(self):
+        """Guarda la definición de mesa en calibration.json"""
+        # Obtener resolución real usada para la definición
+        frame_w, frame_h = 1280, 720 # Valor por defecto seguro si todo falla
+        if self.cap_left:
+            cw = self.cap_left.video_width
+            ch = self.cap_left.video_height
+            if cw > 0 and ch > 0:
+                frame_w, frame_h = int(cw), int(ch)
+        
+        try:
+            with open(CalibrationConfig.CALIBRATION_FILE, 'r') as f:
+                data = json.load(f)
+            
+            data['table_definition'] = {
+                'corners': self.table_corners,
+                'camera': 'left',
+                'resolution': [frame_w, frame_h]
+            }
+            
+            with open(CalibrationConfig.CALIBRATION_FILE, 'w') as f:
+                json.dump(data, f, indent=4)
+                
+            print(f"[AR] Definición de mesa guardada: {self.table_corners} (Res: {frame_w}x{frame_h})")
+            
+        except Exception as e:
+            print(f"Error guardando mesa: {e}")
             self.board_rows = 7
             self.square_size_mm = CalibrationConfig.DEFAULT_SQUARE_SIZE_MM
     

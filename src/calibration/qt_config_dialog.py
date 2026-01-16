@@ -16,7 +16,7 @@ class CalibrationConfigDialog(QDialog):
     """
     
     def __init__(self, parent=None, default_rows=7, default_cols=7, default_size_mm=24.0,
-                 enable_phase2=False, enable_phase3=False):
+                 enable_phase2=False, enable_phase3=False, enable_phase4=False):
         super().__init__(parent)
         self.setWindowTitle("Configuración de Calibración")
         self.setModal(True)
@@ -29,6 +29,7 @@ class CalibrationConfigDialog(QDialog):
         self.size_mm = default_size_mm
         self.enable_phase2 = enable_phase2
         self.enable_phase3 = enable_phase3
+        self.enable_phase4 = enable_phase4
         self.selected_phase = 1
         
         self._setup_ui()
@@ -231,6 +232,9 @@ class CalibrationConfigDialog(QDialog):
             
         if self.enable_phase3:
             self.phase_combo.addItem("Fase 3: Calibración de Profundidad", 3)
+            
+        if self.enable_phase4:
+            self.phase_combo.addItem("Fase 4: Definición de Mesa (AR)", 4)
             
         phase_layout.addWidget(self.phase_combo)
         phase_group.setLayout(phase_layout)

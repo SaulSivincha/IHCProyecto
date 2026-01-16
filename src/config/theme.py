@@ -96,6 +96,19 @@ class Theme:
     KEY_HIGHLIGHT_WHITE = ColorPalette.ORANGE_VIVID
     KEY_HIGHLIGHT_BLACK = ColorPalette.BLUE_VIVID
     
+    # --- AR Keyboard Specifics (Cyberpunk / Neon Style -> Clean Style) ---
+    KEY_AR_WHITE_IDLE = ColorPalette.BLUE_VIVID   # Keep Blue/Cyan for tech feel, or change to WHITE if requested. User asked about red black keys.
+    # Let's make Black keys actually BLACK/DARK for realism.
+    KEY_AR_WHITE_IDLE = ColorPalette.BLUE_VIVID   # Cyan/Blue tint for white keys (looks like hologram)
+    KEY_AR_WHITE_ACTIVE = ColorPalette.WHITE      # White flash
+    
+    KEY_AR_BLACK_IDLE = ColorPalette.BLACK        # Actual Black (rendered transparent gray)
+    KEY_AR_BLACK_ACTIVE = ColorPalette.ORANGE_VIVID # Orange flash
+    
+    KEY_AR_TEXT_SHADOW = ColorPalette.BLACK
+    KEY_AR_TEXT_MAIN = ColorPalette.WHITE
+    KEY_AR_BORDER = ColorPalette.WHITE        # Outlines for separation
+    
     # --- Progress Bars ---
     PROGRESS_BG = ColorPalette.LIGHT_GRAY
     PROGRESS_FILL = ColorPalette.GREEN_VIVID
@@ -115,6 +128,7 @@ class Theme:
     ORANGE_VIVID = ColorPalette.ORANGE_VIVID
     GRAY = ColorPalette.GRAY
     LIGHT_GRAY = ColorPalette.LIGHT_GRAY
+    WHITE = ColorPalette.WHITE # Access exposed for direct use
 
     # Selection
     SELECTION_BG = ColorPalette.ORANGE_VIVID

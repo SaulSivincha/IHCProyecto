@@ -821,23 +821,40 @@ def main():
                     
                     if action == CalibrationSummaryDialog.ACTION_RECALIBRATE_ALL:
                         print("Iniciando re-calibracion...")
+                        # 1. DETENER CÁMARAS ACTUALES
+                        if resources_initialized:
+                            resources.stop_cameras()
+                            
+                        # 2. EJECUTAR CALIBRACIÓN
                         success = run_calibration_process(ui_helper_menu, pixel_width, pixel_height, config, force_recalibration=True)
-                        if success:
-                            print("Calibracion completada. Recargando estimador de profundidad...")
-                            if resources_initialized:
+                        
+                        # 3. REINICIAR CÁMARAS
+                        if resources_initialized:
+                            print("Reiniciando cámaras y profundidad...")
+                            resources.restart_cameras(config)
+                            if success:
                                 resources.reload_depth_estimator()
-                        else:
+                        
+                        if not success:
                             print("Calibracion cancelada.")
                 else:
                     # No hay calibración: iniciar proceso de calibración
                     print("No hay calibracion guardada. Iniciando proceso...")
+                    # 1. DETENER CÁMARAS ACTUALES
+                    if resources_initialized:
+                        resources.stop_cameras()
+                        
+                    # 2. EJECUTAR CALIBRACIÓN
                     success = run_calibration_process(ui_helper_menu, pixel_width, pixel_height, config, force_recalibration=True)
                     
-                    if success:
-                        print("Calibracion completada. Recargando estimador de profundidad...")
-                        if resources_initialized:
+                    # 3. REINICIAR CÁMARAS
+                    if resources_initialized:
+                        print("Reiniciando cámaras y profundidad...")
+                        resources.restart_cameras(config)
+                        if success:
                             resources.reload_depth_estimator()
-                    else:
+                            
+                    if not success:
                         print("Calibracion cancelada.")
                 
                 # Volver al menú principal
@@ -884,6 +901,15 @@ def main():
             fs = resources.get_synth()
             depth_estimator = resources.depth_estimator
             use_stereo_calibration = resources.use_stereo_calibration
+            
+            # [CRITICAL UPDATE] Actualizar dimensiones con la resolución REAL de la cámara
+            if cam_left and cam_left.is_available():
+                real_w = cam_left.get_curr_config_widht()
+                real_h = cam_left.get_curr_config_height()
+                if real_w > 0 and real_h > 0:
+                    print(f"[INFO] Actualizando resolución a: {real_w}x{real_h}")
+                    pixel_width = real_w
+                    pixel_height = real_h
             
             # Configuración de cámaras
             camera_separation = config.CAMERA_SEPARATION

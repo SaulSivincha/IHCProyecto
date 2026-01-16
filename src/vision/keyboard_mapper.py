@@ -46,6 +46,9 @@ class KeyboardMapModular:
         self.velocity_enabled = StereoConfig.VELOCITY_ENABLED
         self.velocity_history_size = StereoConfig.VELOCITY_HISTORY_SIZE
         
+        # Debugeo
+        self._debug_frame_count = 0
+        
         # NUEVO: Sistema modular de algoritmos - USAR SINGLETON GLOBAL
         from src.vision.algorithms import get_algorithm_manager
         self.algorithm_manager = get_algorithm_manager()
@@ -112,69 +115,70 @@ class KeyboardMapModular:
             
             finger_id = (hand_id, tip_id)
             
-            # Verificar intersección con teclado
+            # OPTIMIZACIÓN: Verificar profundidad PRIMERO (operación más barata)
+            # Si la mano está muy lejos (flotando), evitamos cálculos espaciales costosos
+            if finger_id not in finger_depths:
+                # [FIX] Sin datos de profundidad: SALTAR FRAME
+                # ANTES: Usábamos depth=99.0, pero esto contaminaba el historial
+                # de velocidad causando spikes masivos (vel=98cm/frame).
+                # AHORA: Simplemente no procesamos este dedo este frame.
+                # El historial se mantiene limpio y velocity se calcula
+                # solo con datos válidos.
+                continue
+            else:
+                depth = finger_depths[finger_id]
+                
+                # ESTRATEGIA DE VALIDACIÓN ESTRICTA (Sin Clamping)
+                # Evitar "falsos positivos" cuando la mano está muy cerca de la cámara (ej: 1cm)
+                # lo que genera profundidades absurdas (muy negativas).
+                
+                # Rango Físico Razonable:
+                # > -20.0 cm: Un poco "detrás" del plano teórico está bien (presionando fuerte)
+                # < +50.0 cm: Hasta 50cm sobre la mesa
+                
+                if depth < -30.0 or depth > 50.0:
+                    # Caso: Profundidad fuera de rango físico posible.
+                    # - < -30.0: Mano muy detrás (o error de calibración grande)
+                    # - > 50.0: Mano muy lejos (techo)
+                    
+                    if self._debug_frame_count % 30 == 0:
+                        # print(f"[RECHAZADO] Dedo {finger_id} Depth={depth:.1f}cm (Fuera de rango -30 a 50)")
+                        pass
+                        
+                    # Acción: DESCARTAR.
+                    continue
+            
+            # AHORA verificar intersección con teclado (solo si está cerca)
             if virtual_keyboard.intersect((x_pos, y_pos)):
                 key = virtual_keyboard.find_key(x_pos, y_pos)
                 
                 # Verificar que key no sea None y esté en rango válido
                 if key is not None and 0 <= key < keyboard_n_key:
-                    # Obtener profundidad
-                    if finger_id in finger_depths:
-                        depth = finger_depths[finger_id]
-                        
-                        # ESTRATEGIA DE RECUPERACIÓN DE ERRORES (Safe Depth Clamping)
-                        # Problema: En los bordes (especialmente izquierda), la triangulación falla
-                        # y reporta profundidades enormes (ej: Z=128cm, relative=-79cm).
-                        # Solución: Si detectamos una mano válida (x,y ok) pero profundidad absurda ("muy lejos"),
-                        # ASUMIMOS que es un error de medición de una mano que intenta tocar.
-                        # En lugar de ignorar (tecla muerta), CLAMPEAMOS el valor a "Tocando".
-                        
-                        # Rango Válido estricto: -20 (abajo) a +40 (arriba)
-                        
-                        if depth < -20.0:
-                            # Caso: Valor muy negativo (ej: -70cm). Triangulación dice "muy lejos".
-                            # Acción: Recuperar como "Tocando firme" (-5.0 cm).
-                            # Esto hace que las teclas "muertas" de la izquierda vuelvan a sonar.
-                            if self._debug_frame_count % 30 == 0:
-                                print(f"[RECUPERADO] Dedo {finger_id} Error Z ({depth:.1f}cm) -> Clamped a -5.0cm")
-                            depth = -5.0
-                            
-                        elif depth > 50.0:
-                            # Caso: Valor muy positivo (ej: +80cm). Triangulación dice "muy cerca".
-                            # Acción: Ignorar, riesgo de falso positivo por ruido cerca de cámara.
-                            continue
-                            
-                        # Actualizar historial de profundidad
-                        if finger_id not in self.finger_depth_history:
-                            self.finger_depth_history[finger_id] = deque(maxlen=self.velocity_history_size)
-                        self.finger_depth_history[finger_id].append(depth)
-                        
-                        # NUEVO: Suavizar profundidad para reducir ruido de tracking
-                        # Parámetros configurables desde algorithms_config.py
-                        depth_smoothed = depth
-                        
-                        if self.smoothing_enabled and len(self.finger_depth_history[finger_id]) >= self.smoothing_window:
-                            history = list(self.finger_depth_history[finger_id])
-                            # Filtrar outliers extremos antes de promediar
-                            recent_values = history[-self.smoothing_window:]
-                            median_val = sorted(recent_values)[len(recent_values)//2]  # Valor medio
-                            # Filtrar valores que difieren más del threshold
-                            filtered = [v for v in recent_values if abs(v - median_val) < self.outlier_threshold]
-                            if len(filtered) > 0:
-                                depth_smoothed = sum(filtered) / len(filtered)
-                        
-                        # Calcular velocidad usando profundidad suavizada
-                        velocity = 0.0
-                        if len(self.finger_depth_history[finger_id]) >= 2:
-                            history = list(self.finger_depth_history[finger_id])
-                            # Usar los últimos 2 valores suavizados
-                            velocity = history[-2] - history[-1]
-                        
-                        # AGREGAR SIEMPRE a raw_detections (con depth suavizada)
-                        raw_detections.append((finger_id, key, depth_smoothed, velocity, x_pos, y_pos))
-                    else:
-                        # Fallback sin profundidad
-                        raw_detections.append((finger_id, key, 0.0, 0.0, x_pos, y_pos))
+                    # Actualizar historial de profundidad
+                    if finger_id not in self.finger_depth_history:
+                        self.finger_depth_history[finger_id] = deque(maxlen=self.velocity_history_size)
+                    self.finger_depth_history[finger_id].append(depth)
+                    
+                    # NUEVO: Suavizar profundidad para reducir ruido de tracking
+                    depth_smoothed = depth
+                    
+                    if self.smoothing_enabled and len(self.finger_depth_history[finger_id]) >= self.smoothing_window:
+                        history = list(self.finger_depth_history[finger_id])
+                        # Filtrar outliers extremos antes de promediar
+                        recent_values = history[-self.smoothing_window:]
+                        median_val = sorted(recent_values)[len(recent_values)//2]
+                        filtered = [v for v in recent_values if abs(v - median_val) < self.outlier_threshold]
+                        if len(filtered) > 0:
+                            depth_smoothed = sum(filtered) / len(filtered)
+                    
+                    # Calcular velocidad usando profundidad suavizada
+                    velocity = 0.0
+                    if len(self.finger_depth_history[finger_id]) >= 2:
+                        history = list(self.finger_depth_history[finger_id])
+                        velocity = history[-2] - history[-1]
+                    
+                    # AGREGAR a raw_detections
+                    raw_detections.append((finger_id, key, depth_smoothed, velocity, x_pos, y_pos))
         
         # DEBUG INICIAL: Mostrar cuántas intersecciones se detectaron
         if not hasattr(self, '_debug_frame_count'):
@@ -241,8 +245,9 @@ class KeyboardMapModular:
             'keyboard_n_key': keyboard_n_key
         }
         
-        # Aplicar cadena de algoritmos
-        filtered_detections = self.algorithm_manager.process_detections(raw_detections, context)
+        # Aplicar cadena de algoritmos - DESACTIVADO POR SOLICITUD DE USUARIO (Raw Mode)
+        # filtered_detections = self.algorithm_manager.process_detections(raw_detections, context)
+        filtered_detections = raw_detections
         
         # DEBUG: Mostrar resultado de algoritmos
         if self._debug_frame_count % 30 == 0 and len(raw_detections) > 0:

@@ -52,11 +52,8 @@ class UnaNotaPorAccionAlgorithm(BaseAlgorithm):
             finger_id, key, depth, velocity, x_pos, y_pos = detection
             
             # --- 1. LIFT GUARD (Critical Safety) ---
-            # Si vel < -12.0 (antes -5.0), BLOQUEAR.
-            # Relajamos AÚN MÁS el umbral porque el glissando lateral en zonas distorsionadas
-            # genera falsos "saltos" en Z que parecen lifts rápidos (v=-8.0).
-            
-            IS_LIFTING = velocity < -12.0
+            # Si vel < -8.0, BLOQUEAR (Detectamos levantamiento claro)
+            IS_LIFTING = velocity < -8.0
             
             if IS_LIFTING:
                 # Si detectamos lift, cortamos y ponemos cooldown.

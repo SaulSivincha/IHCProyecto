@@ -259,59 +259,112 @@ class FreeModeWindow(QMainWindow):
                     # Cálculo de profundidad (Triangulación)
                     # depth_relative > 0: dedo ha pasado el plano del teclado (tocar)
                     # depth_relative < 0: dedo está antes del plano del teclado (no tocar)
-                    for fl in hl_tips:
-                        for fr in hr_tips:
-                            if fl[0] == fr[0] and fl[1] == fr[1]: # Mismo dedo
-                                # Usar DepthEstimator si está disponible
-                                if self.depth_estimator:
-                                    # 1. Rectificar puntos
-                                    pt_left = (fl[2], fl[3])
-                                    pt_right = (fr[2], fr[3])
-                                    pt_l_rect = self.depth_estimator.rectify_point(pt_left, 'left')
-                                    pt_r_rect = self.depth_estimator.rectify_point(pt_right, 'right')
+                        # 2. PROCESAMIENTO ESTÁNDAR: Matching por ID
+                        # Usamos coincidencia estricta de ID.
+                        # Si MediaPipe swapea IDs, perderemos tracking momentáneamente (dropout),
+                        # pero KeyboardMapper ahora maneja dropouts asumiendo Depth=99 (Aire) en lugar de Touch.
+                        
+                        # DEBUG DIAGNOSTICO:
+                        if not hasattr(self, '_diag_counter'): self._diag_counter = 0
+                        self._diag_counter += 1
+                        if self._diag_counter % 30 == 0:
+                            print(f"[DIAG] Manos: L={len(hl_tips)} R={len(hr_tips)}")
+
+                # === GEOMETRIC MATCHING STRATEGY (NUEVO) ===
+                # Reemplazamos el matching por ID estricto con heurísticas posicionales
+                
+                # 1. Agrupar tips por mano
+                def group_by_hand(tips_list):
+                    groups = {}
+                    for t in tips_list:
+                        h_id = t[0]
+                        if h_id not in groups: groups[h_id] = []
+                        groups[h_id].append(t)
+                    return groups
+
+                l_hands_dict = group_by_hand(hl_tips)
+                r_hands_dict = group_by_hand(hr_tips)
+                
+                l_hand_ids = sorted(list(l_hands_dict.keys()))
+                r_hand_ids = sorted(list(r_hands_dict.keys()))
+                
+                hand_correspondence = {} # {id_izq: id_der}
+                
+                # Heurística 1: Single Match (1vs1) - La más común y robusta
+                if len(l_hand_ids) == 1 and len(r_hand_ids) == 1:
+                    hand_correspondence[l_hand_ids[0]] = r_hand_ids[0]
+                    # if self._diag_counter % 30 == 0:
+                    #     print(f"[MATCH] 1v1 Force: L{l_hand_ids[0]} <-> R{r_hand_ids[0]}")
+                    
+                # Heurística 2: Sorting por X (Izquierda a Derecha)
+                elif len(l_hand_ids) > 0 and len(r_hand_ids) > 0:
+                    # Calcular centroide X promedio para cada mano izquierda
+                    l_centers = []
+                    for hid in l_hand_ids:
+                        tips = l_hands_dict[hid]
+                        avg_x = sum([t[2] for t in tips]) / len(tips)
+                        l_centers.append((avg_x, hid))
+                    l_centers.sort() # Ordenar por X
+                    
+                    # Calcular centroide X para derecha
+                    r_centers = []
+                    for hid in r_hand_ids:
+                        tips = r_hands_dict[hid]
+                        avg_x = sum([t[2] for t in tips]) / len(tips)
+                        r_centers.append((avg_x, hid))
+                    r_centers.sort()
+                    
+                    # Emparejar en orden (0 con 0, 1 con 1...)
+                    min_hands = min(len(l_centers), len(r_centers))
+                    for i in range(min_hands):
+                        id_l = l_centers[i][1]
+                        id_r = r_centers[i][1]
+                        hand_correspondence[id_l] = id_r
+                        
+                # 2. PROCESAR PAREJAS ENCONTRADAS
+                for id_l, id_r in hand_correspondence.items():
+                    tips_l = l_hands_dict[id_l]
+                    tips_r = r_hands_dict[id_r]
+                    
+                    # Diccionario rápido por tip_id para la mano derecha
+                    dict_tips_r = {t[1]: t for t in tips_r}
+                    
+                    for fl in tips_l: # Para cada dedo en mano izquierda
+                        tip_id = fl[1]
+                        
+                        if tip_id in dict_tips_r:
+                            fr = dict_tips_r[tip_id]
+                            # BINGO: Tenemos pareja (fl, fr) validada geométricamente
+                            
+                            pt_left = (fl[2], fl[3])
+                            pt_right = (fr[2], fr[3])
+                            
+                            # Usar triangulación robusta
+                            if self.depth_estimator:
+                                path_l_rect = self.depth_estimator.rectify_point(pt_left, 'left')
+                                path_r_rect = self.depth_estimator.rectify_point(pt_right, 'right')
+                                
+                                # Triangular
+                                point_3d = self.depth_estimator.triangulate_point(path_l_rect, path_r_rect)
+                                
+                                if point_3d:
+                                    depth_absolute = point_3d[2]
+                                    import math
                                     
-                                    # 2. Triangular
-                                    point_3d = self.depth_estimator.triangulate_point(pt_l_rect, pt_r_rect)
+                                    # Sanity Check MEJORADO:
+                                    if depth_absolute <= 0 or math.isinf(depth_absolute) or math.isnan(depth_absolute):
+                                        continue 
+                                        
+                                    dist_mesa_eff = keyboard_distance - StereoConfig.KEYBOARD_OFFSET_CM
+                                    depth_relative = dist_mesa_eff - depth_absolute
                                     
-                                    if point_3d:
-                                        depth_absolute = point_3d[2]  # Z = distancia desde cámaras (cm)
-                                        # Profundidad relativa al teclado calibrado
-                                        depth_relative = keyboard_distance - depth_absolute
+                                    # Filtro de rango físico amplio
+                                    if depth_relative < -50 or depth_relative > 50:
+                                        pass 
+                                    else:
+                                        # Guardar profundidad usando ID original izquierdo (consistencia)
                                         finger_depths_dict[(fl[0], fl[1])] = depth_relative
-                                        
-                                        # Filtrar valores absurdos de profundidad
-                                        if depth_relative < -100 or depth_relative > 100:
-                                            continue  # Saltar, valor no confiable
-                                        
-                                        # DEBUG: Mostrar info de profundidad
-                                        if not hasattr(self, '_debug_counter'):
-                                            self._debug_counter = 0
-                                            # Mostrar configuración al inicio
-                                            print(f"\\n=== CONFIGURACIÓN DE DETECCIÓN ===")
-                                            print(f"Distancia calibrada (keyboard_distance): {keyboard_distance:.1f}cm")
-                                            print(f"Umbral de activación: depth_relative <= 2.0cm")
-                                            print(f"NOTA: Activa cuando el dedo está CERCA del teclado calibrado")
-                                            print(f"  - Relativo NEGATIVO = dedo MÁS LEJOS de cámaras que el teclado")
-                                            print(f"  - Relativo POSITIVO = dedo MÁS CERCA de cámaras que el teclado")
-                                            print(f"==================================\\n")
-                                        self._debug_counter += 1
-                                        if self._debug_counter % 30 == 0:  # Cada 30 frames
-                                            # Lógica corregida: activa cuando el dedo está sobre la mesa
-                                            activation_threshold = 2.0
-                                            activate = depth_relative <= activation_threshold
-                                            
-                                            # Determinar RAZÓN de no activación
-                                            if activate:
-                                                reason = "[TOCANDO]"
-                                            elif depth_relative < -5.0:
-                                                reason = f"(dedo {abs(depth_relative):.1f}cm DEBAJO del teclado)"
-                                            elif depth_relative > 5.0:
-                                                reason = f"(dedo {depth_relative:.1f}cm ARRIBA del teclado)"
-                                            else:
-                                                reason = "(en zona intermedia)"
-                                            
-                                            status = "SI" if activate else "NO"
-                                            print(f"[DEBUG] Dedo {fl[0]},{fl[1]}: Z={depth_absolute:.1f}cm, Rel={depth_relative:.1f}cm -> {status} {reason}")
+                                                    # print(f"[DEBUG_ID] Dedo {fl[1]}: Abs={depth_absolute:.1f}, Rel={depth_relative:.1f} -> {status}")
 
                                 # Fallback a lógica antigua si no hay DepthEstimator
                                 elif self.angler and keyboard_distance:

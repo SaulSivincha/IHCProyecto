@@ -42,14 +42,15 @@ class StereoConfig:
                 if 'camera_ids' in data:
                     StereoConfig.LEFT_CAMERA_SOURCE = data['camera_ids']['left']
                     StereoConfig.RIGHT_CAMERA_SOURCE = data['camera_ids']['right']
-                    print(f"[StereoConfig] IDs de cámara cargados desde calibration.json:")
-                    print(f"  Izquierda: Cámara {StereoConfig.LEFT_CAMERA_SOURCE}")
-                    print(f"  Derecha: Cámara {StereoConfig.RIGHT_CAMERA_SOURCE}")
+                    # print(f"[StereoConfig] IDs de cámara cargados desde calibration.json:")
+                    # print(f"  Izquierda: Cámara {StereoConfig.LEFT_CAMERA_SOURCE}")
+                    # print(f"  Derecha: Cámara {StereoConfig.RIGHT_CAMERA_SOURCE}")
                     return True
         except Exception as e:
-            print(f"[StereoConfig] Error al cargar IDs de cámara: {e}")
+            # print(f"[StereoConfig] Error al cargar IDs de cámara: {e}")
+            pass
         
-        print(f"[StereoConfig] Usando IDs por defecto: L={StereoConfig.LEFT_CAMERA_SOURCE}, R={StereoConfig.RIGHT_CAMERA_SOURCE}")
+        # print(f"[StereoConfig] Usando IDs por defecto: L={StereoConfig.LEFT_CAMERA_SOURCE}, R={StereoConfig.RIGHT_CAMERA_SOURCE}")
         return False
     
     @staticmethod
@@ -147,13 +148,17 @@ class StereoConfig:
     ANGLE_HEIGHT = CAMERA_V_FOV - V_FOV_RECTIFICATION
     
     # ==================== GEOMETRÍA ESTÉREO ====================
-    CAMERA_SEPARATION = 14.21       # Distancia entre cámaras (cm)
+    CAMERA_SEPARATION = 9.62        # Distancia entre cámaras (cm) - Actualizado según calibration.json
     VKB_CENTER_DISTANCE = 71        # Distancia del teclado virtual (cm)
     
     # ==================== DETECCIÓN DE PROFUNDIDAD ====================
     DEPTH_THRESHOLD = 5.0           # Umbral de profundidad para presión (cm) - aumentado para mejor detección
                                      # Rango recomendado: 2.0-5.0 cm
     DEPTH_CORRECTION_FACTOR = 1.0   # Factor de corrección de profundidad (calculado en Fase 3)
+    KEYBOARD_OFFSET_CM = 0.0        # [NUEVO] Ajuste manual de altura de mesa (+ = subir mesa hacia cámara)
+    TABLE_CORNERS = None            # [NUEVO] Esquinas de mesa para proyección AR [(x,y), (x,y), (x,y), (x,y)]
+    CALIB_PIXEL_WIDTH = None        # Resolución usada durante la calibración (para escalar puntos)
+    CALIB_PIXEL_HEIGHT = None       # Resolución usada durante la calibración (para escalar puntos)
     
     # Sistema de detección de movimiento (velocity-based triggering)
     VELOCITY_THRESHOLD = 1.5        # Velocidad mínima hacia abajo (cm/frame) para activar tecla
@@ -181,13 +186,13 @@ class StereoConfig:
     
     # Posición del teclado virtual (porcentajes del canvas)
     # Ajustado +5% en todas dimensiones para mejor detección
-    KEYBOARD_X0_RATIO = 0.175       # Posición X inicial (17.5% del ancho, antes 20%)
-    KEYBOARD_Y0_RATIO = 0.325       # Posición Y inicial (32.5% del alto, antes 35%)
-    KEYBOARD_X1_RATIO = 0.825       # Posición X final (82.5% del ancho, antes 80%)
-    KEYBOARD_Y1_RATIO = 0.575       # Posición Y final (57.5% del alto, antes 55%)
+    KEYBOARD_X0_RATIO = 0.140       # Posición X inicial (14% del ancho)
+    KEYBOARD_Y0_RATIO = 0.540       # Posición Y inicial (54% del alto, movido arriba)
+    KEYBOARD_X1_RATIO = 0.860       # Posición X final (86% del ancho)
+    KEYBOARD_Y1_RATIO = 0.810       # Posición Y final (81% del alto, movido arriba)
     
     # Relaciones de tamaño de teclas (basado en piano real)
-    BLACK_KEY_WIDTH_RATIO = 0.54    # Ancho tecla negra / ancho tecla blanca (13.7mm / 23.5mm)
+    BLACK_KEY_WIDTH_RATIO = 0.40    # [TUNED] Reducido de 0.54 a 0.40 para evitar overlap visual/táctil
     WHITE_KEY_WIDTH_RATIO = 0.93    # Ancho tecla blanca base
     BLACK_KEY_HEIGHT_RATIO = 2/3    # Altura tecla negra / altura tecla blanca
     KEYBOARD_ALPHA = 0.5            # Transparencia del teclado virtual
@@ -296,6 +301,23 @@ class StereoConfig:
                 StereoConfig.CAMERA_SEPARATION = calib_data['camera_separation_cm']
             
             # 2. Distancia del teclado (de Fase 3 - depth_correction)
+            if 'depth_correction' in calib_data and 'keyboard_distance_cm' in calib_data['depth_correction']:
+                StereoConfig.VKB_CENTER_DISTANCE = calib_data['depth_correction']['keyboard_distance_cm']
+
+            # 3. Definición de Mesa (AR Projection - NUEVO)
+            if 'table_definition' in calib_data and 'corners' in calib_data['table_definition']:
+                StereoConfig.TABLE_CORNERS = calib_data['table_definition']['corners']
+                # Cargar resolución de calibración si existe
+                if 'resolution' in calib_data['table_definition']:
+                    StereoConfig.CALIB_PIXEL_WIDTH = calib_data['table_definition']['resolution'][0]
+                    StereoConfig.CALIB_PIXEL_HEIGHT = calib_data['table_definition']['resolution'][1]
+                else:
+                     # Si no existe, asumir valores por defecto (ej. HD) o None
+                     StereoConfig.CALIB_PIXEL_WIDTH = 1280
+                     StereoConfig.CALIB_PIXEL_HEIGHT = 720
+                
+                print(f"[INFO] Esquinas de mesa cargadas: {StereoConfig.TABLE_CORNERS} (Ref: {StereoConfig.CALIB_PIXEL_WIDTH}x{StereoConfig.CALIB_PIXEL_HEIGHT})")
+            
             # Prioridad: depth_correction.keyboard_distance_cm > depth_calibration > raíz
             if 'depth_correction' in calib_data and 'keyboard_distance_cm' in calib_data['depth_correction']:
                 StereoConfig.VKB_CENTER_DISTANCE = calib_data['depth_correction']['keyboard_distance_cm']

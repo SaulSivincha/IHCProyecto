@@ -43,8 +43,8 @@ class KeyboardProcessor:
         self.use_stereo_calibration = use_stereo_calibration and depth_estimator is not None
         
         # Buffer de suavizado temporal para reducir jitter
-        if self.depth_estimator and not hasattr(self.depth_estimator, 'finger_position_history'):
-            self.depth_estimator.finger_position_history = {}
+        # [VISUAL] Buffer para feedback visual en el siguiente frame
+        self.prev_active_keys = []
         
     def process_and_play(self, frame_left, frame_right, virtual_keyboard, 
                         hand_detector_left, hand_detector_right, 
@@ -87,7 +87,8 @@ class KeyboardProcessor:
         
         # === PASO 2: Dibujar teclado PRIMERO (debajo de las manos) ===
         # Siempre dibujamos en el frame de visualización
-        virtual_keyboard.draw_virtual_keyboard(frame_draw)
+        # [VISUAL] Pasamos las teclas activas del frame ANTERIOR para feedback
+        virtual_keyboard.draw_virtual_keyboard(frame_draw, self.prev_active_keys)
         
         # === PASO 3: Si es modo juego, dibujar notas cayendo ===
         if game_mode and rhythm_game:
@@ -121,8 +122,8 @@ class KeyboardProcessor:
             # SOLUCIÓN: Usar la función custom de dibujo con puntos transformados si es necesario.
             if rotate_hands and display_frame_left is not None:
                 h, w, c = display_frame_left.shape
-                hand_detector_left.drawHands(frame_draw, flip_dots=True, display_w=w, display_h=h)
-                hand_detector_left.drawTips(frame_draw, flip_dots=True, display_w=w, display_h=h)
+                hand_detector_left.drawHands(frame_draw, rotate_180=True)
+                hand_detector_left.drawTips(frame_draw, rotate_180=True)
             else:
                 hand_detector_left.drawHands(frame_draw)
                 hand_detector_left.drawTips(frame_draw)
@@ -157,11 +158,28 @@ class KeyboardProcessor:
                 for finger_right in fingers_right_image:
                     # Verificar si son el mismo dedo (mismo hand_id y tip_id)
                     if finger_left[0] == finger_right[0] and finger_left[1] == finger_right[1]:
-                        depth_corrected = self._calculate_depth(finger_left, finger_right)
+                        depth_absolute = self._calculate_depth(finger_left, finger_right)
                         
-                        # Guardar profundidad
+                        # Convertir a profundidad RELATIVA al teclado
+                        # Relative = Distance_Plane - Distance_Object
+                        # (+) Objetos MÁS CERCA que el plano (encima)
+                        # (-) Objetos MÁS LEJOS que el plano (debajo)
+                        
+                        relative_depth = 0.0  # Default: tocar si no hay calibración de distancia
+                        
+                        if self.depth_estimator and self.depth_estimator.keyboard_distance_cm:
+                            kb_dist = self.depth_estimator.keyboard_distance_cm
+                            relative_depth = kb_dist - depth_absolute
+                        else:
+                            # Fallback: si no hay dist calibrada, usar absolute inverso o 0
+                            # Para evitar que Absolute (40cm) falle contra threshold (5cm)
+                            # Asumimos que si detectamos triangulación, queremos intentar tocar
+                            # O usamos un valor dummy que pase el filtro.
+                            relative_depth = 1.0 # 1cm relative = tocar
+                        
+                        # Guardar profundidad RELATIVA
                         finger_id = (finger_left[0], finger_left[1])
-                        finger_depths_dict[finger_id] = depth_corrected
+                        finger_depths_dict[finger_id] = relative_depth
             
             # Obtener mapa de teclas presionadas
             on_map, off_map = self.km.get_kayboard_map(
@@ -170,6 +188,11 @@ class KeyboardProcessor:
                 finger_depths=finger_depths_dict,
                 keyboard_n_key=self.keyboard_total_keys
             )
+            
+            # [VISUAL] Actualizar teclas activas para el siguiente frame
+            # Usamos el estado actual del mapa (prev_map en km es el current al final de get_keyboard_map)
+            if hasattr(self.km, 'prev_map'):
+                self.prev_active_keys = np.where(self.km.prev_map)[0].tolist()
             
             # === PASO 6: Reproducir audio según el modo ===
             if game_mode and rhythm_game:
@@ -188,6 +211,7 @@ class KeyboardProcessor:
                 if np.any(on_map):
                     for k_pos, on_key in enumerate(on_map):
                         if on_key:
+                            print(f"♪ NOTE ON: {k_pos}")
                             self.synth.noteon(
                                 chan=0,
                                 key=virtual_keyboard.note_from_key(k_pos) + self.octave_base,

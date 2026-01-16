@@ -295,6 +295,7 @@ class MainMenuDialog(QDialog):
                 btn.setFocus()
                 # Highlight explícito
                 btn.setStyleSheet(f"""
+                QPushButton {{
                     background-color: {Theme.to_hex(Theme.SELECTION_BG)};
                     color: {Theme.to_hex(Theme.BTN_PRIMARY_TEXT)};
                     border: 2px solid {Theme.to_hex(Theme.BORDER_DEFAULT)};
@@ -312,6 +313,7 @@ class MainMenuDialog(QDialog):
                 btn.setText("   " + text_clean)
                 # Estilo normal - AHORA SOLIDO AZUL
                 btn.setStyleSheet(f"""
+                QPushButton {{
                     background-color: {Theme.to_hex(Theme.BTN_PRIMARY_BG)};
                     color: {Theme.to_hex(Theme.BTN_PRIMARY_TEXT)};
                     border: 2px solid {Theme.to_hex(Theme.BORDER_DEFAULT)};

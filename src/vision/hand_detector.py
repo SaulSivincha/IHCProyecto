@@ -38,6 +38,7 @@ class HandDetector():
         self.hands = self.mpHands.Hands(
             static_image_mode=self.mode,
             max_num_hands=self.maxHands,
+            model_complexity=0,  # [OPTIMIZACIÓN] 0=Lite (Rápido), 1=Full. Usamos Lite para menor latencia.
             min_detection_confidence=self.detectionCon,
             min_tracking_confidence=self.trackCon)
         self.mpDraw = mp.solutions.drawing_utils
@@ -159,6 +160,7 @@ class HandDetector():
                         self.img_width
                     cy = handLandmarks.landmark[indx_tips].y * \
                         self.img_height
+                    
                     fingertips.append([hand_id, tip_id, cx, cy])
 
         hands = []
@@ -174,6 +176,23 @@ class HandDetector():
                 hands.append(handedness.classification[0])
 
         return [hands, fingertips]
+
+    def getAllLandmarks(self):
+        """
+        Retorna una lista de listas con TODOS los landmarks de todas las manos
+        en coordenadas de pixel [(x, y), ...].
+        Útil para dibujar máscaras de oclusión.
+        """
+        all_landmarks_px = []
+        if self.results.multi_hand_landmarks:
+            for handLandmarks in self.results.multi_hand_landmarks:
+                hand_px = []
+                for lm in handLandmarks.landmark:
+                    cx = int(lm.x * self.img_width)
+                    cy = int(lm.y * self.img_height)
+                    hand_px.append([cx, cy])
+                all_landmarks_px.append(hand_px)
+        return all_landmarks_px
 
     # TODO: Obtener la referencia W y H una sola vez sin pasar la img
     def getIndexFingerTipPos(self):

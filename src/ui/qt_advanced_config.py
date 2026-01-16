@@ -423,7 +423,7 @@ class AdvancedConfigDialog(QDialog):
     def _setup_ui(self):
         main_layout = QVBoxLayout(self)
         main_layout.setSpacing(15)
-        main_layout.setContentsMargins(20, 20, 20, 20)
+        main_layout.setContentsMargins(40, 40, 40, 40)
         
         # === HEADER ===
         header = QLabel("⚙️ CONFIGURACIÓN DE ALGORITMOS")
@@ -437,120 +437,42 @@ class AdvancedConfigDialog(QDialog):
         header.setAlignment(Qt.AlignmentFlag.AlignCenter)
         main_layout.addWidget(header)
         
-        # Descripción
-        desc = QLabel("Ajusta los parámetros de detección en tiempo real.\n"
-                     "Los cambios se aplican inmediatamente.")
-        desc.setStyleSheet(f"color: {Theme.to_hex(Theme.TEXT_SECONDARY)}; font-size: 14px; font-family: 'Comic Sans MS', 'Arial'; background: transparent;")
+        main_layout.addSpacing(40)
+        
+        # Mensaje de "Sin Datos"
+        no_data = QLabel("⚠️ MODO SIN ALGORITMOS")
+        no_data.setStyleSheet(f"""
+            color: {Theme.to_hex(Theme.ERROR)};
+            font-size: 32px;
+            font-weight: bold;
+            font-family: 'Comic Sans MS', 'Arial';
+            background: transparent;
+        """)
+        no_data.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        main_layout.addWidget(no_data)
+        
+        desc = QLabel("Los algoritmos de corrección y filtrado han sido eliminados por solicitud del usuario.\n"
+                     "El sistema opera usando los datos crudos de detección.")
+        desc.setStyleSheet(f"""
+            color: {Theme.to_hex(Theme.TEXT_SECONDARY)}; 
+            font-size: 18px; 
+            font-family: 'Comic Sans MS', 'Arial';
+            font-style: italic;
+        """)
         desc.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        desc.setWordWrap(True)
         main_layout.addWidget(desc)
         
-        # === PRESETS ===
-        preset_layout = QHBoxLayout()
-        preset_label = QLabel("Preset rápido:")
-        preset_label.setStyleSheet(f"color: {Theme.to_hex(Theme.TEXT_PRIMARY)}; font-weight: bold; font-family: 'Comic Sans MS', 'Arial'; background: transparent;")
-        preset_layout.addWidget(preset_label)
-        
-        self.preset_combo = QComboBox()
-        self.preset_combo.addItem("-- Seleccionar Preset --", None)
-        self.preset_combo.addItem("🎯 Default (Equilibrado)", "default")
-        self.preset_combo.addItem("⚡ Sensible (Respuesta rápida)", "sensitive")
-        self.preset_combo.addItem("🛡️ Estable (Menos errores)", "stable")
-        self.preset_combo.addItem("📦 Mínimo (Solo esenciales)", "minimal")
-        self.preset_combo.currentIndexChanged.connect(self._on_preset_selected)
-        self.preset_combo.setStyleSheet(f"""
-            QComboBox {{
-                background-color: rgba(255, 255, 255, 0.9);
-                color: {Theme.to_hex(Theme.TEXT_PRIMARY)};
-                border: 2px solid {Theme.to_hex(Theme.BORDER_DEFAULT)};
-                border-radius: 5px;
-                padding: 8px;
-                font-size: 14px;
-                font-family: 'Comic Sans MS', 'Arial';
-            }}
-            QComboBox::drop-down {{
-                border: none;
-                width: 30px;
-            }}
-            QComboBox QAbstractItemView {{
-                background-color: rgba(255, 255, 255, 0.95);
-                color: {Theme.to_hex(Theme.TEXT_PRIMARY)};
-                selection-background-color: {Theme.to_hex(Theme.ORANGE_VIVID)};
-            }}
-        """)
-        preset_layout.addWidget(self.preset_combo)
-        
-        preset_layout.addStretch()
-        
-        # Botón de reset
-        reset_btn = QPushButton("🔄 Reset")
-        reset_btn.clicked.connect(self._reset_to_default)
-        reset_btn.setStyleSheet(f"""
-            QPushButton {{
-                background-color: {Theme.to_hex(Theme.BTN_PRIMARY_BG)};
-                color: {Theme.to_hex(Theme.BTN_PRIMARY_TEXT)};
-                border: 2px solid {Theme.to_hex(Theme.BORDER_DEFAULT)};
-                padding: 10px 20px;
-                font-weight: bold;
-                border-radius: 15px;
-                font-size: 13px;
-                font-family: 'Comic Sans MS', 'Arial';
-            }}
-            QPushButton:hover {{
-                background-color: {Theme.to_hex(Theme.ORANGE_VIVID)};
-                color: #FFFFFF;
-            }}
-            QPushButton:pressed {{
-                background-color: {Theme.to_hex(Theme.ORANGE_VIVID)};
-                border-color: {Theme.to_hex(Theme.BLUE_VIVID)};
-            }}
-        """)
-        preset_layout.addWidget(reset_btn)
-        
-        main_layout.addLayout(preset_layout)
-        
-        # === ÁREA DE SCROLL PARA ALGORITMOS ===
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        scroll.setStyleSheet("QScrollArea { background-color: transparent; border: none; }")
-        
-        scroll_content = QWidget()
-        scroll_content.setStyleSheet("background-color: transparent;")
-        self.algorithms_layout = QVBoxLayout(scroll_content)
-        self.algorithms_layout.setSpacing(15)
-        
-        # Crear widgets para cada algoritmo en orden de ejecución
-        for algo_name in EXECUTION_ORDER:
-            if algo_name in ALGORITHMS_CONFIG:
-                widget = AlgorithmWidget(algo_name, ALGORITHMS_CONFIG[algo_name])
-                widget.config_changed.connect(self._on_algo_config_changed)
-                widget.enabled_changed.connect(self._on_algo_enabled_changed)
-                self.algorithm_widgets[algo_name] = widget
-                self.algorithms_layout.addWidget(widget)
-        
-        self.algorithms_layout.addStretch()
-        scroll.setWidget(scroll_content)
-        main_layout.addWidget(scroll, 1)
-        
-        # === FOOTER ===
-        footer_layout = QHBoxLayout()
-        
-        # Info de algoritmos activos
-        self.active_label = QLabel()
-        self.active_label.setStyleSheet("background: transparent; font-family: 'Comic Sans MS', 'Arial';")
-        self._update_active_count()
-        footer_layout.addWidget(self.active_label)
-        
-        footer_layout.addStretch()
+        main_layout.addStretch()
         
         # Botón cerrar
         close_btn = QPushButton("✓ Cerrar")
         close_btn.clicked.connect(self.accept)
         close_btn.setStyleSheet(f"""
             QPushButton {{
-                background-color: {Theme.to_hex(Theme.BTN_SUCCESS_BG)};
-                color: {Theme.to_hex(Theme.BTN_SUCCESS_TEXT)};
-                border: 3px solid {Theme.to_hex(Theme.BORDER_DEFAULT)};
+                background-color: {Theme.to_hex(Theme.BTN_PRIMARY_BG)};
+                color: {Theme.to_hex(Theme.BTN_PRIMARY_TEXT)};
+                border: 2px solid {Theme.to_hex(Theme.BORDER_DEFAULT)};
                 padding: 10px 30px;
                 font-weight: bold;
                 border-radius: 20px;
@@ -558,15 +480,10 @@ class AdvancedConfigDialog(QDialog):
                 font-family: 'Comic Sans MS', 'Arial';
             }}
             QPushButton:hover {{
-                background-color: {Theme.to_hex(Theme.GREEN_VIVID)};
-            }}
-            QPushButton:pressed {{
-                background-color: #2E7D32;
+                background-color: {Theme.to_hex(Theme.ORANGE_VIVID)};
             }}
         """)
-        footer_layout.addWidget(close_btn)
-        
-        main_layout.addLayout(footer_layout)
+        main_layout.addWidget(close_btn, 0, Qt.AlignmentFlag.AlignCenter)
         
     def _on_preset_selected(self, index):
         preset_name = self.preset_combo.currentData()

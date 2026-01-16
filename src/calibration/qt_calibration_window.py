@@ -13,6 +13,15 @@ from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QImage, QPixmap, QFont, QLinearGradient, QPainter, QColor
 from src.config.theme import Theme
 
+class ClickableLabel(QLabel):
+    """QLabel que emite señal al hacer clic"""
+    clicked = pyqtSignal(int, int) # x, y
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.clicked.emit(event.pos().x(), event.pos().y())
+        super().mousePressEvent(event)
+
 
 class CalibrationWindow(QMainWindow):
     """
@@ -25,6 +34,7 @@ class CalibrationWindow(QMainWindow):
     cancel_requested = pyqtSignal()   # Usuario presionó cancelar
     continue_requested = pyqtSignal() # Usuario presionó continuar
     retry_requested = pyqtSignal()    # Usuario presionó reintentar
+    frame_clicked = pyqtSignal(str, int, int) # camera_name, x, y (Nuevo para AR)
     
     def __init__(self, width=1280, height=720):
         super().__init__()
@@ -80,7 +90,8 @@ class CalibrationWindow(QMainWindow):
         video_layout.setSpacing(5)
         
         # Cámara izquierda
-        self.camera_left_label = QLabel()
+        self.camera_left_label = ClickableLabel()
+        self.camera_left_label.clicked.connect(lambda x, y: self.frame_clicked.emit("left", x, y))
         self.camera_left_label.setStyleSheet(f"""
             border: 3px solid {Theme.to_hex(Theme.BORDER_DEFAULT)};
             border-radius: 10px;
@@ -92,7 +103,8 @@ class CalibrationWindow(QMainWindow):
         video_layout.addWidget(self.camera_left_label)
         
         # Cámara derecha
-        self.camera_right_label = QLabel()
+        self.camera_right_label = ClickableLabel()
+        self.camera_right_label.clicked.connect(lambda x, y: self.frame_clicked.emit("right", x, y))
         self.camera_right_label.setStyleSheet(f"""
             border: 3px solid {Theme.to_hex(Theme.BORDER_DEFAULT)};
             border-radius: 10px;

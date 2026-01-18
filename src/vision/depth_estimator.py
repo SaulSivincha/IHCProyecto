@@ -71,8 +71,14 @@ class DepthEstimator:
         self.mapx_right = None
         self.mapy_right = None
         
-        # Resolución de imágenes
+        # Resolución de imágenes (de calibración)
         self.image_size = None
+        self.calib_width = None   # Ancho usado durante calibración
+        self.calib_height = None  # Alto usado durante calibración
+        
+        # Resolución actual de runtime (puede ser diferente de calibración)
+        self.runtime_width = None
+        self.runtime_height = None
         
         # Cargar calibración
         self._load_calibration()
@@ -119,6 +125,15 @@ class DepthEstimator:
         else:
             # Fallback: inferir desde matriz K
             self.image_size = (int(self.K_left[0, 2] * 2), int(self.K_left[1, 2] * 2))
+        
+        # Guardar resolución de calibración
+        self.calib_width = self.image_size[0]
+        self.calib_height = self.image_size[1]
+        
+        # Por defecto, asumir que runtime usa la misma resolución
+        # (se puede actualizar con set_runtime_resolution)
+        self.runtime_width = self.calib_width
+        self.runtime_height = self.calib_height
         
         # Cargar parámetros extrínsecos (Fase 2)
         stereo = data['stereo']
@@ -204,6 +219,57 @@ class DepthEstimator:
         
         # print(f"[INFO] Mapas de rectificacion generados")
     
+    def set_runtime_resolution(self, width, height):
+        """
+        Establece la resolución usada en runtime.
+        
+        IMPORTANTE: Si es diferente de la resolución de calibración,
+        los parámetros intrínsecos (focal, centro óptico) deben escalarse.
+        
+        Args:
+            width: Ancho en píxeles del frame en runtime
+            height: Alto en píxeles del frame en runtime
+        """
+        self.runtime_width = width
+        self.runtime_height = height
+        
+        if width != self.calib_width or height != self.calib_height:
+            print(f"  [INFO] Resolucion runtime ({width}x{height}) != calibracion ({self.calib_width}x{self.calib_height})")
+            print(f"  [INFO] Los parametros se escalaran automaticamente")
+    
+    def get_resolution_scale(self):
+        """
+        Calcula el factor de escala entre resolución de calibración y runtime.
+        
+        Returns:
+            tuple: (scale_x, scale_y) factores de escala
+        """
+        if self.calib_width and self.runtime_width:
+            scale_x = self.runtime_width / self.calib_width
+            scale_y = self.runtime_height / self.calib_height
+            return (scale_x, scale_y)
+        return (1.0, 1.0)
+    
+    def get_scaled_intrinsics(self):
+        """
+        Obtiene los parámetros intrínsecos escalados a la resolución de runtime.
+        
+        La matriz K tiene:
+        - fx, fy: focal length en píxeles (deben escalarse)
+        - cx, cy: centro óptico en píxeles (deben escalarse)
+        
+        Returns:
+            tuple: (fx, fy, cx, cy) escalados a resolución runtime
+        """
+        scale_x, scale_y = self.get_resolution_scale()
+        
+        fx = self.K_left[0, 0] * scale_x
+        fy = self.K_left[1, 1] * scale_y
+        cx = self.K_left[0, 2] * scale_x
+        cy = self.K_left[1, 2] * scale_y
+        
+        return (fx, fy, cx, cy)
+
     def rectify_images(self, img_left, img_right):
         """
         Rectifica un par de imágenes estéreo
@@ -294,24 +360,19 @@ class DepthEstimator:
     def triangulate_point_DLT(self, point_left, point_right):
         """
         Triangula un punto 3D usando Direct Linear Transform (DLT)
-        Método más robusto que usa matrices de proyección directamente
         
-        CORREGIDO: Ahora usa matrices K @ [R|T] con R y T respecto al mundo,
-        igual que el repositorio StereoVision funcional.
+        NOTA: Este método tiene un bug conocido que produce Z negativo.
+        Se mantiene por compatibilidad pero se recomienda usar 'simple'.
         
         Args:
-            point_left: (x, y) en imagen izquierda rectificada
-            point_right: (x, y) en imagen derecha rectificada
+            point_left: (x, y) en imagen izquierda 
+            point_right: (x, y) en imagen derecha 
         
         Returns:
             tuple: (X, Y, Z) coordenadas 3D en cm, o None si falla
         """
-        # Obtener matrices de proyección CORRECTAS
-        # P0 = K_left @ [I | 0] (cámara izquierda como origen)
-        # P1 = K_right @ [R | T] (cámara derecha en el mundo)
         P0, P1 = self._get_projection_matrices_for_DLT()
         
-        # Construir sistema de ecuaciones A
         x1, y1 = point_left
         x2, y2 = point_right
         
@@ -322,36 +383,28 @@ class DepthEstimator:
             P1[0, :] - x2 * P1[2, :]
         ], dtype=np.float32)
         
-        # Resolver usando SVD (Singular Value Decomposition)
-        # La solución es el vector singular correspondiente al menor valor singular
         try:
             B = A.T @ A
             U, s, Vh = linalg.svd(B, full_matrices=False)
             
-            # Punto 3D en coordenadas homogéneas
             X_homogeneous = Vh[3, :]
             
-            # Convertir a coordenadas cartesianas (dividir por W)
             X = X_homogeneous[0] / X_homogeneous[3]
             Y = X_homogeneous[1] / X_homogeneous[3]
             Z = X_homogeneous[2] / X_homogeneous[3]
             
-            # Validar que Z sea positivo (delante de la cámara)
             if Z <= 0:
                 return None
             
-            # Convertir de metros a centímetros
             X_cm = X * 100
             Y_cm = Y * 100
             Z_cm = Z * 100
             
-            # Aplicar factor de corrección de profundidad
             Z_cm_corrected = Z_cm * self.DEPTH_CORRECTION_FACTOR
             
             return (X_cm, Y_cm, Z_cm_corrected)
             
         except Exception as e:
-            print(f"Error en triangulación DLT: {e}")
             return None
     
     def rectify_point(self, point, camera='left'):
@@ -378,18 +431,70 @@ class DepthEstimator:
         
         return rect_pt[0, 0]
 
-    def triangulate_point(self, point_left, point_right, method='DLT'):
+    def triangulate_point_simple(self, point_left, point_right):
+        """
+        Triangulación SIMPLE basada en disparidad horizontal.
+        Más robusto que DLT cuando la calibración no es perfecta.
+        
+        Fórmula: Z = (focal * baseline) / disparity
+        
+        IMPORTANTE: Los parámetros intrínsecos se escalan automáticamente
+        si la resolución de runtime es diferente de la de calibración.
+        
+        Args:
+            point_left: (x, y) en imagen izquierda (coordenadas en resolución RUNTIME)
+            point_right: (x, y) en imagen derecha (coordenadas en resolución RUNTIME)
+        
+        Returns:
+            tuple: (X, Y, Z) coordenadas 3D en cm, o None si falla
+        """
+        x_left, y_left = point_left
+        x_right, y_right = point_right
+        
+        # Calcular disparidad (diferencia horizontal)
+        disparity = abs(x_left - x_right)
+        
+        # Validar disparidad mínima (evitar división por cero y ruido)
+        if disparity < 5:  # Menos de 5 pixeles = demasiado cerca o error
+            return None
+        
+        # Obtener parámetros intrínsecos ESCALADOS a resolución runtime
+        fx, fy, cx, cy = self.get_scaled_intrinsics()
+        focal = (fx + fy) / 2
+        
+        # Baseline en cm (ya cargado de calibración)
+        baseline = self.baseline_cm
+        
+        # Calcular profundidad: Z = (f * B) / d
+        # focal está en pixeles (escalado), baseline en cm → Z en cm
+        Z_cm = (focal * baseline) / disparity
+        
+        # Validar rango razonable (10cm a 200cm)
+        if Z_cm < 10 or Z_cm > 200:
+            return None
+        
+        # Calcular X, Y usando similar triángulos (con cx, cy escalados)
+        X_cm = (x_left - cx) * Z_cm / focal
+        Y_cm = (y_left - cy) * Z_cm / focal
+        
+        return (X_cm, Y_cm, Z_cm)
+
+    def triangulate_point(self, point_left, point_right, method='simple'):
         """
         Triangula un punto 3D desde coordenadas 2D en imágenes RECTIFICADAS
         
         Args:
             point_left: (x, y) en imagen izquierda rectificada
             point_right: (x, y) en imagen derecha rectificada
-            method: 'DLT' (recomendado) o 'Q' (matriz de reproyección)
+            method: 'simple' (recomendado), 'DLT' o 'Q' (matriz de reproyección)
         
         Returns:
             tuple: (X, Y, Z) coordenadas 3D en cm, o None si falla
         """
+        # NUEVO: Método simple como default (más robusto)
+        if method == 'simple':
+            return self.triangulate_point_simple(point_left, point_right)
+        
         if method == 'DLT':
             return self.triangulate_point_DLT(point_left, point_right)
         

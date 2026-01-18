@@ -24,8 +24,8 @@ from src.config.theme import Theme
 class CameraConfigDialog(QDialog):
     """Diálogo para configurar las cámaras izquierda y derecha."""
     
-    # Lista fija de cámaras disponibles (sin detección)
-    CAMERA_LIST = [0, 1, 2, 3, 4, 5]
+    # Máximo ID a sondear para detectar cámaras disponibles
+    MAX_CAMERA_ID = 10
     
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -35,6 +35,12 @@ class CameraConfigDialog(QDialog):
         
         # Cargar configuración actual
         self._load_current_config()
+
+        # Detectar cámaras disponibles (por ID)
+        self.camera_list = self._detect_available_cameras(self.MAX_CAMERA_ID)
+        if not self.camera_list:
+            # Fallback seguro si no se detecta ninguna cámara
+            self.camera_list = list(range(self.MAX_CAMERA_ID + 1))
         
         self._setup_style()
         self._setup_ui()
@@ -61,6 +67,8 @@ class CameraConfigDialog(QDialog):
         
         self.left_camera_id = 1
         self.right_camera_id = 2
+        self.calib_width = 1280
+        self.calib_height = 720
         
         try:
             if calib_path.exists():
@@ -70,6 +78,9 @@ class CameraConfigDialog(QDialog):
                 if 'camera_ids' in data:
                     self.left_camera_id = data['camera_ids'].get('left', 1)
                     self.right_camera_id = data['camera_ids'].get('right', 2)
+                if 'resolution' in data:
+                    self.calib_width = data['resolution'].get('width', self.calib_width)
+                    self.calib_height = data['resolution'].get('height', self.calib_height)
         except:
             pass
     
@@ -359,12 +370,12 @@ class CameraConfigDialog(QDialog):
         layout.addLayout(buttons_layout)
     
     def _populate_combo(self, combo: QComboBox, selected_id: Optional[int]):
-        """Llena un combo con TODAS las cámaras (0-5) sin filtrar."""
+        """Llena un combo con cámaras detectadas y las lista por ID."""
         combo.blockSignals(True)
         combo.clear()
         
-        for cam_id in self.CAMERA_LIST:
-            combo.addItem(f"Camara {cam_id}", cam_id)
+        for cam_id in self.camera_list:
+            combo.addItem(f"ID {cam_id}", cam_id)
         
         if selected_id is not None:
             index = combo.findData(selected_id)
@@ -372,6 +383,16 @@ class CameraConfigDialog(QDialog):
                 combo.setCurrentIndex(index)
         
         combo.blockSignals(False)
+
+    def _detect_available_cameras(self, max_id: int):
+        """Detecta cámaras disponibles probando IDs consecutivos."""
+        available = []
+        for cam_id in range(max_id + 1):
+            cap = cv2.VideoCapture(cam_id)
+            if cap.isOpened():
+                available.append(cam_id)
+            cap.release()
+        return available
     
     def _take_photo_fast(self, cam_id: int) -> Optional[np.ndarray]:
         """Toma una foto de la cámara sin modificar configuración."""
@@ -379,6 +400,10 @@ class CameraConfigDialog(QDialog):
             cap = cv2.VideoCapture(cam_id)
             if not cap.isOpened():
                 return None
+
+            # Forzar resolución usada en calibración
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.calib_width)
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.calib_height)
             
             # Leer varios frames para que la cámara se estabilice
             frame = None
@@ -404,6 +429,7 @@ class CameraConfigDialog(QDialog):
             return
         
         try:
+            frame = self._draw_alignment_line(frame)
             frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             h, w, ch = frame_rgb.shape
             
@@ -417,6 +443,15 @@ class CameraConfigDialog(QDialog):
             label.setPixmap(QPixmap.fromImage(scaled))
         except:
             label.setText("Error mostrando imagen")
+
+    def _draw_alignment_line(self, frame: np.ndarray) -> np.ndarray:
+        """Dibuja una línea guía horizontal para alinear el ángulo de cámaras."""
+        if frame is None:
+            return frame
+        h, w = frame.shape[:2]
+        y = h // 2
+        cv2.line(frame, (0, y), (w - 1, y), (0, 255, 0), 2)
+        return frame
     
     def _take_left_photo(self):
         """Toma foto de la cámara izquierda."""
@@ -506,10 +541,22 @@ class CameraConfigDialog(QDialog):
             else:
                 data = {}
             
+            # Guardar los IDs seleccionados por el usuario
             data['camera_ids'] = {
                 'left': left_id,
                 'right': right_id
             }
+            
+            # Si no existe calibration_camera_ids, crearlo con los IDs actuales
+            # (Esto preserva los IDs originales de la calibración estéreo)
+            if 'calibration_camera_ids' not in data:
+                # Si ya hay calibración estéreo, usar los camera_ids que había antes
+                # Si no, usar los nuevos IDs como referencia inicial
+                data['calibration_camera_ids'] = {
+                    'left': left_id,
+                    'right': right_id
+                }
+                print(f"[CameraConfig] calibration_camera_ids inicializado: L={left_id}, R={right_id}")
             
             calib_path.parent.mkdir(parents=True, exist_ok=True)
             with open(calib_path, 'w') as f:

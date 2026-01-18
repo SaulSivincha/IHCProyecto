@@ -242,6 +242,14 @@ class PersistentResources:
             
             if CalibrationConfig.calibration_exists():
                 self.depth_estimator = load_depth_estimator(CalibrationConfig.CALIBRATION_FILE)
+                
+                # IMPORTANTE: Establecer resolución de runtime
+                # La calibración se hizo a una resolución (ej: 1280x720)
+                # pero runtime puede usar otra (ej: 640x480)
+                runtime_w = self.config.PIXEL_WIDTH
+                runtime_h = self.config.PIXEL_HEIGHT
+                self.depth_estimator.set_runtime_resolution(runtime_w, runtime_h)
+                
                 self.use_stereo_calibration = True
                 self._depth_ready = True
                 print(f"  [EXITO] Calibracion cargada (baseline: {self.depth_estimator.baseline_cm:.2f} cm)")

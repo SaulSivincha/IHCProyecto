@@ -482,13 +482,6 @@ class VirtualKeyboard():
         y0 = max(0, min(y0, h_img - 1))
         y1 = max(0, min(y1, h_img - 1))
         
-        # DEBUG: Solo cada 60 frames para no saturar
-        if not hasattr(self, '_flat_debug_counter'):
-            self._flat_debug_counter = 0
-        self._flat_debug_counter += 1
-        if self._flat_debug_counter % 60 == 1:
-            print(f"[FLAT] img=({h_img}x{w_img}), kb=({x0},{y0})-({x1},{y1})")
-        
         n_keys = self.kb_white_n_keys
         
         kb_width = x1 - x0
@@ -651,12 +644,6 @@ class VirtualKeyboard():
             key = math.floor(key)
             if int(key) in self.__white_map:
                 key_found = self.__white_map[int(key)]
-                
-        # CORREGIDO: Activar DEBUG para diagnosticar
-        if key_found is not None:
-            if not hasattr(self, '_last_debug_key') or self._last_debug_key != key_found:
-                print(f"[KEY_DEBUG] Tecla {key_found} detectada en ({x_pos:.0f},{y_pos:.0f})")
-                self._last_debug_key = key_found
              
         return key_found
 

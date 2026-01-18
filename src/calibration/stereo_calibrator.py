@@ -55,24 +55,25 @@ class StereoCalibrator:
         self.image_size = None
         self.stereo_error = None
         
-    def detect_chessboard_pair(self, frame_left, frame_right):
+    def detect_chessboard_pair(self, frame_left, frame_right, refine_corners=False):
         """
         Detecta el tablero en ambas cámaras simultáneamente
         
         Args:
             frame_left: Frame de cámara izquierda
             frame_right: Frame de cámara derecha
+            refine_corners: Si True, aplica cornerSubPix (lento pero preciso)
             
         Returns:
             tuple: (detected_both, corners_left, corners_right, frame_left_display, frame_right_display)
         """
         # Detectar en izquierda
         detected_left, corners_left, frame_left_display = \
-            self.calibrator_left.detect_chessboard(frame_left)
+            self.calibrator_left.detect_chessboard(frame_left, refine_corners=refine_corners)
         
         # Detectar en derecha
         detected_right, corners_right, frame_right_display = \
-            self.calibrator_right.detect_chessboard(frame_right)
+            self.calibrator_right.detect_chessboard(frame_right, refine_corners=refine_corners)
         
         # Ambas deben detectar
         detected_both = detected_left and detected_right

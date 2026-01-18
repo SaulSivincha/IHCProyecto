@@ -22,6 +22,11 @@ class StereoConfig:
     PIXEL_HEIGHT = 480              # Alto en píxeles
     FRAME_RATE = 30                 # FPS objetivo
     
+    # Flag que indica si los IDs de cámara actuales están invertidos
+    # respecto a los IDs usados durante la calibración estéreo.
+    # Si True, se deben intercambiar los frames/datos L<->R en el procesamiento.
+    CAMERAS_SWAPPED = False
+    
     @staticmethod
     def load_camera_ids_from_calibration():
         """
@@ -29,6 +34,9 @@ class StereoConfig:
         
         Este método debe llamarse ANTES de crear instancias de StereoConfig
         para que aplique los IDs configurados por el usuario.
+        
+        También detecta si los IDs actuales están invertidos respecto a
+        los IDs originales de calibración y configura CAMERAS_SWAPPED.
         """
         from pathlib import Path
         
@@ -42,15 +50,23 @@ class StereoConfig:
                 if 'camera_ids' in data:
                     StereoConfig.LEFT_CAMERA_SOURCE = data['camera_ids']['left']
                     StereoConfig.RIGHT_CAMERA_SOURCE = data['camera_ids']['right']
-                    # print(f"[StereoConfig] IDs de cámara cargados desde calibration.json:")
-                    # print(f"  Izquierda: Cámara {StereoConfig.LEFT_CAMERA_SOURCE}")
-                    # print(f"  Derecha: Cámara {StereoConfig.RIGHT_CAMERA_SOURCE}")
+                    
+                    # Detectar si los IDs están invertidos respecto a la calibración
+                    StereoConfig.CAMERAS_SWAPPED = False
+                    if 'calibration_camera_ids' in data:
+                        calib_left = data['calibration_camera_ids']['left']
+                        calib_right = data['calibration_camera_ids']['right']
+                        
+                        # Si los IDs actuales son los opuestos a los de calibración
+                        if (StereoConfig.LEFT_CAMERA_SOURCE == calib_right and 
+                            StereoConfig.RIGHT_CAMERA_SOURCE == calib_left):
+                            StereoConfig.CAMERAS_SWAPPED = True
+                            print(f"  [INFO] Camaras invertidas respecto a calibracion - ajustando automaticamente")
+                    
                     return True
         except Exception as e:
-            # print(f"[StereoConfig] Error al cargar IDs de cámara: {e}")
             pass
         
-        # print(f"[StereoConfig] Usando IDs por defecto: L={StereoConfig.LEFT_CAMERA_SOURCE}, R={StereoConfig.RIGHT_CAMERA_SOURCE}")
         return False
     
     @staticmethod
@@ -152,11 +168,12 @@ class StereoConfig:
     VKB_CENTER_DISTANCE = 71        # Distancia del teclado virtual (cm)
     
     # ==================== DETECCIÓN DE PROFUNDIDAD ====================
-    DEPTH_THRESHOLD = 2.0           # Umbral de profundidad para presión (cm)
-                                     # FIX: 4.0cm tolera jitter de triangulación (~3-5cm ruido típico)
-                                     # depth <= THRESHOLD = TECLA ACTIVA
+    DEPTH_THRESHOLD = 3.0           # Umbral de profundidad para presión (cm) - 3cm para testing
+                                     # CONTACTO DIRECTO: Solo activa cuando dedo TOCA la mesa
+                                     # depth <= 0.5cm = TECLA ACTIVA (prácticamente 0)
     DEPTH_CORRECTION_FACTOR = 1.0   # Factor de corrección de profundidad (calculado en Fase 3)
     KEYBOARD_OFFSET_CM = 0.0        # [NUEVO] Ajuste manual de altura de mesa (+ = subir mesa hacia cámara)
+    
     TABLE_CORNERS = None            # [NUEVO] Esquinas de mesa para proyección AR [(x,y), (x,y), (x,y), (x,y)]
     CALIB_PIXEL_WIDTH = None        # Resolución usada durante la calibración (para escalar puntos)
     CALIB_PIXEL_HEIGHT = None       # Resolución usada durante la calibración (para escalar puntos)

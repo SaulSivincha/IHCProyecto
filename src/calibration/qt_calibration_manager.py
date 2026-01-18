@@ -90,6 +90,23 @@ class QtCalibrationManager(QObject):
         self.detection_frames = 0
         self.last_capture_time = 0
         
+        # Variables para Fase 3 (Depth)
+        self.last_depth_value = None
+        self.last_hand_detected = False
+        self.keyboard_samples_collected = 0
+        
+        # Variables para Fase 2 (Stereo)
+        self.last_detected_stereo = False
+        self.last_corners_left = None
+        self.last_corners_right = None
+        self.last_frame_left = None
+        self.last_frame_right = None
+        
+        # Variables para Fase 1 (Single camera)
+        self.last_detected = False
+        self.last_corners = None
+        self.last_frame = None
+        
         # Timer para actualizar frames
         self.timer = QTimer()
         self.timer.timeout.connect(self._update_frame)
@@ -131,7 +148,7 @@ class QtCalibrationManager(QObject):
         from ..vision.video_thread import VideoThread
         
         camera_id = self.cam_left_id if camera_name == "left" else self.cam_right_id
-        print(f"  📷 Creando VideoThread para cámara {camera_name} (ID: {camera_id})...")
+        print(f"  [CAM] Creando VideoThread para camara {camera_name} (ID: {camera_id})...")
         
         # Crear VideoThread (maneja threading automáticamente)
         video_thread = VideoThread(
@@ -144,12 +161,12 @@ class QtCalibrationManager(QObject):
         
         # Verificar que se abrió correctamente
         if not video_thread.is_available():
-            print(f"  ✗ Error al abrir cámara {camera_id}")
+            print(f"  [ERROR] Error al abrir camara {camera_id}")
             return None
         
         # Iniciar thread de captura
         video_thread.start()
-        print(f"  ✓ VideoThread iniciado para cámara {camera_name}")
+        print(f"  [OK] VideoThread iniciado para camara {camera_name}")
         
         return video_thread
     
@@ -219,7 +236,7 @@ class QtCalibrationManager(QObject):
             print(f"  - new_cols: {new_cols} (tipo: {type(new_cols)})")
             print(f"  - new_size_mm: {new_size_mm} (tipo: {type(new_size_mm)})")
             print(f"  - selected_phase: {selected_phase} (tipo: {type(selected_phase)})")
-            print(f"✓ Configuración: {new_cols}x{new_rows}, {new_size_mm}mm - Iniciando en Fase {selected_phase}")
+            print(f"[OK] Configuracion: {new_cols}x{new_rows}, {new_size_mm}mm - Iniciando en Fase {selected_phase}")
 
             # Cargar configuración previa si existe
             prev_config = None
@@ -287,7 +304,7 @@ class QtCalibrationManager(QObject):
         # Iniciar según la fase seleccionada en el diálogo
         print(f"[DEBUG] Iniciando fase: {selected_phase}")
         if selected_phase == 3:
-            print("\n✓ Iniciando directamente en Fase 3...")
+            print("\n[OK] Iniciando directamente en Fase 3...")
             print("  Cargando Fase 1...")
             phase1_ok = self._load_phase1_calibration()
             print(f"  Fase 1 cargada: {phase1_ok}")
@@ -299,13 +316,13 @@ class QtCalibrationManager(QObject):
                     print("  Iniciando Fase 3...")
                     self._start_phase3()
                 else:
-                    print("✗ Error al cargar Fase 2, volviendo a Fase 1")
+                    print("[ERROR] Error al cargar Fase 2, volviendo a Fase 1")
                     self._start_intro()
             else:
-                print("✗ Error al cargar Fase 1, volviendo a Fase 1")
+                print("[ERROR] Error al cargar Fase 1, volviendo a Fase 1")
                 self._start_intro()
         elif selected_phase == 2:
-            print("\n✓ Iniciando directamente en Fase 2...")
+            print("\n[OK] Iniciando directamente en Fase 2...")
             
             # Primero, limpiar solo la parte estéreo del archivo (mantener Fase 1)
             if CalibrationConfig.CALIBRATION_FILE.exists():
@@ -326,37 +343,88 @@ class QtCalibrationManager(QObject):
                 if self.calibrator_left and self.calibrator_left.is_calibrated and \
                    self.calibrator_right and self.calibrator_right.is_calibrated:
                     self._load_board_config()
-                    print("✓ Calibración previa de Fase 1 válida. Iniciando Fase 2...")
+                    print("[OK] Calibracion previa de Fase 1 valida. Iniciando Fase 2...")
                     # Reiniciar timer y estado por seguridad
                     if self.timer.isActive():
                         self.timer.stop()
                     self.current_phase = None
                     self._start_phase2()
                 else:
-                    print("✗ Calibración previa de Fase 1 incompleta o inválida. Volviendo a Fase 1.")
+                    print("[ERROR] Calibracion previa de Fase 1 incompleta o invalida. Volviendo a Fase 1.")
                     self.window.set_status("No se encontró calibración previa válida de Fase 1. Debes completarla antes de Fase 2.", "#FF0000")
                     self._start_intro()
             else:
-                print("✗ Error al cargar datos previos, volviendo a Fase 1")
+                print("[ERROR] Error al cargar datos previos, volviendo a Fase 1")
                 self.window.set_status("Error al cargar calibración previa. Debes completar Fase 1.", "#FF0000")
                 self._start_intro()
         elif selected_phase == 4:
-            print("\n✓ Iniciando directamente en Fase 4 (Definición de Mesa AR)...")
+            print("\n[OK] Iniciando directamente en Fase 4 (Definicion de Mesa AR)...")
             # Solo cargar lo mínimo (estereo no es necesario para tabla, pero phase1 sí para las cámaras)
             phase1_ok = self._load_phase1_calibration()
             if phase1_ok:
                 self._load_board_config()
                 self._start_table_definition()
             else:
-                print("✗ Error al cargar Fase 1, volviendo a Fase 1")
+                print("[ERROR] Error al cargar Fase 1, volviendo a Fase 1")
                 self._start_intro()
         else:
             # Fase 1 (Default)
             self._start_intro()
     
     def _start_intro(self):
-        """Muestra la pantalla de introducción"""
-        self.current_phase = "intro"
+        """Muestra la pantalla de introducción inicial (rectificación de cámaras)"""
+        self._start_rectify_intro()
+
+    def _start_rectify_intro(self):
+        """Muestra la introducción para rectificación de cámaras"""
+        self.current_phase = "rectify_intro"
+        
+        instructions = [
+            "Antes de calibrar, alinearemos las cámaras",
+            "Ajusta ambas cámaras para que la mesa quede nivelada",
+            "Usa la <b>línea guía</b> para igualar la inclinación",
+            "Alinea también la rotación (giro) para que los bordes queden paralelos",
+            "Presiona CONTINUAR cuando estén alineadas"
+        ]
+        
+        self.window.show_intro_screen(
+            "RECTIFICACIÓN DE CÁMARAS",
+            instructions
+        )
+        
+        black_frame = np.zeros((self.resolution[1]//2, self.resolution[0]//2, 3), dtype=np.uint8)
+        self.window.update_frames(black_frame, black_frame)
+
+    def _start_rectify_preview(self):
+        """Inicia vista previa con líneas guía para alinear cámaras"""
+        self.current_phase = "rectify_preview"
+        self.window.set_phase(self.current_phase, "RECTIFICACIÓN DE CÁMARAS")
+        self.window.set_status("Alinea las cámaras con la línea guía y presiona CONTINUAR", "#00C8FF")
+        self.window.show_continue_button(True)
+        self.window.show_retry_button(False)
+
+        # Obtener cámaras
+        self.cap_left = self._get_or_create_camera("left")
+        self.cap_right = self._get_or_create_camera("right")
+
+        if not self.cap_left or not self.cap_left.is_available() or \
+           not self.cap_right or not self.cap_right.is_available():
+            print("[ERROR] Error al abrir camaras para rectificación")
+            self._finish_calibration(False)
+            return
+
+        self.timer.start(33)
+
+    def _stop_rectify_preview(self):
+        """Detiene la vista previa de rectificación"""
+        if self.timer.isActive():
+            self.timer.stop()
+        self.cap_left = None
+        self.cap_right = None
+
+    def _start_phase1_intro(self):
+        """Muestra la pantalla de introducción para Fase 1"""
+        self.current_phase = "phase1_intro"
         
         instructions = [
             f"Usaremos un tablero de ajedrez de <b>{self.board_cols+1}x{self.board_rows+1}</b>",
@@ -371,7 +439,6 @@ class QtCalibrationManager(QObject):
             instructions
         )
         
-        # Crear frames negros para visualización
         black_frame = np.zeros((self.resolution[1]//2, self.resolution[0]//2, 3), dtype=np.uint8)
         self.window.update_frames(black_frame, black_frame)
     
@@ -380,8 +447,19 @@ class QtCalibrationManager(QObject):
         # Ocultar botón de reintentar al continuar
         self.window.show_retry_button(False)
         
-        if self.current_phase == "intro":
+        if self.current_phase == "rectify_intro":
+            self._start_rectify_preview()
+        
+        elif self.current_phase == "rectify_preview":
+            self._stop_rectify_preview()
+            self._start_phase1_intro()
+        
+        elif self.current_phase == "phase1_intro":
             self._start_camera_calibration("left")
+            
+        elif self.current_phase == "left_complete":
+            # Camara izquierda completada - pasar a camara derecha
+            self._start_camera_calibration("right")
             
         elif self.current_phase == "phase1_complete":
             self._start_phase2()
@@ -418,7 +496,7 @@ class QtCalibrationManager(QObject):
         Maneja el botón de reintentar.
         Reinicia la fase actual manteniendo los parámetros de configuración.
         """
-        print(f"🔄 Reintentando fase: {self.current_phase}")
+        print(f"[RETRY] Reintentando fase: {self.current_phase}")
         
         # Detener timer si está activo
         if self.timer.isActive():
@@ -430,25 +508,25 @@ class QtCalibrationManager(QObject):
         # Determinar qué fase reiniciar basándose en el estado actual
         if self.current_phase in ["capture_left", "left_complete"]:
             # Reiniciar calibración de cámara izquierda
-            print("  → Reiniciando calibración cámara IZQUIERDA")
+            print("  [RETRY] Reiniciando calibracion camara IZQUIERDA")
             self._reset_camera_calibration("left")
             self._start_camera_calibration("left")
             
         elif self.current_phase in ["capture_right", "right_complete"]:
             # Reiniciar calibración de cámara derecha
-            print("  → Reiniciando calibración cámara DERECHA")
+            print("  [RETRY] Reiniciando calibracion camara DERECHA")
             self._reset_camera_calibration("right")
             self._start_camera_calibration("right")
             
         elif self.current_phase in ["stereo_capture", "stereo_intro", "phase2_complete"]:
             # Reiniciar calibración estéreo
-            print("  → Reiniciando calibración ESTÉREO")
+            print("  [RETRY] Reiniciando calibracion ESTEREO")
             self._reset_stereo_calibration()
             self._start_phase2()
             
         elif self.current_phase in ["depth_capture", "depth_intro", "phase3_complete"]:
             # Reiniciar calibración de profundidad
-            print("  → Reiniciando calibración de PROFUNDIDAD")
+            print("  [RETRY] Reiniciando calibracion de PROFUNDIDAD")
             self._reset_depth_calibration()
             self._start_phase3()
     
@@ -518,7 +596,7 @@ class QtCalibrationManager(QObject):
         # Obtener cámara (reutiliza persistente si está disponible)
         cap = self._get_or_create_camera(camera_name)
         if cap is None or not cap.is_available():
-            print(f"✗ No se pudo abrir la cámara {camera_id}")
+            print(f"[ERROR] No se pudo abrir la camara {camera_id}")
             self._finish_calibration(False)
             return
         
@@ -548,7 +626,9 @@ class QtCalibrationManager(QObject):
     
     def _update_frame(self):
         """Actualiza los frames de las cámaras (llamado por timer)"""
-        if self.current_phase.startswith("capture_"):
+        if self.current_phase == "rectify_preview":
+            self._update_rectify_preview_frame()
+        elif self.current_phase.startswith("capture_"):
             self._update_single_camera_frame()
         elif self.current_phase == "stereo_capture":
             self._update_stereo_frame()
@@ -574,8 +654,9 @@ class QtCalibrationManager(QObject):
         from ..vision.stereo_config import StereoConfig
         frame = StereoConfig.apply_camera_transforms(frame)
 
-        # Detectar tablero
-        detected, corners, frame_overlay = self.current_calibrator.detect_chessboard(frame)
+        # Detectar tablero en cada frame para seguimiento fluido
+        # OPTIMIZACIÓN: No refinar esquinas en preview (solo al capturar)
+        detected, corners, frame_overlay = self.current_calibrator.detect_chessboard(frame, refine_corners=False)
         
         # Guardar para captura
         self.last_detected = detected
@@ -584,7 +665,7 @@ class QtCalibrationManager(QObject):
         
         # Actualizar estado
         if detected:
-            self.window.set_status("✓ Tablero detectado - Presiona CAPTURAR", "#00FF00")
+            self.window.set_status("[OK] Tablero detectado - Presiona CAPTURAR", "#00FF00")
             self.window.enable_capture(True)
         else:
             self.window.set_status("Buscando tablero...", "#FFA500")
@@ -611,11 +692,17 @@ class QtCalibrationManager(QObject):
         if not self.last_detected:
             return
         
-        # Capturar imagen
-        self.current_calibrator.capture_image(self.last_frame, self.last_corners)
+        # IMPORTANTE: Refinar esquinas con precisión subpíxel antes de guardar
+        _, corners_refined, _ = self.current_calibrator.detect_chessboard(
+            self.last_frame, 
+            refine_corners=True
+        )
+        
+        # Capturar imagen con esquinas refinadas
+        self.current_calibrator.capture_image(self.last_frame, corners_refined)
         self.photo_count += 1
         
-        print(f"✓ Foto {self.photo_count}/{self.total_photos} capturada")
+        print(f"[OK] Foto {self.photo_count}/{self.total_photos} capturada")
         
         # Actualizar progreso
         self.window.update_progress(self.photo_count, self.total_photos)
@@ -649,7 +736,7 @@ class QtCalibrationManager(QObject):
         result = self.current_calibrator.calibrate()
         
         if result is None:
-            print("✗ La calibración falló")
+            print("[ERROR] La calibracion fallo")
             self._finish_calibration(False)
             return
         
@@ -664,7 +751,7 @@ class QtCalibrationManager(QObject):
         summary_html += "<p style='color: #00FF00; margin-top: 20px;'><b>Presiona CONTINUAR o ENTER</b></p>"
         
         self.window.set_instructions(summary_html)
-        self.window.set_status("✓ Calibración completada", "#00FF00")
+        self.window.set_status("[OK] Calibracion completada", "#00FF00")
         self.window.show_continue_button(True)
         self.window.show_retry_button(True)  # Permitir reintentar si el resultado no es satisfactorio
         
@@ -710,7 +797,7 @@ class QtCalibrationManager(QObject):
         
         if not self.cap_left or not self.cap_left.is_available() or \
            not self.cap_right or not self.cap_right.is_available():
-            print("✗ Error al abrir las cámaras")
+            print("[ERROR] Error al abrir las camaras")
             self._finish_calibration(False)
             return
         
@@ -744,9 +831,9 @@ class QtCalibrationManager(QObject):
         frame_left = StereoConfig.apply_camera_transforms(frame_left)
         frame_right = StereoConfig.apply_camera_transforms(frame_right)
 
-        # Detectar tablero en ambas cámaras
+        # Detectar tablero en ambas cámaras (sin refinar para preview)
         detected_both, corners_left, corners_right, display_left, display_right = \
-            self.stereo_calibrator.detect_chessboard_pair(frame_left, frame_right)
+            self.stereo_calibrator.detect_chessboard_pair(frame_left, frame_right, refine_corners=False)
         
         # Guardar para captura
         self.last_detected_stereo = detected_both
@@ -766,7 +853,7 @@ class QtCalibrationManager(QObject):
         can_capture = (current_time - self.last_capture_time) > 1.0
         
         if detected_both and self.detection_frames >= 5 and can_capture:
-            self.window.set_status("✓ Tablero detectado en AMBAS - Presiona CAPTURAR", "#00FF00")
+            self.window.set_status("[OK] Tablero detectado en AMBAS - Presiona CAPTURAR", "#00FF00")
             self.window.enable_capture(True)
         elif detected_both:
             self.window.set_status(f"Estabilizando... {self.detection_frames}/5", "#00C8FF")
@@ -786,14 +873,22 @@ class QtCalibrationManager(QObject):
         if not self.last_detected_stereo or self.detection_frames < 5:
             return
         
-        # Capturar par
+        # IMPORTANTE: Refinar esquinas con precisión antes de guardar
+        _, corners_left_refined, corners_right_refined, _, _ = \
+            self.stereo_calibrator.detect_chessboard_pair(
+                self.last_frame_left, 
+                self.last_frame_right, 
+                refine_corners=True
+            )
+        
+        # Capturar par con esquinas refinadas
         self.stereo_calibrator.capture_stereo_pair(
             self.last_frame_left, self.last_frame_right,
-            self.last_corners_left, self.last_corners_right
+            corners_left_refined, corners_right_refined
         )
         self.pair_count += 1
         
-        print(f"✓ Par {self.pair_count} capturado")
+        print(f"[OK] Par {self.pair_count} capturado")
         
         # Actualizar progreso
         self.window.show_stereo_instructions(self.pair_count, 20)
@@ -820,7 +915,7 @@ class QtCalibrationManager(QObject):
         stereo_result = self.stereo_calibrator.calibrate_stereo_pair()
         
         if stereo_result is None:
-            print("✗ Error en calibración estéreo")
+            print("[ERROR] Error en calibracion estereo")
             self._finish_calibration(False)
             return
         
@@ -1067,7 +1162,7 @@ class QtCalibrationManager(QObject):
                 
             if not self.cap_left or not self.cap_left.is_available() or \
                not self.cap_right or not self.cap_right.is_available():
-                print("✗ Error al abrir las cámaras para profundidad")
+                print("[ERROR] Error al abrir las camaras para profundidad")
                 self._finish_calibration(False)
                 return
                 
@@ -1091,7 +1186,7 @@ class QtCalibrationManager(QObject):
                 self.timer.start(33)
                 
         except Exception as e:
-            print(f"✗ Error crítico al iniciar Fase 3: {e}")
+            print(f"[ERROR] Error critico al iniciar Fase 3: {e}")
             import traceback
             traceback.print_exc()
             self.window.set_status(f"Error: {str(e)}", "#FF0000")
@@ -1178,7 +1273,7 @@ class QtCalibrationManager(QObject):
             if depth is not None and depth > 0:
                 self.last_depth_value = depth
                 self.window.set_status(
-                    f"✓ Mano detectada - Distancia: {depth:.1f} cm - ¡PRESIONA ESPACIO o CAPTURAR!", 
+                    f"[OK] Mano detectada - Distancia: {depth:.1f} cm - !PRESIONA ESPACIO o CAPTURAR!", 
                     "#00FF00"
                 )
                 self.window.enable_capture(True)
@@ -1225,7 +1320,7 @@ class QtCalibrationManager(QObject):
                 f"Última medición: {self.last_depth_value:.1f} cm<br>"
                 "Mantén la mano apoyada y presiona CAPTURAR"
             )
-            self.window.set_status(f"✓ Muestra {self.keyboard_samples_collected} capturada", "#00FF00")
+            self.window.set_status(f"[OK] Muestra {self.keyboard_samples_collected} capturada", "#00FF00")
         else:
             # Finalizar
             self._finish_phase3()
@@ -1278,11 +1373,12 @@ class QtCalibrationManager(QObject):
         # Mostrar pantalla de resumen
         self.window.show_summary_screen(summary_data)
         self.window.show_retry_button(True)  # Permitir reintentar si el resultado no es satisfactorio
+        self.window.show_continue_button(True)  # Permitir continuar a Fase 4
         self.current_phase = "phase3_complete"
     
     def _on_cancel(self):
         """Maneja la cancelación"""
-        print("\n✗ Calibración cancelada por el usuario")
+        print("\n[CANCEL] Calibracion cancelada por el usuario")
         self._cleanup()
         self.finished.emit(False)
         self.window.close()
@@ -1399,7 +1495,7 @@ class QtCalibrationManager(QObject):
             
             return True
         except Exception as e:
-            print(f"✗ Error al cargar Fase 1: {e}")
+            print(f"[ERROR] Error al cargar Fase 1: {e}")
             return False
 
     def _load_phase2_calibration(self):
@@ -1431,7 +1527,7 @@ class QtCalibrationManager(QObject):
             
             return True
         except Exception as e:
-            print(f"✗ Error al cargar Fase 2: {e}")
+            print(f"[ERROR] Error al cargar Fase 2: {e}")
             return False
     
     def _load_board_config(self):
@@ -1707,6 +1803,11 @@ class QtCalibrationManager(QObject):
                 'left': self.cam_left_id,
                 'right': self.cam_right_id
             },
+            # Guardar los IDs originales de calibración
+            'calibration_camera_ids': {
+                'left': self.cam_left_id,
+                'right': self.cam_right_id
+            },
             'resolution': {
                 'width': self.resolution[0],
                 'height': self.resolution[1]
@@ -1716,7 +1817,7 @@ class QtCalibrationManager(QObject):
         with open(CalibrationConfig.CALIBRATION_FILE, 'w') as f:
             json.dump(self.calibration_data, f, indent=4)
         
-        print(f"\n✓ Fase 1 guardada")
+        print(f"\n[OK] Fase 1 guardada")
     
     def _compile_calibration_data(self):
         """Recopila todos los datos de calibración"""
@@ -1748,6 +1849,11 @@ class QtCalibrationManager(QObject):
                 'left': self.cam_left_id,
                 'right': self.cam_right_id
             },
+            # Guardar los IDs originales de calibración para detectar inversiones futuras
+            'calibration_camera_ids': {
+                'left': self.cam_left_id,
+                'right': self.cam_right_id
+            },
             'resolution': {
                 'width': self.resolution[0],
                 'height': self.resolution[1]
@@ -1761,7 +1867,7 @@ class QtCalibrationManager(QObject):
         with open(output_file, 'w') as f:
             json.dump(self.calibration_data, f, indent=4)
         
-        print(f"\n✓ Calibración guardada en: {output_file}")
+        print(f"\n[OK] Calibracion guardada en: {output_file}")
 
 
 def run_qt_calibration(cam_left_id=1, cam_right_id=2):

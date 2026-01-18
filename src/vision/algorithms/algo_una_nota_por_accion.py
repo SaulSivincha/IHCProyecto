@@ -75,10 +75,6 @@ class UnaNotaPorAccionAlgorithm(BaseAlgorithm):
                 # Actualizar estado (simplemente para saber que sigue vivo)
                 self.dedos_activos[finger_id] = key
                 filtered.append(detection)
-                
-                # Debug ultrasimple
-                if self._debug_count % 60 == 0: 
-                    print(f"[PASS] {key} | v={velocity:.2f}")
 
         return filtered
     

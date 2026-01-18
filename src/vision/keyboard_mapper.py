@@ -46,6 +46,13 @@ class KeyboardMapModular:
         self.velocity_enabled = StereoConfig.VELOCITY_ENABLED
         self.velocity_history_size = StereoConfig.VELOCITY_HISTORY_SIZE
         
+        # SISTEMA DE ESTADO POR DEDO:
+        # Trackea si cada dedo está 'pressing' o 'released'
+        # Un dedo en 'pressing' NO puede activar nuevas teclas hasta que suba
+        self.finger_state = {}  # {finger_id: 'pressing' | 'released'}
+        self.finger_last_depth = {}  # {finger_id: last_depth} - para trackear globalmente
+        self.release_height = 2.5  # cm - debe subir 2.5cm para liberar
+        
         # Debugeo
         self._debug_frame_count = 0
         
@@ -184,65 +191,68 @@ class KeyboardMapModular:
             self._debug_frame_count = 0
         self._debug_frame_count += 1
         
-        if len(raw_detections) > 0 and self._debug_frame_count % 30 == 0:
-            print(f"\n[DEBUG FASE 1] Intersecciones detectadas: {len(raw_detections)}")
-            for det in raw_detections[:3]:  # Mostrar primeras 3
-                finger_id, key, depth, velocity, x, y = det
-                print(f"  Dedo {finger_id}, Tecla {key}, Pos=({x:.0f},{y:.0f}), Depth={depth:.1f}cm, Vel={velocity:.2f}")
-        
         # FASE 1.5: Aplicar filtro de profundidad SOLO si hay algoritmos activos
         has_active_algorithms = any(algo.is_enabled() for algo in self.algorithm_manager.algorithms)
         
-        # DEBUG: Mostrar estado de filtrado
-        if not hasattr(self, '_filter_debug_shown'):
-            active_algos = [algo.name for algo in self.algorithm_manager.algorithms if algo.is_enabled()]
-            if has_active_algorithms:
-                # print(f"\n[KEYBOARD_MAPPER] Algoritmos activos: {active_algos}")
-                # print(f"[KEYBOARD_MAPPER] [INFO] Filtro de profundidad ACTIVADO (umbral >= 10cm)")
-                pass
-            else:
-                # print(f"\n[KEYBOARD_MAPPER] No hay algoritmos activos")
-                # print(f"[KEYBOARD_MAPPER] [INFO] Filtro de profundidad DESACTIVADO")
-                pass
-            self._filter_debug_shown = True
-        
         if has_active_algorithms:
-            # Filtrar por profundidad (solo cuando hay algoritmos activos)
             filtered_by_depth = []
-            # CONVENCIÓN DE SIGNOS (profundidad RELATIVA a la mesa):
-            # depth > 0: dedo EN EL AIRE (más lejos de cámara que mesa)
-            # depth ≈ 0: dedo TOCANDO la mesa
-            # depth < 0: dedo PRESIONANDO (más cerca de cámara que mesa)
-            # 
-            # Queremos activar cuando depth <= threshold (cercano o tocando mesa)
-            activation_threshold = self.depth_threshold  
+            activation_threshold = self.depth_threshold  # 0.5cm
             
+            # DEBUG CRÍTICO: Ver TODOS los valores de depth que llegan
+            if self._debug_frame_count % 20 == 0 and len(raw_detections) > 0:
+                print(f"\n[DEBUG RAW] {len(raw_detections)} detecciones:")
+                for det in raw_detections[:3]:
+                    fid, key, depth, vel, x, y = det
+                    state = self.finger_state.get(fid, 'released')
+                    print(f"  Dedo {fid}: key={key}, depth={depth:.2f}cm, vel={vel:.2f}, state={state}")
+            
+            # PRIMERO: Actualizar estado de TODOS los dedos detectados
+            detected_fingers = set()
+            for detection in raw_detections:
+                finger_id = detection[0]
+                depth = detection[2]
+                detected_fingers.add(finger_id)
+                
+                # Actualizar last_depth
+                self.finger_last_depth[finger_id] = depth
+                
+                # Si el dedo subió lo suficiente, liberarlo
+                if depth > self.release_height:
+                    if finger_id in self.finger_state and self.finger_state[finger_id] == 'pressing':
+                        self.finger_state[finger_id] = 'released'
+                        print(f"[RELEASE] Dedo {finger_id} liberado (depth={depth:.1f}cm > {self.release_height})")
+            
+            # Limpiar dedos que desaparecieron
+            fingers_to_clean = [fid for fid in self.finger_state if fid not in detected_fingers]
+            for fid in fingers_to_clean:
+                del self.finger_state[fid]
+                if fid in self.finger_last_depth:
+                    del self.finger_last_depth[fid]
+            
+            # AHORA: Filtrar detecciones
             for detection in raw_detections:
                 finger_id, key, depth, velocity, x_pos, y_pos = detection
                 
-                # FIX: Activar si depth <= threshold
-                # Ejemplo: threshold=4.0
-                # depth=+20.0 (aire lejano) → 20.0 <= 4.0 → NO activa ✓
-                # depth=+3.0 (casi tocando) → 3.0 <= 4.0 → ACTIVA ✓
-                # depth=0.0 (tocando) → 0.0 <= 4.0 → ACTIVA ✓  
-                # depth=-2.0 (presionando) → -2.0 <= 4.0 → ACTIVA ✓
-                should_activate = (depth <= activation_threshold)
+                current_state = self.finger_state.get(finger_id, 'released')
+                depth_ok = (depth <= activation_threshold)
                 
-                if should_activate:
+                # DEBUG: Mostrar decisión
+                if self._debug_frame_count % 20 == 0:
+                    print(f"  -> Evaluar: depth={depth:.2f} <= {activation_threshold}? {depth_ok}, state={current_state}")
+                
+                if not depth_ok:
+                    continue
+                
+                if current_state == 'released':
+                    self.finger_state[finger_id] = 'pressing'
+                    filtered_by_depth.append(detection)
+                    print(f"[ACTIVAR] Tecla {key} (depth={depth:.2f}cm)")
+                else:
+                    # Ya pressing - mantener para noteoff pero no nuevo note
                     filtered_by_depth.append(detection)
             
             # DEBUG: Mostrar resultado del filtro
-            if self._debug_frame_count % 30 == 0 and len(raw_detections) > 0:
-                # print(f"[DEBUG FILTRO] Antes: {len(raw_detections)}, Despues: {len(filtered_by_depth)}")
-                if len(filtered_by_depth) == 0 and len(raw_detections) > 0:
-                    pass
-                    # print(f"[ALERTA] TODAS filtradas! Depths: {[d[2] for d in raw_detections[:3]]}")
-            
             raw_detections = filtered_by_depth
-        else:
-            if len(raw_detections) > 0 and self._debug_frame_count % 30 == 0:
-                pass
-                # print(f"[DEBUG] Pasando {len(raw_detections)} intersecciones SIN filtrar")
         
         # FASE 2: Procesar detecciones a través de algoritmos modulares
         context = {
@@ -251,15 +261,8 @@ class KeyboardMapModular:
             'keyboard_n_key': keyboard_n_key
         }
         
-        # Aplicar cadena de algoritmos (REACTIVADO para filtrar rebotes y detectar acordes)
+        # Aplicar cadena de algoritmos
         filtered_detections = self.algorithm_manager.process_detections(raw_detections, context)
-        
-        # DEBUG: Mostrar resultado de algoritmos
-        if self._debug_frame_count % 30 == 0 and len(raw_detections) > 0:
-            # print(f"[DEBUG ALGORITMOS] Antes: {len(raw_detections)}, Despues: {len(filtered_detections)}")
-            if len(filtered_detections) == 0 and len(raw_detections) > 0:
-                pass
-                # print(f"[ALERTA] ALGORITMOS bloquearon todo!")
         
         # FASE 3: Aplicar detecciones filtradas al mapa
         for detection in filtered_detections:

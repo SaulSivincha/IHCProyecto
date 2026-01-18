@@ -109,7 +109,10 @@ def run_calibration_process(ui_helper, pixel_width, pixel_height, config, force_
                 return True
             elif action == CalibrationSummaryDialog.ACTION_RECALIBRATE_ALL:
                 print("\n[INFO] Iniciando recalibración...")
-                success = run_qt_calibration(cam_left_id=config.cam_left_id, cam_right_id=config.cam_right_id)
+                success = run_qt_calibration(
+                    cam_left_id=config.LEFT_CAMERA_SOURCE,
+                    cam_right_id=config.RIGHT_CAMERA_SOURCE
+                )
                 return success
                     
             else: # EXIT

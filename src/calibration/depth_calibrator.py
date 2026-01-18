@@ -156,7 +156,7 @@ class DepthCalibrator:
             measured_depth: Profundidad medida por el sistema (cm)
         """
         self.measurements.append((real_distance, measured_depth))
-        print(f"✓ Medición agregada: {real_distance}cm real → {measured_depth:.2f}cm medido")
+        print(f"[OK] Medicion agregada: {real_distance}cm real -> {measured_depth:.2f}cm medido")
 
     def calculate_and_save(self):
         """
@@ -166,7 +166,7 @@ class DepthCalibrator:
             float: Factor de corrección calculado o None si falla
         """
         if len(self.measurements) < 3:
-            print(f"✗ Error: Se necesitan al menos 3 mediciones (tienes {len(self.measurements)})")
+            print(f"[ERROR] Se necesitan al menos 3 mediciones (tienes {len(self.measurements)})")
             return None
             
         self.correction_factor = self._calculate_correction_factor()
@@ -218,8 +218,8 @@ class DepthCalibrator:
             with open(calib_file, 'w') as f:
                 json.dump(calib_data, f, indent=4)
             
-            print(f"✓ Factor de corrección guardado en: {calib_file}")
-            print(f"✓ Distancia del teclado: {self.keyboard_distance:.2f} cm")
+            print(f"[OK] Factor de correccion guardado en: {calib_file}")
+            print(f"[OK] Distancia del teclado: {self.keyboard_distance:.2f} cm")
             
         except Exception as e:
             print(f"⚠ Error al guardar factor de corrección: {e}")

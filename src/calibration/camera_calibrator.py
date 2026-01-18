@@ -61,51 +61,51 @@ class CameraCalibrator:
         self.distortion_coeffs = None
         self.reprojection_error = None
         self.is_calibrated = False
-        print(f"🔄 Calibrador {self.camera_name} reseteado")
+        print(f"[RESET] Calibrador {self.camera_name} reseteado")
         
-    def detect_chessboard(self, frame):
+    def detect_chessboard(self, frame, refine_corners=False):
         """
         Detecta el tablero de ajedrez en un frame
         
         Args:
             frame: Imagen BGR
+            refine_corners: Si True, aplica cornerSubPix (lento pero preciso).
+                          Si False, solo detecta (rápido para preview).
             
         Returns:
             tuple: (success, corners, frame_with_overlay)
         """
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         
-        # Método 1: Detección con flags estándar (RÁPIDO)
+        # Detección con flags estándar (RÁPIDO)
         flags = (cv2.CALIB_CB_ADAPTIVE_THRESH + 
                 cv2.CALIB_CB_NORMALIZE_IMAGE + 
                 cv2.CALIB_CB_FAST_CHECK)
         
         ret, corners = cv2.findChessboardCorners(gray, self.board_size, flags)
         
-        # OPTIMIZACIÓN: Eliminados métodos de fallback lentos para mantener FPS altos
-        # Si no se detecta con FAST_CHECK, simplemente pasamos al siguiente frame
-        
         frame_display = frame.copy()
         
         if ret:
-            # Refinar esquinas con precisión subpíxel
-            corners_refined = cv2.cornerSubPix(
-                gray, 
-                corners, 
-                (11, 11), 
-                (-1, -1), 
-                self.criteria
-            )
+            # Refinar esquinas SOLO si se solicita (al capturar)
+            if refine_corners:
+                corners = cv2.cornerSubPix(
+                    gray, 
+                    corners, 
+                    (11, 11), 
+                    (-1, -1), 
+                    self.criteria
+                )
             
             # Dibujar esquinas detectadas
             cv2.drawChessboardCorners(
                 frame_display, 
                 self.board_size, 
-                corners_refined, 
+                corners, 
                 ret
             )
             
-            return True, corners_refined, frame_display
+            return True, corners, frame_display
         
         return False, None, frame_display
     
@@ -148,7 +148,7 @@ class CameraCalibrator:
             dict: Resultados de calibración o None si falla
         """
         if len(self.obj_points) < CalibrationConfig.MIN_IMAGES:
-            print(f"✗ Insuficientes imágenes: {len(self.obj_points)} < {CalibrationConfig.MIN_IMAGES}")
+            print(f"[ERROR] Insuficientes imagenes: {len(self.obj_points)} < {CalibrationConfig.MIN_IMAGES}")
             return None
         
         print(f"\n{'='*70}")
@@ -170,7 +170,7 @@ class CameraCalibrator:
         )
         
         if not ret:
-            print("✗ Error durante la calibración")
+            print("[ERROR] Error durante la calibracion")
             return None
         
         # Calcular error de reproyección
@@ -195,7 +195,7 @@ class CameraCalibrator:
         self.is_calibrated = True
         
         # Mostrar resultados
-        print(f"✓ Calibración completada")
+        print(f"[OK] Calibracion completada")
         print(f"Error de reproyección: {mean_error:.4f} píxeles")
         
         if mean_error > CalibrationConfig.MAX_REPROJECTION_ERROR:

@@ -603,9 +603,10 @@ class VirtualKeyboard():
                 # IMPORTANT: measureDist=True to get pixel distance for tolerance check
                 dist = cv2.pointPolygonTest(poly['contour'], (check_x, check_y), True)
                 
-                # [FIX] Tolerancia AUMENTADA para compensar errores de calibración/perspectiva
-                # Antes: -5. Ahora: -30 (aprox medio cm de margen extra)
-                if dist >= -30: 
+                # FIX: Tolerancia reducida para mayor precisión
+                # -10px = margen pequeño para compensar jitter de tracking
+                # Antes: -30 (causaba activación de teclas adyacentes)
+                if dist >= -10: 
                     found_key_id = poly['id']
                     found_poly_type = "Black" if poly['black'] else "White"
                     if poly['black']:

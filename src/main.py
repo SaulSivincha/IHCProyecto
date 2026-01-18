@@ -1043,20 +1043,16 @@ def main():
                     finished_left = True
                     finished_right = True
 
-                # Aplicar rotación/espejo SEGÚN StereoConfig
-                # Usamos la clase importada al inicio del archivo.
-                # Aplicamos la misma transformación a AMBOS frames.
+                # Aplicar rotación/espejo para VISUALIZACIÓN
+                # IMPORTANTE: Usar apply_display_transform() para consistencia con calibración
+                # La Fase 4 (TABLE_CORNERS) se calibró con frame rotado 180°
                 
                 # Solo aplicar si tenemos frames validos
                 if frame_left is not None and frame_right is not None:
-                    if getattr(StereoConfig, 'ROTATE_CAMERAS_180', False):
-                        # Cámaras físicamente boca abajo: corregir con flip(-1)
-                        frame_left = cv2.flip(frame_left, -1)
-                        frame_right = cv2.flip(frame_right, -1)
-                    elif getattr(StereoConfig, 'MIRROR_HORIZONTAL', False):
-                        # Espejo horizontal para ambos frames
-                        frame_left = cv2.flip(frame_left, 1)
-                        frame_right = cv2.flip(frame_right, 1)
+                    # SIEMPRE aplicar rotación 180° para coincidir con calibración
+                    # Esto asegura que las coordenadas de dedos coincidan con TABLE_CORNERS
+                    frame_left = StereoConfig.apply_display_transform(frame_left)
+                    frame_right = StereoConfig.apply_display_transform(frame_right)
 
                 hands_left_image = fingers_left_image = []
                 hands_right_image = fingers_right_image = []
@@ -1195,9 +1191,23 @@ def main():
                         
                         fingers_dist.append(depth_corrected)
                         
-                        # Guardar profundidad corregida para cada dedo
+                        # Guardar profundidad RELATIVA para cada dedo
+                        # FIX: Convertir de absoluta (distancia desde cámara) a relativa (distancia desde mesa)
                         finger_id = (finger_left[0], finger_left[1])
-                        finger_depths_dict[finger_id] = depth_corrected
+                        
+                        # Obtener distancia del teclado desde calibración (Fase 3)
+                        keyboard_distance = None
+                        if depth_estimator and hasattr(depth_estimator, 'keyboard_distance_cm'):
+                            keyboard_distance = depth_estimator.keyboard_distance_cm
+                        
+                        if keyboard_distance is not None:
+                            # Calcular profundidad relativa: positivo = en el aire, negativo = presionando
+                            rel_depth = depth_corrected - keyboard_distance
+                            finger_depths_dict[finger_id] = rel_depth
+                        else:
+                            # Sin calibración de profundidad: usar valor por defecto (42cm típico)
+                            rel_depth = depth_corrected - 42.0
+                            finger_depths_dict[finger_id] = rel_depth
                         
                         # if finger_left[0] == 0 and 
                         if finger_left[0] == 0 and finger_left[1] == left_detector.mpHands.HandLandmark.INDEX_FINGER_TIP:

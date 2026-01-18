@@ -131,18 +131,17 @@ class KeyboardMapModular:
                 # ESTRATEGIA DE VALIDACIÓN ESTRICTA (Sin Clamping)
                 # Evitar "falsos positivos" cuando la mano está muy cerca de la cámara
                 # 
-                # Rango Físico Razonable (CORREGIDO):
-                # Con fórmula correcta: depth_abs - kb_dist
-                # > -10.0 cm: Presionando fuerte (un poco debajo del plano)
-                # < +30.0 cm: Hasta 30cm en el aire sobre la mesa
+                # Rango Físico Razonable para profundidad RELATIVA (depth = abs - mesa):
+                # -5.0 cm: Presionando fuerte (dedo "atravesando" el plano virtual)
+                # +25.0 cm: Mano levantada en el aire sobre la mesa
                 
-                if depth < -10.0 or depth > 30.0:
+                if depth < -5.0 or depth > 25.0:
                     # Caso: Profundidad fuera de rango físico posible.
-                    # - < -30.0: Mano muy detrás (o error de calibración grande)
-                    # - > 50.0: Mano muy lejos (techo)
+                    # - < -5.0: Error de calibración o mano muy cerca de cámara
+                    # - > +25.0: Mano muy lejos del teclado (ignorar)
                     
                     if self._debug_frame_count % 30 == 0:
-                        # print(f"[RECHAZADO] Dedo {finger_id} Depth={depth:.1f}cm (Fuera de rango -30 a 50)")
+                        # print(f"[RECHAZADO] Dedo {finger_id} Depth={depth:.1f}cm (Fuera de rango -5 a +25)")
                         pass
                         
                     # Acción: DESCARTAR.
@@ -210,22 +209,24 @@ class KeyboardMapModular:
         if has_active_algorithms:
             # Filtrar por profundidad (solo cuando hay algoritmos activos)
             filtered_by_depth = []
-            # CORREGIDO: Con fórmula depth_abs - kb_dist:
-            # depth > 0: dedo MÁS CERCA de cámara que mesa (TOQUE)
-            # depth < 0: dedo MÁS LEJOS de cámara que mesa (AIRE)
+            # CONVENCIÓN DE SIGNOS (profundidad RELATIVA a la mesa):
+            # depth > 0: dedo EN EL AIRE (más lejos de cámara que mesa)
+            # depth ≈ 0: dedo TOCANDO la mesa
+            # depth < 0: dedo PRESIONANDO (más cerca de cámara que mesa)
             # 
-            # Queremos activar cuando depth > -threshold (cercano o tocando mesa)
+            # Queremos activar cuando depth <= threshold (cercano o tocando mesa)
             activation_threshold = self.depth_threshold  
             
             for detection in raw_detections:
                 finger_id, key, depth, velocity, x_pos, y_pos = detection
                 
-                # CORREGIDO: Activar si depth >= -threshold
-                # Ejemplo: threshold=2.0
-                # depth=0.5 (tocando suave) → 0.5 >= -2.0 → ACTIVA ✓
-                # depth=-1.0 (presionando) → -1.0 >= -2.0 → ACTIVA ✓  
-                # depth=-10.0 (aire/muy lejos) → -10.0 >= -2.0 → NO activa ✓
-                should_activate = (depth >= -activation_threshold)
+                # FIX: Activar si depth <= threshold
+                # Ejemplo: threshold=4.0
+                # depth=+20.0 (aire lejano) → 20.0 <= 4.0 → NO activa ✓
+                # depth=+3.0 (casi tocando) → 3.0 <= 4.0 → ACTIVA ✓
+                # depth=0.0 (tocando) → 0.0 <= 4.0 → ACTIVA ✓  
+                # depth=-2.0 (presionando) → -2.0 <= 4.0 → ACTIVA ✓
+                should_activate = (depth <= activation_threshold)
                 
                 if should_activate:
                     filtered_by_depth.append(detection)

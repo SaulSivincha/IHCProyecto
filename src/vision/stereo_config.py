@@ -153,7 +153,8 @@ class StereoConfig:
     
     # ==================== DETECCIÓN DE PROFUNDIDAD ====================
     DEPTH_THRESHOLD = 2.0           # Umbral de profundidad para presión (cm)
-                                     # CORREGIDO: 2.0cm es más preciso (antes 5.0 causaba falsas detecciones)
+                                     # FIX: 4.0cm tolera jitter de triangulación (~3-5cm ruido típico)
+                                     # depth <= THRESHOLD = TECLA ACTIVA
     DEPTH_CORRECTION_FACTOR = 1.0   # Factor de corrección de profundidad (calculado en Fase 3)
     KEYBOARD_OFFSET_CM = 0.0        # [NUEVO] Ajuste manual de altura de mesa (+ = subir mesa hacia cámara)
     TABLE_CORNERS = None            # [NUEVO] Esquinas de mesa para proyección AR [(x,y), (x,y), (x,y), (x,y)]

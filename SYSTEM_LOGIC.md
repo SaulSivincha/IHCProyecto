@@ -53,20 +53,24 @@ Usando la *disparidad* (diferencia en X entre punto L y punto R rectificados) y 
 La "Profundidad Absoluta" (distancia a la cámara) no es útil por sí sola porque la mano se mueve en 3D. Lo que importa es la distancia al **Plano del Teclado**.
 
 1.  **Fase 3 de Calibración**: Calcula `keyboard_distance_cm` (distancia promedio de la mesa a las cámaras, ej. 42cm).
-2.  **Cálculo en Tiempo Real**:
+2.  **Cálculo en Tiempo Real (CORREGIDO 2026-01-17)**:
     ```python
-    Relativa = keyboard_distance_cm - Depth_Absoluta
+    # Fórmula correcta:
+    Relativa = Depth_Absoluta - keyboard_distance_cm
     ```
-    *   **Relativa ≈ 0**: La mano está tocando la mesa.
-    *   **Relativa > 0**: La mano "atravesó" la mesa (presión fuerte).
-    *   **Relativa < 0**: La mano está en el aire (sobre la mesa).
+    *   **Relativa > 0**: La mano está MÁS CERCA de la cámara que la mesa (TOCANDO).
+    *   **Relativa ≈ 0**: La mano está al nivel de la mesa.
+    *   **Relativa < 0**: La mano está MÁS LEJOS de la cámara que la mesa (AIRE).
+    
+    > **NOTA HISTÓRICA**: Antes se usaba `kb_dist - depth_abs` que invertía la lógica.
 
 ### Validación y Filtrado (CRÍTICO)
 Para evitar "fantasmas" y spikes de velocidad:
-*   **Rango Físico**: Se descartan profundidades absurdas (ej. > 100cm o < 10cm absolutos).
+*   **Rango Físico**: Se descartan profundidades fuera de [-10cm, +30cm] relativos.
 *   **Skip Frame**: Si el tracking estéreo falla por 1 frame (oclusión, mov rápido), **SE SALTA EL FRAME**.
     *   *Historia*: Anteriormente se usaba un fallback `depth=99.0`. Esto causaba que la velocidad saltara de 0cm a 99cm en 1 frame (`vel=99cm/frame`), rompiendo los filtros de detección.
     *   *Regla*: Si no hay datos, no hay cálculo. Mantener el historial limpio.
+*   **Umbral de Activación**: `DEPTH_THRESHOLD = 2.0cm` (activar si `depth >= -2.0cm`).
 
 ## 3.5 Modo AR y Detección "WYSIWYG"
 
@@ -76,7 +80,7 @@ El modo AR introduce una complejidad adicional: la **alineación visual**.
 *   **Detección WYSIWYG (What You See Is What You Get)**:
     *   En lugar de transformar coordenadas complejas, dibujamos los polígonos de detección directamente sobre el frame RAW de la cámara.
     *   Usamos las coordenadas RAW de MediaPipe (sin rotar) para verificar colisiones.
-    *   **Resultado**: Donde el usuario ve su dedo (y el polígono verde/rojo), ahí detecta. Tolerancia de `5px` para usabilidad.
+    *   **Resultado**: Donde el usuario ve su dedo (y el polígono verde/rojo), ahí detecta. Tolerancia de `30px` para usabilidad.
 
 ---
 

@@ -43,13 +43,52 @@ class VirtualKeyboard():
         self.img = None
         self.canvas_w = canvas_w
         self.canvas_h = canvas_h
-
-        self.kb_x0 = int(round_half_up(canvas_w * StereoConfig.KEYBOARD_X0_RATIO))
-        self.kb_y0 = int(round_half_up(canvas_h * StereoConfig.KEYBOARD_Y0_RATIO))
-        self.kb_x1 = int(round_half_up(canvas_w * StereoConfig.KEYBOARD_X1_RATIO))
-        self.kb_y1 = int(round_half_up(canvas_h * StereoConfig.KEYBOARD_Y1_RATIO))
-
         self.kb_white_n_keys = kb_white_n_keys
+
+        # Calcular coordenadas del teclado
+        # PRIORIDAD: TABLE_CORNERS (Fase 4) > Ratios fijos
+        if StereoConfig.TABLE_CORNERS is not None and len(StereoConfig.TABLE_CORNERS) == 4:
+            # Usar esquinas de la calibración Fase 4
+            # NOTA: Las esquinas YA están en coordenadas del frame rotado/transformado
+            # porque durante la calibración el usuario ve el frame con apply_display_transform
+            corners = StereoConfig.TABLE_CORNERS
+            
+            # Obtener resolución de calibración
+            calib_w = getattr(StereoConfig, 'CALIB_PIXEL_WIDTH', 1280) or 1280
+            calib_h = getattr(StereoConfig, 'CALIB_PIXEL_HEIGHT', 720) or 720
+            
+            print(f"[VirtualKeyboard] TABLE_CORNERS: {corners}")
+            print(f"[VirtualKeyboard] Calib res: {calib_w}x{calib_h}, Canvas: {canvas_w}x{canvas_h}")
+            
+            # Calcular bounding box del área calibrada
+            all_x = [pt[0] for pt in corners]
+            all_y = [pt[1] for pt in corners]
+            min_x = min(all_x)
+            max_x = max(all_x)
+            min_y = min(all_y)
+            max_y = max(all_y)
+            
+            # Factor de escala de calibración a resolución actual
+            scale_x = canvas_w / calib_w
+            scale_y = canvas_h / calib_h
+            
+            # Escalar a resolución actual
+            self.kb_x0 = int(min_x * scale_x)
+            self.kb_y0 = int(min_y * scale_y)
+            self.kb_x1 = int(max_x * scale_x)
+            self.kb_y1 = int(max_y * scale_y)
+            
+            print(f"[VirtualKeyboard] Usando TABLE_CORNERS (Fase 4)")
+            print(f"[VirtualKeyboard] BBox original: ({min_x},{min_y})-({max_x},{max_y})")
+            print(f"[VirtualKeyboard] Escala: {scale_x:.2f}x, {scale_y:.2f}y")
+        else:
+            # Fallback: usar ratios fijos
+            self.kb_x0 = int(round_half_up(canvas_w * StereoConfig.KEYBOARD_X0_RATIO))
+            self.kb_y0 = int(round_half_up(canvas_h * StereoConfig.KEYBOARD_Y0_RATIO))
+            self.kb_x1 = int(round_half_up(canvas_w * StereoConfig.KEYBOARD_X1_RATIO))
+            self.kb_y1 = int(round_half_up(canvas_h * StereoConfig.KEYBOARD_Y1_RATIO))
+            print(f"[VirtualKeyboard] Usando ratios fijos (sin Fase 4)")
+
         self.kb_len = self.kb_x1 - self.kb_x0
         
         print(f"[VirtualKeyboard] Init: {self.canvas_w}x{self.canvas_h}")
@@ -58,7 +97,8 @@ class VirtualKeyboard():
         self.white_kb_height = self.kb_y1 - self.kb_y0
         self.white_key_width = int(self.kb_len / self.kb_white_n_keys)
         
-        self.black_key_width = self.white_key_width * (StereoConfig.BLACK_KEY_WIDTH_RATIO / StereoConfig.WHITE_KEY_WIDTH_RATIO)
+        # Ajuste visual: Tecla negra ~55-60% del ancho de la blanca
+        self.black_key_width = int(self.white_key_width * 0.6)
         self.black_key_heigth = self.white_kb_height * StereoConfig.BLACK_KEY_HEIGHT_RATIO
 
         self.keys_without_black = \
@@ -76,6 +116,9 @@ class VirtualKeyboard():
         self.M_inv = None
         self.ar_mode_active = False
         self.screen_key_polygons = [] # Poligonos de teclas en coordenadas de pantalla
+        
+        # Generar lista plana de IDs para renderizado (Fix AttributeError)
+        self.white_keys_ids = [self.__white_map.get(i, -1) for i in range(self.kb_white_n_keys)]
 
 
 
@@ -89,15 +132,26 @@ class VirtualKeyboard():
         geometries = [] # Lista de dicts {id, black, pts}
         
         # 1. Teclas Blancas
+        # Usar float width para evitar error acumulado en la derecha
+        float_width = float(self.kb_len) / float(self.kb_white_n_keys)
+        
         for p in range(self.kb_white_n_keys):
-            x_line_pos = self.kb_x0 + self.white_key_width * p
+            # Calcular posiciones exactas en float
+            x_start_f = self.kb_x0 + float_width * p
+            x_end_f = self.kb_x0 + float_width * (p + 1)
+            
+            x_line_pos = int(round_half_up(x_start_f))
+            x_next_pos = int(round_half_up(x_end_f)) # Usar siguiente exacto para cerrar huecos
+            
+            # [FIX] Revertido logical infinite bottom (ineficaz con perspectiva fuerte)
+            # Se maneja ahora en draw_perspective (Screen Space)
             
             # Rectángulo completo de la tecla blanca
             pts = [
                 [x_line_pos, self.kb_y0],
-                [x_line_pos + self.white_key_width, self.kb_y0],
-                [x_line_pos + self.white_key_width, self.kb_y1],
-                [x_line_pos, self.kb_y1]
+                [x_next_pos, self.kb_y0],
+                [x_next_pos, self.kb_y1], 
+                [x_line_pos, self.kb_y1] 
             ]
             
             # Map visual index p to key_id
@@ -114,8 +168,8 @@ class VirtualKeyboard():
 
         # 2. Teclas Negras
         for p in range(self.kb_white_n_keys):
-            # Posicion visual aproximada (debe coincidir con draw_flat)
-            x_line_pos_next = self.kb_x0 + self.white_key_width * (p+1)
+            # Posicion visual aproximada (Float)
+            x_line_pos_next = self.kb_x0 + float_width * (p+1)
             
             # Lógica de posición tecla negra (copiada de draw_flat con logica estándar)
             # Simplificación: Usamos la logica estándar para calcular el rect
@@ -123,25 +177,29 @@ class VirtualKeyboard():
             # El espejo se maneja visualmente o invirtiendo coordenadas después.
             
             # [FIX] Usar modulo para octavas
-            base_p = p % 7
+            # Lógica sincronizada con _render_hd_buffer para WYSIWYG
+            # octave_idx: 0=Do, 1=Re, 2=Mi, 3=Fa, 4=Sol, 5=La, 6=Si
+            octave_idx = p % 7
             
-            b_bk_x0 = 0
-            b_bk_x1 = 0
+            shift = 0.0
+            bk_w_float = float(self.black_key_width)
             
-            if base_p in (0, 3, 4): # Izquierda
-                b_bk_x0 = int(round_half_up(x_line_pos_next - self.black_key_width*(2/3)))
-                b_bk_x1 = int(round_half_up(x_line_pos_next + self.black_key_width*(1/3)))
-            elif base_p in (1, 5): # Derecha
-                b_bk_x0 = int(round_half_up(x_line_pos_next - self.black_key_width*(1/3)))
-                b_bk_x1 = int(round_half_up(x_line_pos_next + self.black_key_width*(2/3)))
-            else: # Centro (O no hay)
-                b_bk_x0 = int(round_half_up(x_line_pos_next - self.black_key_width/2))
-                b_bk_x1 = int(round_half_up(x_line_pos_next + self.black_key_width/2))
+            if octave_idx == 0: shift = -bk_w_float/3.0
+            elif octave_idx == 1: shift = bk_w_float/3.0
+            elif octave_idx == 3: shift = -bk_w_float/3.0
+            elif octave_idx == 4: shift = 0.0
+            elif octave_idx == 5: shift = bk_w_float/3.0
+            
+            # Centro teórico: inicio de la siguiente tecla blanca (Float)
+            center_x = x_line_pos_next
+            
+            b_bk_x0 = int(round_half_up(center_x - (bk_w_float / 2.0) + shift))
+            b_bk_x1 = int(round_half_up(center_x + (bk_w_float / 2.0) + shift))
             
             # Teclas que TIENEN negra a su derecha
             # 0(Do), 1(Re), 3(Fa), 4(Sol), 5(La) -> tienen negra
             # 7(Do), 8(Re), ...
-            has_black = base_p in (0, 1, 3, 4, 5)
+            has_black = octave_idx in (0, 1, 3, 4, 5)
             
             if has_black:
                 # Validar key_id negra
@@ -162,182 +220,212 @@ class VirtualKeyboard():
 
 
 
-    def draw_perspective(self, img, corners, active_keys=None, hand_landmarks=None):
+    def _render_hd_buffer(self, active_keys=None):
         """
-        Dibuja el teclado en estilo CYBERPUNK (AR/WYSIWYG)
-        
-        Args:
-            img: Imagen de destino
-            corners: Esquinas detectadas de la mesa
-            active_keys: Lista de IDs de teclas activas actualmente
+        Genera una imagen HD del teclado plano con efectos visuales de alta calidad.
+        Retorna: imagen (h, w, 3)
         """
         if active_keys is None:
             active_keys = []
             
-        # 1. Definir Puntos Origen y Destino (Igual que antes)
-        src_pts = np.float32([
-            [self.kb_x0, self.kb_y0],
-            [self.kb_x1, self.kb_y0],
-            [self.kb_x1, self.kb_y1],
-            [self.kb_x0, self.kb_y1]
-        ])
+        base_w = 1200
+        base_h = 400
+        
+        # Buffer caching
+        if not hasattr(self, '_base_buffer') or self._base_buffer.shape[1] != base_w:
+            self._base_buffer = np.zeros((base_h, base_w, 3), dtype=np.uint8)
+        
+        canvas = self._base_buffer
+        canvas[:] = 0 # Limpiar
+        
+        n_keys = self.kb_white_n_keys
+        w_key = base_w // n_keys
+        b_key_w = int(w_key * 0.6)
+        b_key_h = int(base_h * 0.65)
+        
+        is_mirrored = getattr(StereoConfig, 'MIRROR_HORIZONTAL', False)
+        
+        # === 1. TECLAS BLANCAS ===
+        for i in range(n_keys):
+            # Mapeo visual a lógico
+            logical_id = self.white_keys_ids[i] # IDs de notas blancas: 0, 2, 4...
+            
+            # En modo espejo, el dibujo va de izq a der, pero representa notas al revés
+            # PERO self.white_keys_ids ya está ordenado asc.
+            # Visual index i=0 (izq) -> logical_id=0 (Do) si normal.
+            # Si mirror: visual i=0 -> logical_id=final
+            
+            current_id = logical_id
+            if is_mirrored:
+                # El id correspondiente a esta pos visual i
+                # i=0 es la izquierda. Si espejo, es la nota más aguda.
+                current_id = self.white_keys_ids[n_keys - 1 - i]
+
+            is_active = current_id in active_keys
+            
+            x0 = i * w_key
+            x1 = x0 + w_key - 2
+            
+            # Colores
+            if is_active:
+                # Color activo (Cyan brillante o similar)
+                col_top = (255, 255, 200) # Cyan muy claro
+                col_bottom = (200, 200, 0) # Cyan oscuro
+            else:
+                col_top = (240, 240, 240)
+                col_bottom = (255, 255, 255)
+            
+            # Dibujar cuerpo
+            cv2.rectangle(canvas, (x0, 0), (x1, base_h), col_top, -1)
+            cv2.rectangle(canvas, (x0, base_h-40), (x1, base_h), col_bottom, -1)
+            
+            # Sombra lateral
+            cv2.line(canvas, (x1, 0), (x1, base_h), (150, 150, 150), 2)
+            
+            # Texto
+            note_name = self.white_key_names[(i if not is_mirrored else (n_keys - 1 - i)) % 7]
+            if True:
+                font_scale = 1.2
+                thickness = 2
+                (tw, th), _ = cv2.getTextSize(note_name, cv2.FONT_HERSHEY_PLAIN, font_scale, thickness)
+                tx = x0 + (w_key - tw) // 2
+                ty = base_h - 15
+                col_text = (0, 100, 100) if is_active else (50, 50, 50)
+                cv2.putText(canvas, note_name, (tx, ty), cv2.FONT_HERSHEY_PLAIN, font_scale, col_text, thickness, cv2.LINE_AA)
+
+        # === 2. TECLAS NEGRAS ===
+        for p in range(n_keys):
+            visual_p = n_keys - 1 - p if is_mirrored else p
+            
+            keys_without_black = [2, 6, 9, 13]
+            check_p = visual_p % 14
+            octave_idx = check_p % 7
+            has_black = octave_idx not in (2, 6)
+            
+            if has_black:
+                # Identificar ID lógico de la negra
+                # La negra está a la derecha de la blanca 'visual_p' (en lógica normal DO -> DO#)
+                # DO(0) -> DO#(1).
+                # Si estamos en modo espejo, visual_p va decreciendo.
+                
+                # Simplificación: Usar mapa de negras
+                # self.__black_map mapea white_id -> black_id
+                # Necesitamos el white_id de la tecla actual
+                white_logical = self.white_keys_ids[visual_p] # ID real de la blanca
+                black_logical = self.__black_map.get(white_logical, None)
+                
+                is_active = False
+                if black_logical is not None:
+                     is_active = black_logical in active_keys
+
+                x_line = (p + 1) * w_key
+                shift = 0
+                if octave_idx == 0: shift = -b_key_w//3
+                elif octave_idx == 1: shift = b_key_w//3
+                elif octave_idx == 3: shift = -b_key_w//3
+                elif octave_idx == 4: shift = 0
+                elif octave_idx == 5: shift = b_key_w//3
+                
+                if is_mirrored: shift = -shift
+
+                bk_x0 = x_line - b_key_w//2 + shift
+                bk_x1 = bk_x0 + b_key_w
+                
+                # Sombra
+                cv2.rectangle(canvas, (bk_x0+5, 5), (bk_x1+10, b_key_h+10), (0,0,0, 100), -1)
+                
+                # Cuerpo
+                if is_active:
+                    col_bk = (200, 200, 50) # Azulado activo
+                    col_spec = (255, 255, 200)
+                else:
+                    col_bk = (20, 20, 20)
+                    col_spec = (80, 80, 80)
+                
+                cv2.rectangle(canvas, (bk_x0, 0), (bk_x1, b_key_h), col_bk, -1)
+                cv2.rectangle(canvas, (bk_x0+2, b_key_h-15), (bk_x1-2, b_key_h-5), col_spec, -1)
+                
+        return canvas
+
+    def draw_perspective(self, img, corners, active_keys=None, hand_landmarks=None):
+        """
+        Dibuja el teclado usando esquinas AR Reales y renderizado HD.
+        """
+        if active_keys is None: active_keys = []
+        
+        # 1. Generar keyboard HD
+        hd_keyboard = self._render_hd_buffer(active_keys)
+        h_buf, w_buf = hd_keyboard.shape[:2]
+        
+        # 2. Warp AR
+        src_pts = np.float32([[0, 0], [w_buf, 0], [w_buf, h_buf], [0, h_buf]])
         dst_pts = np.float32(corners)
         
         try:
             matrix = cv2.getPerspectiveTransform(src_pts, dst_pts)
-            self.M_inv = np.linalg.inv(matrix)
+            self.M_inv = np.linalg.inv(matrix) # Para inputs
             self.ar_mode_active = True
-            self.screen_key_polygons = [] # Reiniciar polígonos
             
-            # === GENERACIÓN DE POLÍGONOS (Lógica Geométrica) ===
+            # --- Visualización ---
+            warped = cv2.warpPerspective(hd_keyboard, matrix, (img.shape[1], img.shape[0]))
+            
+            # Blending inteligente
+            gray = cv2.cvtColor(warped, cv2.COLOR_BGR2GRAY)
+            _, mask = cv2.threshold(gray, 1, 255, cv2.THRESH_BINARY)
+            
+            # Aplicar sobre imagen
+            # Usar un alpha alto para que se vea sólido y bonito
+            alpha = 0.90 
+            
+            roi = img[mask > 0]
+            fg = warped[mask > 0]
+            blended = cv2.addWeighted(roi, 1-alpha, fg, alpha, 0)
+            img[mask > 0] = blended
+            
+            # --- Lógica de Detección (Polígonos) ---
+            # Para mantener la lógica de clic, proyectamos los puntos lógicos
+            # usando una matriz paralela.
+            # La geometría lógica (self.generate_logical_key_geometries)
+            # está en coordenadas del canvas "kb_x0, kb_y0...".
+            # Pero nuestro warp se basó en el buffer HD (0,0 -> w_buf, h_buf).
+            
+            # Calculamos matriz auxiliar para polígonos
+            # Origen: Geometría lógica plana (kb_x0...)
+            # Destino: Corners AR
+            src_logic = np.float32([
+                [self.kb_x0, self.kb_y0], [self.kb_x1, self.kb_y0],
+                [self.kb_x1, self.kb_y1], [self.kb_x0, self.kb_y1]
+            ])
+            matrix_logic = cv2.getPerspectiveTransform(src_logic, dst_pts)
+            
+            self.screen_key_polygons = []
             logical_geoms = self.generate_logical_key_geometries()
             
-            # Capa de overlay para transparencias
-            overlay = img.copy()
-            
-            # Colores Cyberpunk desde el TEMA Global (Semántico)
-            COLOR_WHITE_IDLE = Theme.KEY_AR_WHITE_IDLE
-            COLOR_WHITE_ACTIVE = Theme.KEY_AR_WHITE_ACTIVE
-            
-            COLOR_BLACK_IDLE = Theme.KEY_AR_BLACK_IDLE
-            COLOR_BLACK_ACTIVE = Theme.KEY_AR_BLACK_ACTIVE
-            
-            # Texto
-            FONT = cv2.FONT_HERSHEY_SIMPLEX
-            
-            # Listas para agrupar polígonos por capa y optimizar blending
-            # Cada capa: (alpha, list_of_contours, color)
-            # PERO como Active puede tener diferentes colores (si quisiéramos), 
-            # agruparemos por (Tipos de Tecla) para aplicar alpha global del grupo.
-            
-            # Grupos:
-            # 1. White Idle (Alpha bajo)
-            # 2. Black Idle (Alpha medio)
-            # 3. Active (Alpha alto)
-            
-            polys_white_idle = []
-            polys_black_idle = []
-            polys_active = []
-            
-            # Guardamos bordes para dibujar al final (siempre opacos)
-            borders_to_draw = [] # (pts, color, thickness)
-
-            # Iterar teclas y clasificar
-            sorted_geoms = sorted(logical_geoms, key=lambda x: 1 if x['black'] else 0)
-            
-            for key_geom in sorted_geoms:
-                pts_src = key_geom['pts'] 
-                pts_dst = cv2.perspectiveTransform(pts_src, matrix)[0]
-                poly_pts = pts_dst.astype(np.int32)
+            for key_geom in logical_geoms:
+                pts_src = key_geom['pts']
+                pts_dst = cv2.perspectiveTransform(pts_src, matrix_logic)[0]
                 
-                # Guardar para detección
+                # [FIX] "Screen-Space Infinite Bottom"
+                # Forzar que los vértices inferiores de las teclas BLANCAS lleguen al fondo de la pantalla
+                # pts_dst es [TL, TR, BR, BL] (según generate_logical...)
+                # BR es idx 2, BL es idx 3
+                
+                if not key_geom['black']:
+                     # Extender masivamente hacia abajo en espacio de pantalla 
+                     # para cubrir dedos "debajo" del teclado visual por perspectiva
+                     screen_bottom = img.shape[0] + 500 # 500px margen seguridad bajo pantalla
+                     pts_dst[2][1] = float(screen_bottom)
+                     pts_dst[3][1] = float(screen_bottom)
+                
                 self.screen_key_polygons.append({
                     'id': key_geom['id'],
                     'black': key_geom['black'],
-                    'contour': poly_pts
+                    'contour': pts_dst.astype(np.int32)
                 })
                 
-                # --- Lógica Visual ---
-                k_id = key_geom['id']
-                is_active = k_id in active_keys
-                is_black = key_geom['black']
-                
-                if is_active:
-                    # Active Group
-                    color = Theme.KEY_AR_BLACK_ACTIVE if is_black else Theme.KEY_AR_WHITE_ACTIVE
-                    polys_active.append((poly_pts, color))
-                elif is_black:
-                    # Black Idle Group
-                    polys_black_idle.append((poly_pts, Theme.KEY_AR_BLACK_IDLE))
-                else:
-                    # White Idle Group
-                    polys_white_idle.append((poly_pts, Theme.KEY_AR_WHITE_IDLE))
-
-                # Definir Borde
-                border_is_distinct = Theme.KEY_AR_BORDER
-                # Si está activo, borde blanco brillante. Si no, borde separador.
-                border_color = (255, 255, 255) if is_active else border_is_distinct
-                border_thick = 2 if is_active else 1
-                borders_to_draw.append((poly_pts, border_color, border_thick))
-                
-                # Etiquetas de texto (directo en img final, al final)
-                # ... (lo haremos después del blending)
-
-            # === DIBUJADO DE TECLAS (SÓLIDO) ===
-            # Ya no hacemos blending. Dibujamos directamente sobre 'img' (o overlay con alpha 1.0)
-            # El usuario pide "colores sólidos e intensos".
-            
-            # Dibujar Capas (Fondo -> Frente)
-            # White Idle
-            for pts, col in polys_white_idle:
-                 cv2.fillPoly(img, [pts], col)
-            
-            # Black Idle
-            for pts, col in polys_black_idle:
-                 cv2.fillPoly(img, [pts], col)
-            
-            # Active (Siempre encima y brillante)
-            for pts, col in polys_active:
-                 cv2.fillPoly(img, [pts], col)
-            
-            # === DIBUJAR BORDES Y TEXTO (OPACOS) ===
-            for pts, col, thick in borders_to_draw:
-                cv2.polylines(img, [pts], isClosed=True, color=col, thickness=thick, lineType=cv2.LINE_AA)
-            
-            # Redibujar texto
-            for item in self.screen_key_polygons:
-                if not item['black']:
-                    k_id = item['id']
-                    poly_pts = item['contour']
-                    M = cv2.moments(poly_pts)
-                    if M["m00"] != 0:
-                        cX = int(M["m10"] / M["m00"])
-                        cY = int(M["m01"] / M["m00"])
-                        note_name = self.get_note_name(k_id)
-                        text_size = cv2.getTextSize(note_name, FONT, 0.4, 1)[0]
-                        text_x = cX - text_size[0] // 2
-                        text_y = cY + text_size[1] // 2 + 10
-                        cv2.putText(img, note_name, (text_x+1, text_y+1), FONT, 0.4, (0,0,0), 2)
-                        cv2.putText(img, note_name, (text_x, text_y), FONT, 0.4, (255,255,255), 1)
-
-            # === OCLUSIÓN DE MANOS (AR) ===
-            # Si hay landmarks de manos, creamos una máscara para "borrar" el teclado
-            # y restaurar la imagen original de la mano.
-            if hand_landmarks:
-                # Crear máscara de manos
-                hand_mask = np.zeros(img.shape[:2], dtype=np.uint8)
-                
-                # Imagen original antes de dibujar teclado (pasada o necesita copia previa? -> img ya está modificada)
-                # ERROR: 'img' ya tiene el teclado dibujado encima.
-                # Necesitamos copar 'img' AL PRINCIPIO de la función para restaurar.
-                # Como no lo hicimos, usaremos la copia 'overlay' que hicimos antes de dibujar (si overlay era copia limpia).
-                # Revisando: overlay = img.copy() linea 196 (antes de dibujar nada). Perfecto.
-                
-                # Pero espera, 'overlay' NO se ha modificado en este nuevo flujo (ya no usé fillPoly en overlay, sino en img).
-                # Entonces 'overlay' contiene la imagen ORIGINAL de la cámara limpia. ¡Exacto!
-                
-                for hand_pts in hand_landmarks:
-                    # Convertir lista lista a np array
-                    pts_np = np.array(hand_pts, dtype=np.int32)
-                    if len(pts_np) > 0:
-                        # Calcular Convex Hull para cubrir toda la mano
-                        hull = cv2.convexHull(pts_np)
-                        # Dibujar hull en mascara (Blanco = Mano)
-                        cv2.fillPoly(hand_mask, [hull], 255)
-                        
-                        # [OPCIONAL] Dilatar un poco para cubrir bordes
-                        # kernel = np.ones((5,5), np.uint8)
-                        # hand_mask = cv2.dilate(hand_mask, kernel, iterations=1)
-                
-                # Restaurar imagen original donde está la máscara de mano
-                # img[mask] = overlay[mask]
-                img[hand_mask == 255] = overlay[hand_mask == 255]
-            
         except Exception as e:
-            print(f"[VirtualKeyboard] Error AR Matrix: {e}")
-            self.M_inv = None
-            self.ar_mode_active = False
-            self.screen_key_polygons = []
+            # Fallback a dibujar normal si falla la matriz
+            print(f"Error perspective: {e}")
             
     def get_note_name(self, key_id):
         """Retorna el nombre solfeo de la tecla"""
@@ -359,266 +447,101 @@ class VirtualKeyboard():
             return notes[white_idx % 7]
         return ""
 
-    def draw_virtual_keyboard(self, img, active_keys=None, hand_landmarks=None):
-        """Dibuja el teclado decidiendo automáticamente entre AR (perspectiva) o plano"""
-        # Seleccionar modo según si hay calibración de mesa VÁLIDA
-        use_perspective = False
-        debug_msg = ""
+    def draw_virtual_keyboard(self, img, active_keys=None, hand_landmarks=None, rotated_display=True):
+        """Dibuja el teclado virtual sobre la imagen.
         
-        # Resetear estado AR
-        self.ar_mode_active = False
-        self.M_inv = None
-        
-        # Copia de esquinas para no modificar las originales de StereoConfig
-        ar_corners = None
-        
-        if StereoConfig.TABLE_CORNERS is not None:
-             self.current_corners = StereoConfig.TABLE_CORNERS
-             use_perspective = True
-             debug_msg = "AR MODE (Corners Loaded)"
-        else:
-             debug_msg = "FLAT MODE (No corners)"
+        Args:
+            img: Frame donde dibujar
+            active_keys: Teclas activas (opcional)
+            hand_landmarks: Landmarks de manos (opcional)
+            rotated_display: Si True, el frame está rotado 180° y se transforman coordenadas
+        """
+        try:
+            self.draw_virtual_keyboard_flat(img, rotated_display=rotated_display)
+        except Exception as e:
+            print(f"[FLAT ERROR] {e}")
+            import traceback
+            traceback.print_exc()
 
-        # Dibujar
-        if use_perspective:
-            # === ESCALADO DE COORDENADAS ===
-            # Si tenemos la resolución de referencia de la calibración, escalamos los puntos
-            # a la resolución actual de la imagen.
-            h, w = img.shape[:2]
-            
-            current_corners = self.current_corners
-            
-            if hasattr(StereoConfig, 'CALIB_PIXEL_WIDTH') and StereoConfig.CALIB_PIXEL_WIDTH and \
-               hasattr(StereoConfig, 'CALIB_PIXEL_HEIGHT') and StereoConfig.CALIB_PIXEL_HEIGHT:
-                
-                calib_w = StereoConfig.CALIB_PIXEL_WIDTH
-                calib_h = StereoConfig.CALIB_PIXEL_HEIGHT
-                
-                # Solo escalar si hay diferencia significativa
-                if calib_w != w or calib_h != h:
-                    scale_x = w / calib_w
-                    scale_y = h / calib_h
-                    
-                    scaled_corners = []
-                    for pt in StereoConfig.TABLE_CORNERS:
-                        scaled_corners.append([int(pt[0] * scale_x), int(pt[1] * scale_y)])
-                    
-                    current_corners = scaled_corners
-                    # print(f"[VirtualKeyboard] SCALED corners: {scale_x:.2f}x, {scale_y:.2f}y -> {current_corners}")
-            
-            ar_corners = current_corners
-            
-            # === VALIDACIÓN ===
-            margin = 500 # Margen generoso
-            corners_valid = True
-            
-            for pt in current_corners:
-                if not (-margin <= pt[0] <= w + margin and -margin <= pt[1] <= h + margin):
-                    corners_valid = False
-                    debug_msg = f"AR INVALID: {pt} outside {w}x{h}"
-                    break
-            
-            if corners_valid:
-                # === RECTIFICACIÓN DE FORMA (REACTIVADO PARA WYSIWYG) ===
-                # El usuario quiere un "rectángulo perfecto".
-                # Convertimos los 4 puntos arbitrarios en un Rectángulo Rotado (RotatedRect).
-                
-                pts = np.array(current_corners, dtype=np.float32)
-                
-                # 1. Centro
-                center = np.mean(pts, axis=0)
-                
-                # 2. Vectores principales
-                vec_top = pts[1] - pts[0]
-                width_top = np.linalg.norm(vec_top)
-                
-                vec_bottom = pts[2] - pts[3]
-                width_bottom = np.linalg.norm(vec_bottom)
-                
-                vec_left = pts[3] - pts[0]
-                height_left = np.linalg.norm(vec_left)
-                
-                vec_right = pts[2] - pts[1]
-                height_right = np.linalg.norm(vec_right)
-                
-                # 3. Promedios
-                avg_width = (width_top + width_bottom) / 2.0
-                avg_height = (height_left + height_right) / 2.0
-                
-                # 4. Ángulo (usamos el borde superior como referencia principal de rotación)
-                angle_rad = np.arctan2(vec_top[1], vec_top[0])
-                angle_deg = np.degrees(angle_rad)
-                
-                # 5. Reconstruir esquinas perfectas (BoxPoints)
-                rect = ((center[0], center[1]), (avg_width, avg_height), angle_deg)
-                
-                box = cv2.boxPoints(rect)
-                box = np.int0(box)
-                
-                # Ordenar esquinas: TL, TR, BR, BL
-                rect_corners = np.zeros((4, 2), dtype="float32")
-                s = box.sum(axis=1)
-                rect_corners[0] = box[np.argmin(s)] # TL
-                rect_corners[2] = box[np.argmax(s)] # BR
-
-                diff = np.diff(box, axis=1)
-                rect_corners[1] = box[np.argmin(diff)] # TR
-                rect_corners[3] = box[np.argmax(diff)] # BL
-                
-                current_corners = rect_corners.tolist()
-                
-                # Usar esquinas rectificadas
-                ar_corners = current_corners
-                
-                use_perspective = True
-                # print(f"[VirtualKeyboard] Rectified to PERFECT RECTANGLE: {current_corners}")
-            else:
-                 print(f"[WARN] {debug_msg}")
-        else:
-            if not StereoConfig.TABLE_CORNERS:
-                debug_msg = "NO AR DATA"
-            else:
-                 debug_msg = f"AR DATA BAD LEN: {len(StereoConfig.TABLE_CORNERS)}"
-            # print(f"[VirtualKeyboard] Drawing FLAT: {debug_msg}")
-        
-        if use_perspective and ar_corners:
-            try:
-                self.draw_perspective(img, ar_corners, active_keys, hand_landmarks)
-            except Exception as e:
-                print(f"[WARN] Error en draw_perspective: {e}, usando modo plano")
-                cv2.putText(img, f"AR ERROR: {str(e)[:20]}", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,0,255), 2)
-                self.draw_virtual_keyboard_flat(img)
-        else:
-            self.draw_virtual_keyboard_flat(img)
-            # Mostrar por qué falló AR (temporalmente para diagnóstico)
-            # Solo mostrar si hay datos pero son invalidos
-            if StereoConfig.TABLE_CORNERS:
-                 cv2.putText(img, debug_msg, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
-
-    def draw_virtual_keyboard_flat(self, img):
-        """Dibuja el teclado plano tradicional (lógica original)"""
-        # Reiniciar divisiones de zona superior para evitar duplicados y fugas de memoria
+    def draw_virtual_keyboard_flat(self, img, rotated_display=True):
+        """
+        Dibuja el teclado DIRECTAMENTE sobre la imagen (modo simple y robusto).
+        """
+        # Reiniciar divisiones
         self.upper_zone_divisions = []
-
-        # Prepara shapes (Fondo blanco semitransparente para las teclas)
-        shapes = np.zeros_like(img, np.uint8)
-        cv2.rectangle(
-            img=shapes,
-            pt1=(self.kb_x0, self.kb_y0),
-            pt2=(self.kb_x1, self.kb_y1),
-            color=(255, 255, 255),
-            thickness=cv2.FILLED)
-
-        alpha = StereoConfig.KEYBOARD_ALPHA
-        mask = shapes.astype(bool)
-        img[mask] = cv2.addWeighted(img, alpha, shapes, 1 - alpha, 0)[mask]
-
-        # Configuración de fuente para las etiquetas
-        font_face = cv2.FONT_HERSHEY_SIMPLEX
-        font_scale = 0.55
-        font_thickness = 2
-        text_color = (0, 0, 0) # Negro elegante
-
-        # Verificar si estamos en modo espejo
-        is_mirrored = getattr(StereoConfig, 'MIRROR_HORIZONTAL', False)
-
-        for p in range(self.kb_white_n_keys):
-            # En modo espejo, invertir el índice visual para dibujar
-            # pero mantener la lógica de detección igual
-            if is_mirrored:
-                visual_p = self.kb_white_n_keys - 1 - p
-            else:
-                visual_p = p
+        
+        # Coordenadas del teclado
+        x0, y0 = self.kb_x0, self.kb_y0
+        x1, y1 = self.kb_x1, self.kb_y1
+        
+        h_img, w_img = img.shape[:2]
+        
+        # Validar que las coordenadas estén dentro de la imagen
+        x0 = max(0, min(x0, w_img - 1))
+        x1 = max(0, min(x1, w_img - 1))
+        y0 = max(0, min(y0, h_img - 1))
+        y1 = max(0, min(y1, h_img - 1))
+        
+        # DEBUG: Solo cada 60 frames para no saturar
+        if not hasattr(self, '_flat_debug_counter'):
+            self._flat_debug_counter = 0
+        self._flat_debug_counter += 1
+        if self._flat_debug_counter % 60 == 1:
+            print(f"[FLAT] img=({h_img}x{w_img}), kb=({x0},{y0})-({x1},{y1})")
+        
+        n_keys = self.kb_white_n_keys
+        
+        kb_width = x1 - x0
+        kb_height = y1 - y0
+        
+        if kb_width <= 0 or kb_height <= 0:
+            print(f"[FLAT ERROR] Invalid keyboard size: {kb_width}x{kb_height}")
+            return
             
-            x_line_pos = self.kb_x0 + self.white_key_width * (p+1)
-
-            # --- DIBUJAR TECLAS NEGRAS ---
-            # En modo espejo usamos visual_p para determinar qué teclas tienen negras
-            check_p = visual_p if is_mirrored else p
+        key_width = kb_width // n_keys
+        
+        # Altura tecla negra
+        black_height = int(kb_height * 0.65)
+        black_width = int(key_width * 0.6)
+        
+        # === DIBUJAR TECLAS BLANCAS ===
+        for i in range(n_keys):
+            kx0 = x0 + i * key_width
+            kx1 = kx0 + key_width - 2  # -2 para separación visual
             
-            # Las teclas sin negra son: Mi (2), Si (6) en cada octava
-            keys_without_black_visual = [2, 6, 9, 13]  # Mi y Si de cada octava
+            # Fondo blanco
+            cv2.rectangle(img, (kx0, y0), (kx1, y1), (240, 240, 240), -1)
+            # Borde
+            cv2.rectangle(img, (kx0, y0), (kx1, y1), (100, 100, 100), 1)
             
-            if check_p not in keys_without_black_visual:
-                # Determinar posición de la tecla negra según el patrón del piano
-                # En modo espejo, las posiciones también se invierten
-                if is_mirrored:
-                    # Invertir la lógica de posicionamiento
-                    if check_p % 7 in (0, 3, 4):  # Do#, Fa#, Sol#
-                        b_bk_x0 = int(round_half_up(x_line_pos - self.black_key_width*(1/3)))
-                        b_bk_x1 = int(round_half_up(x_line_pos + self.black_key_width*(2/3)))
-                    elif check_p % 7 in (1, 5):  # Re#, La#
-                        b_bk_x0 = int(round_half_up(x_line_pos - self.black_key_width*(2/3)))
-                        b_bk_x1 = int(round_half_up(x_line_pos + self.black_key_width*(1/3)))
-                    else:
-                        b_bk_x0 = int(round_half_up(x_line_pos - self.black_key_width/2))
-                        b_bk_x1 = int(round_half_up(x_line_pos + self.black_key_width/2))
-                else:
-                    if p in (0, 3, 4): # Izquierda
-                        b_bk_x0 = int(round_half_up(x_line_pos - self.black_key_width*(2/3)))
-                        b_bk_x1 = int(round_half_up(x_line_pos + self.black_key_width*(1/3)))
-                    elif p in (1, 5): # Derecha
-                        b_bk_x0 = int(round_half_up(x_line_pos - self.black_key_width*(1/3)))
-                        b_bk_x1 = int(round_half_up(x_line_pos + self.black_key_width*(2/3)))
-                    else: # Centro
-                        b_bk_x0 = int(round_half_up(x_line_pos - self.black_key_width/2))
-                        b_bk_x1 = int(round_half_up(x_line_pos + self.black_key_width/2))
-
-                # Tecla negra rellena (Gris oscuro para que no sea transparente en la máscara AR)
-                cv2.rectangle(
-                    img=img,
-                    pt1=(b_bk_x0, self.kb_y0),
-                    pt2=(b_bk_x1, int(round_half_up(self.kb_y0 + self.black_key_heigth))),
-                    color=(30, 30, 30),
-                    thickness=cv2.FILLED)
+            # Nombre de nota
+            note_name = self.white_key_names[i % 7]
+            font_scale = 0.5
+            (tw, th), _ = cv2.getTextSize(note_name, cv2.FONT_HERSHEY_SIMPLEX, font_scale, 1)
+            tx = kx0 + (key_width - tw) // 2
+            ty = y1 - 10
+            cv2.putText(img, note_name, (tx, ty), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (50, 50, 50), 1, cv2.LINE_AA)
+        
+        # === DIBUJAR TECLAS NEGRAS ===
+        # Patrón: Do#, Re#, [skip Mi], Fa#, Sol#, La#, [skip Si]
+        black_pattern = [True, True, False, True, True, True, False]  # C#, D#, skip, F#, G#, A#, skip
+        
+        for i in range(n_keys - 1):  # -1 porque la última blanca no tiene negra a su derecha
+            octave_pos = i % 7
+            if black_pattern[octave_pos]:
+                # Centro entre teclas blancas
+                center_x = x0 + (i + 1) * key_width
+                bx0 = center_x - black_width // 2
+                bx1 = center_x + black_width // 2
+                by0 = y0
+                by1 = y0 + black_height
                 
-                # Borde gris sutil para las teclas negras
-                cv2.rectangle(
-                    img=img,
-                    pt1=(b_bk_x0, self.kb_y0),
-                    pt2=(b_bk_x1, int(round_half_up(self.kb_y0 + self.black_key_heigth))),
-                    color=(60, 60, 60),
-                    thickness=1)
-
-                self.new_key(p, (b_bk_x0, self.kb_y0),
-                             (b_bk_x1, int(round_half_up(self.kb_y0 + self.black_key_heigth))))
-                # Guardar tupla (id_tecla, rectangulo) para que find_key_in_upper_zone funcione correctamente
-                self.upper_zone_divisions.append((p, self.rectangle))
-
-            # --- LÍNEAS SEPARADORAS DE TECLAS BLANCAS ---
-            cv2.line(img=img,
-                     pt1=(int(round_half_up(x_line_pos)), self.kb_y0),
-                     pt2=(int(round_half_up(x_line_pos)), self.kb_y1),
-                     color=(0, 0, 0), # Línea negra delgada
-                     thickness=1)
-
-            # --- ETIQUETAS DE NOTAS (Nuevo diseño limpio) ---
-            
-            # 1. Obtener nombre de la nota (usando visual_p para modo espejo)
-            note_name = self.white_key_names[visual_p % 7]
-            
-            # 2. Calcular el tamaño exacto del texto para centrarlo
-            (text_w, text_h), baseline = cv2.getTextSize(note_name, font_face, font_scale, font_thickness)
-            
-            # 3. Calcular posición central X de la tecla
-            key_center_x = x_line_pos - self.white_key_width / 2
-            
-            # 4. Definir posición final del texto (Centrado en X, cerca del fondo en Y)
-            text_x = int(key_center_x - text_w / 2)
-            text_y = int(self.kb_y1 - 15) # 15 píxeles desde el borde inferior
-
-            # 5. Dibujar texto limpio
-            cv2.putText(img=img, text=note_name,
-                        org=(text_x, text_y),
-                        fontFace=font_face,
-                        fontScale=font_scale,
-                        color=text_color,
-                        thickness=font_thickness,
-                        lineType=cv2.LINE_AA) # LINE_AA para bordes suaves
-
-        # Borde exterior del teclado
-        cv2.rectangle(img, (self.kb_x0, self.kb_y0),
-                      (self.kb_x1, self.kb_y1), (0, 0, 0), 2)
+                # Dibujar tecla negra
+                cv2.rectangle(img, (bx0, by0), (bx1, by1), (30, 30, 30), -1)
+                cv2.rectangle(img, (bx0, by0), (bx1, by1), (0, 0, 0), 1)
+        
+        # Borde exterior del teclado completo
+        cv2.rectangle(img, (x0, y0), (x1, y1), (0, 255, 0), 2)
 
     def intersect(self, pointXY):
         # Transforma el punto si estamos en modo AR
@@ -630,9 +553,11 @@ class VirtualKeyboard():
              pt_transformed = cv2.perspectiveTransform(pt_np, self.M_inv)
              x_check = float(pt_transformed[0][0][0])
              y_check = float(pt_transformed[0][0][1])
-             
-        if x_check > self.kb_x0 and x_check < self.kb_x1 and \
-                y_check > self.kb_y0 and y_check < self.kb_y1:
+        
+        # CORREGIDO: Ampliar tolerancia de 0px a 20px para bordes
+        margin = 20
+        if x_check > (self.kb_x0 - margin) and x_check < (self.kb_x1 + margin) and \
+                y_check > (self.kb_y0 - margin) and y_check < (self.kb_y1 + margin):
             return True
         return False
 
@@ -678,7 +603,9 @@ class VirtualKeyboard():
                 # IMPORTANT: measureDist=True to get pixel distance for tolerance check
                 dist = cv2.pointPolygonTest(poly['contour'], (check_x, check_y), True)
                 
-                if dist >= -5: # [WYSIWYG] Tolerancia de 5 pixeles
+                # [FIX] Tolerancia AUMENTADA para compensar errores de calibración/perspectiva
+                # Antes: -5. Ahora: -30 (aprox medio cm de margen extra)
+                if dist >= -30: 
                     found_key_id = poly['id']
                     found_poly_type = "Black" if poly['black'] else "White"
                     if poly['black']:
@@ -692,9 +619,9 @@ class VirtualKeyboard():
             return None
 
         # === MODO PLANO (FALLBACK) ===
-        # En modo plano, necesitamos aplicar la transformación de display
-        if hasattr(StereoConfig, 'transform_point_for_display'):
-             x_pos, y_pos = StereoConfig.transform_point_for_display((x_pos, y_pos), self.canvas_w, self.canvas_h)
+        # CORREGIDO: NO aplicar transform_point_for_display aquí porque
+        # las coordenadas ya vienen transformadas desde qt_free_mode_window.py
+        # Solo aplicar espejo si está activo
         
         # Si está activado el modo espejo, invertir la posición X
         if getattr(StereoConfig, 'MIRROR_HORIZONTAL', False):
@@ -724,9 +651,11 @@ class VirtualKeyboard():
             if int(key) in self.__white_map:
                 key_found = self.__white_map[int(key)]
                 
-        # DEBUG: Imprimir si se detecta una tecla
-        # if key_found is not None:
-        #      print(f"[KEY_DEBUG] FLAT HIT: {key_found}")
+        # CORREGIDO: Activar DEBUG para diagnosticar
+        if key_found is not None:
+            if not hasattr(self, '_last_debug_key') or self._last_debug_key != key_found:
+                print(f"[KEY_DEBUG] Tecla {key_found} detectada en ({x_pos:.0f},{y_pos:.0f})")
+                self._last_debug_key = key_found
              
         return key_found
 

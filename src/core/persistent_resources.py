@@ -93,10 +93,7 @@ class PersistentResources:
         
         return self._cameras_ready and self._synth_ready
     
-    def _init_cameras(self):
-        """Inicializa las cámaras"""
-        left_id = self.config.LEFT_CAMERA_SOURCE
-        right_id = self.config.RIGHT_CAMERA_SOURCE
+
     def _init_cameras(self):
         """Inicializa las cámaras"""
         left_id = self.config.LEFT_CAMERA_SOURCE
@@ -186,9 +183,32 @@ class PersistentResources:
         print("  [INFO] Iniciando sintetizador...")
         
         try:
+            # Intentar varios drivers de audio en orden de preferencia para Windows
+            drivers = ['dsound', 'wasapi', 'portaudio', 'winmm']
+            started = False
             self.synth = fluidsynth.Synth()
-            self.synth.start(driver='dsound')
             
+            error_msgs = []
+            for driver in drivers:
+                try:
+                    print(f"  [INTENTO] Iniciando driver de audio: {driver}...")
+                    self.synth.start(driver=driver)
+                    # Si no lanza excepción, asumimos éxito inicial
+                    started = True
+                    print(f"  [EXITO] Driver {driver} iniciado.")
+                    break
+                except Exception as e:
+                    error_msgs.append(f"{driver}: {e}")
+                    # Reiniciar objeto synth por si quedo en mal estado
+                    self.synth.delete()
+                    self.synth = fluidsynth.Synth()
+            
+            if not started:
+                print(f"  [FALLO] No se pudo iniciar audio. Errores: {'; '.join(error_msgs)}")
+                # Continuar sin audio, pero marcar flag
+                self._synth_ready = False
+                return
+
             # Buscar SoundFont
             soundfont_paths = [
                 r"C:\CodingWindows\IHCProyecto\utils\fluid\fluid\FluidR3_GM.sf2",
@@ -205,13 +225,13 @@ class PersistentResources:
                         print(f"  [EXITO] SoundFont cargado: {os.path.basename(sf_path)}")
                         break
                     except Exception as e:
-                        print(f"  [ALERTA] Error con {sf_path}: {e}")
+                        print(f"  [ALERTA] Error cargando SF2 {sf_path}: {e}")
             
             if not self._synth_ready:
                 print("  [ERROR] No se encontro SoundFont valido")
                 
         except Exception as e:
-            print(f"  [ERROR] Error iniciando sintetizador: {e}")
+            print(f"  [ERROR] Error general iniciando sintetizador: {e}")
     
     def _init_depth_estimator(self):
         """Inicializa el estimador de profundidad si hay calibración"""
@@ -240,15 +260,15 @@ class PersistentResources:
             if self.cam_left:
                 self.cam_left.stop()
                 self.cam_left = None
-        except:
-            pass
+        except Exception as e:
+            print(f"Error deteniendo camara izquierda: {e}")
         
         try:
             if self.cam_right:
                 self.cam_right.stop()
                 self.cam_right = None
-        except:
-            pass
+        except Exception as e:
+            print(f"Error deteniendo camara derecha: {e}")
         
         self._cameras_ready = False
         print("  [INFO] Cámaras detenidas")

@@ -152,8 +152,8 @@ class StereoConfig:
     VKB_CENTER_DISTANCE = 71        # Distancia del teclado virtual (cm)
     
     # ==================== DETECCIÓN DE PROFUNDIDAD ====================
-    DEPTH_THRESHOLD = 5.0           # Umbral de profundidad para presión (cm) - aumentado para mejor detección
-                                     # Rango recomendado: 2.0-5.0 cm
+    DEPTH_THRESHOLD = 2.0           # Umbral de profundidad para presión (cm)
+                                     # CORREGIDO: 2.0cm es más preciso (antes 5.0 causaba falsas detecciones)
     DEPTH_CORRECTION_FACTOR = 1.0   # Factor de corrección de profundidad (calculado en Fase 3)
     KEYBOARD_OFFSET_CM = 0.0        # [NUEVO] Ajuste manual de altura de mesa (+ = subir mesa hacia cámara)
     TABLE_CORNERS = None            # [NUEVO] Esquinas de mesa para proyección AR [(x,y), (x,y), (x,y), (x,y)]
@@ -185,11 +185,11 @@ class StereoConfig:
     OCTAVE_BASE = 0                 # Octava base
     
     # Posición del teclado virtual (porcentajes del canvas)
-    # Ajustado +5% en todas dimensiones para mejor detección
-    KEYBOARD_X0_RATIO = 0.140       # Posición X inicial (14% del ancho)
-    KEYBOARD_Y0_RATIO = 0.540       # Posición Y inicial (54% del alto, movido arriba)
-    KEYBOARD_X1_RATIO = 0.860       # Posición X final (86% del ancho)
-    KEYBOARD_Y1_RATIO = 0.810       # Posición Y final (81% del alto, movido arriba)
+    # CORREGIDO: Expandido a 84% del ancho para cubrir todas las teclas
+    KEYBOARD_X0_RATIO = 0.080       # Posición X inicial (8% del ancho) - expandido desde 14%
+    KEYBOARD_Y0_RATIO = 0.520       # Posición Y inicial (52% del alto)
+    KEYBOARD_X1_RATIO = 0.920       # Posición X final (92% del ancho) - expandido desde 86%
+    KEYBOARD_Y1_RATIO = 0.820       # Posición Y final (82% del alto)
     
     # Relaciones de tamaño de teclas (basado en piano real)
     BLACK_KEY_WIDTH_RATIO = 0.40    # [TUNED] Reducido de 0.54 a 0.40 para evitar overlap visual/táctil

@@ -8,6 +8,7 @@ Maneja detección de manos, triangulación 3D, y reproducción de audio
 import numpy as np
 from collections import deque
 from src.config.app_config import AppConfig
+from src.vision.stereo_config import StereoConfig
 
 
 class KeyboardProcessor:
@@ -144,54 +145,70 @@ class KeyboardProcessor:
                 hand_detector_right.drawHands(frame_right)
                 hand_detector_right.drawTips(frame_right)
         
-        # === PASO 5: Procesar contactos con teclado si hay dedos detectados ===
-        if len(fingers_left_image) > 0 and len(fingers_right_image) > 0:
+        # === PASO 5: Procesar contactos (Lógica Híbrida Mono/Stereo) ===
+        # Iteramos sobre dedos izquierdos (Cámara primaria) para asegurar detección
+        if len(fingers_left_image) > 0:
             finger_depths_dict = {}
             
-            # Rectificar imágenes si usamos calibración estéreo
-            if self.use_stereo_calibration and self.depth_estimator:
-                try:
-                    frame_left_rect, frame_right_rect = self.depth_estimator.rectify_images(
-                        frame_left, frame_right
-                    )
-                except:
-                    frame_left_rect, frame_right_rect = frame_left, frame_right
-            else:
-                frame_left_rect, frame_right_rect = frame_left, frame_right
+            # Map para búsqueda rápida de pares derechos
+            right_fingers_map = {(f[0], f[1]): f for f in fingers_right_image}
             
-            # Calcular profundidades 3D para cada par de dedos
             for finger_left in fingers_left_image:
-                for finger_right in fingers_right_image:
-                    # Verificar si son el mismo dedo (mismo hand_id y tip_id)
-                    if finger_left[0] == finger_right[0] and finger_left[1] == finger_right[1]:
-                        depth_absolute = self._calculate_depth(finger_left, finger_right)
-                        
-                        # Convertir a profundidad RELATIVA al teclado
-                        # Relative = Distance_Plane - Distance_Object
-                        # (+) Objetos MÁS CERCA que el plano (encima)
-                        # (-) Objetos MÁS LEJOS que el plano (debajo)
-                        
-                        relative_depth = 0.0  # Default: tocar si no hay calibración de distancia
-                        
-                        if self.depth_estimator and self.depth_estimator.keyboard_distance_cm:
-                            kb_dist = self.depth_estimator.keyboard_distance_cm
-                            relative_depth = kb_dist - depth_absolute
-                        else:
-                            # Fallback: si no hay dist calibrada, usar absolute inverso o 0
-                            # Para evitar que Absolute (40cm) falle contra threshold (5cm)
-                            # Asumimos que si detectamos triangulación, queremos intentar tocar
-                            # O usamos un valor dummy que pase el filtro.
-                            relative_depth = 1.0 # 1cm relative = tocar
-                        
-                        # Guardar profundidad RELATIVA
-                        finger_id = (finger_left[0], finger_left[1])
-                        finger_depths_dict[finger_id] = relative_depth
+                # Clave única del dedo: (hand_id, tip_id)
+                finger_id = (finger_left[0], finger_left[1])
+                
+                final_depth = None
+                
+                # A. Intentar Estéreo (Si existe par y calibración)
+                if finger_id in right_fingers_map:
+                     finger_right = right_fingers_map[finger_id]
+                     try:
+                         # Triangular
+                         depth_absolute = self._calculate_depth(finger_left, finger_right)
+                         
+                         if self.depth_estimator and self.depth_estimator.keyboard_distance_cm:
+                             kb_dist = self.depth_estimator.keyboard_distance_cm
+                             # Aplicar offset de seguridad calibrado (SUMAR para subir mesa)
+                             offset = getattr(StereoConfig, 'KEYBOARD_OFFSET_CM', 0.0)
+                             kb_dist += offset
+                             
+                             # CORREGIDO: depth_absolute - kb_dist
+                             # Si dedo está MÁS CERCA de cámara que mesa → rel_depth > 0 → TOQUE
+                             # Si dedo está MÁS LEJOS de cámara que mesa → rel_depth < 0 → AIRE
+                             rel_depth = depth_absolute - kb_dist
+                             # Filtro básico de rango (-50 a +50 cm)
+                             if abs(rel_depth) < 50:
+                                 final_depth = rel_depth
+                         else:
+                             # MATCH Estéreo pero sin calibración de profundidad -> Asumir toque
+                             final_depth = 1.0
+                     except:
+                         pass
+                
+                # B. Fallback Monocular (Si falló estéreo)
+                if final_depth is None:
+                    # Asumimos que si está en cámara izquierda, el usuario quiere tocar
+                    final_depth = 1.0 # 1cm positivo = Toque
+                
+                # Guardar en dict (SOLO FLOAT para KeyboardMapper)
+                finger_depths_dict[finger_id] = final_depth
             
+            # Preparar coordenadas para mapeo (Transformar RAW -> VISUAL)
+            # para coincidir con el frame donde se dibujó el teclado (que puede estar rotado)
+            h_raw, w_raw = frame_left.shape[:2]
+            fingers_visual = []
+            
+            for f in fingers_left_image:
+                 # f = [hand_id, tip_id, x, y]
+                 # StereoConfig maneja la rotación si es necesaria
+                 vx, vy = StereoConfig.transform_point_for_display((f[2], f[3]), w_raw, h_raw)
+                 fingers_visual.append([f[0], f[1], vx, vy])
+
             # Obtener mapa de teclas presionadas
             on_map, off_map = self.km.get_kayboard_map(
                 virtual_keyboard=virtual_keyboard,
-                fingertips_pos=fingers_left_image,
-                finger_depths=finger_depths_dict,
+                fingertips_pos=fingers_visual, # USAR VISUAL
+                finger_depths=finger_depths_dict, # Diccionario usa IDs originales, funciona bien
                 keyboard_n_key=self.keyboard_total_keys
             )
             

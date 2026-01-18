@@ -129,14 +129,14 @@ class KeyboardMapModular:
                 depth = finger_depths[finger_id]
                 
                 # ESTRATEGIA DE VALIDACIÓN ESTRICTA (Sin Clamping)
-                # Evitar "falsos positivos" cuando la mano está muy cerca de la cámara (ej: 1cm)
-                # lo que genera profundidades absurdas (muy negativas).
+                # Evitar "falsos positivos" cuando la mano está muy cerca de la cámara
+                # 
+                # Rango Físico Razonable (CORREGIDO):
+                # Con fórmula correcta: depth_abs - kb_dist
+                # > -10.0 cm: Presionando fuerte (un poco debajo del plano)
+                # < +30.0 cm: Hasta 30cm en el aire sobre la mesa
                 
-                # Rango Físico Razonable:
-                # > -20.0 cm: Un poco "detrás" del plano teórico está bien (presionando fuerte)
-                # < +50.0 cm: Hasta 50cm sobre la mesa
-                
-                if depth < -30.0 or depth > 50.0:
+                if depth < -10.0 or depth > 30.0:
                     # Caso: Profundidad fuera de rango físico posible.
                     # - < -30.0: Mano muy detrás (o error de calibración grande)
                     # - > 50.0: Mano muy lejos (techo)
@@ -186,10 +186,10 @@ class KeyboardMapModular:
         self._debug_frame_count += 1
         
         if len(raw_detections) > 0 and self._debug_frame_count % 30 == 0:
-            # print(f"\n[DEBUG FASE 1] Intersecciones detectadas: {len(raw_detections)}")
+            print(f"\n[DEBUG FASE 1] Intersecciones detectadas: {len(raw_detections)}")
             for det in raw_detections[:3]:  # Mostrar primeras 3
                 finger_id, key, depth, velocity, x, y = det
-                # print(f"  Dedo {finger_id}, Tecla {key}, Depth={depth:.1f}cm, Vel={velocity:.2f}")
+                print(f"  Dedo {finger_id}, Tecla {key}, Pos=({x:.0f},{y:.0f}), Depth={depth:.1f}cm, Vel={velocity:.2f}")
         
         # FASE 1.5: Aplicar filtro de profundidad SOLO si hay algoritmos activos
         has_active_algorithms = any(algo.is_enabled() for algo in self.algorithm_manager.algorithms)
@@ -210,17 +210,22 @@ class KeyboardMapModular:
         if has_active_algorithms:
             # Filtrar por profundidad (solo cuando hay algoritmos activos)
             filtered_by_depth = []
-            # Calibración en MESA: 0=Tocar, +10=Aire
-            # Queremos pasar TODO lo que esté CERCA de la mesa (<= depth_threshold)
-            # Ojo: A veces se va un poco negativo (-1.0), lo incluimos
+            # CORREGIDO: Con fórmula depth_abs - kb_dist:
+            # depth > 0: dedo MÁS CERCA de cámara que mesa (TOQUE)
+            # depth < 0: dedo MÁS LEJOS de cámara que mesa (AIRE)
+            # 
+            # Queremos activar cuando depth > -threshold (cercano o tocando mesa)
             activation_threshold = self.depth_threshold  
             
             for detection in raw_detections:
                 finger_id, key, depth, velocity, x_pos, y_pos = detection
                 
-                # Criterio: Estar cerca de la mesa (depth <= 2.0)
-                # Ejemplo: 0.5 (toca), -1.0 (toca fuerte), 10.0 (aire)
-                should_activate = (depth <= activation_threshold)
+                # CORREGIDO: Activar si depth >= -threshold
+                # Ejemplo: threshold=2.0
+                # depth=0.5 (tocando suave) → 0.5 >= -2.0 → ACTIVA ✓
+                # depth=-1.0 (presionando) → -1.0 >= -2.0 → ACTIVA ✓  
+                # depth=-10.0 (aire/muy lejos) → -10.0 >= -2.0 → NO activa ✓
+                should_activate = (depth >= -activation_threshold)
                 
                 if should_activate:
                     filtered_by_depth.append(detection)
@@ -245,9 +250,8 @@ class KeyboardMapModular:
             'keyboard_n_key': keyboard_n_key
         }
         
-        # Aplicar cadena de algoritmos - DESACTIVADO POR SOLICITUD DE USUARIO (Raw Mode)
-        # filtered_detections = self.algorithm_manager.process_detections(raw_detections, context)
-        filtered_detections = raw_detections
+        # Aplicar cadena de algoritmos (REACTIVADO para filtrar rebotes y detectar acordes)
+        filtered_detections = self.algorithm_manager.process_detections(raw_detections, context)
         
         # DEBUG: Mostrar resultado de algoritmos
         if self._debug_frame_count % 30 == 0 and len(raw_detections) > 0:

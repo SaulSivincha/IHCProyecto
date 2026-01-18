@@ -14,13 +14,37 @@ from PyQt6.QtGui import QImage, QPixmap, QFont, QLinearGradient, QPainter, QColo
 from src.config.theme import Theme
 
 class ClickableLabel(QLabel):
-    """QLabel que emite señal al hacer clic"""
-    clicked = pyqtSignal(int, int) # x, y
+    """QLabel que emite señales para click, drag y release"""
+    clicked = pyqtSignal(int, int)  # x, y (click simple)
+    drag_started = pyqtSignal(int, int)  # x, y (inicio de arrastre)
+    drag_moved = pyqtSignal(int, int)  # x, y (movimiento durante arrastre)
+    drag_ended = pyqtSignal(int, int)  # x, y (fin de arrastre)
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._dragging = False
+        self._drag_start = None
+        self.setMouseTracking(True)
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
-            self.clicked.emit(event.pos().x(), event.pos().y())
+            self._dragging = True
+            self._drag_start = (event.pos().x(), event.pos().y())
+            self.drag_started.emit(event.pos().x(), event.pos().y())
         super().mousePressEvent(event)
+    
+    def mouseMoveEvent(self, event):
+        if self._dragging:
+            self.drag_moved.emit(event.pos().x(), event.pos().y())
+        super().mouseMoveEvent(event)
+    
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton and self._dragging:
+            self._dragging = False
+            self.drag_ended.emit(event.pos().x(), event.pos().y())
+            # También emitir clicked para compatibilidad con otras fases
+            self.clicked.emit(event.pos().x(), event.pos().y())
+        super().mouseReleaseEvent(event)
 
 
 class CalibrationWindow(QMainWindow):
@@ -34,7 +58,11 @@ class CalibrationWindow(QMainWindow):
     cancel_requested = pyqtSignal()   # Usuario presionó cancelar
     continue_requested = pyqtSignal() # Usuario presionó continuar
     retry_requested = pyqtSignal()    # Usuario presionó reintentar
-    frame_clicked = pyqtSignal(str, int, int) # camera_name, x, y (Nuevo para AR)
+    frame_clicked = pyqtSignal(str, int, int)  # camera_name, x, y (Nuevo para AR)
+    # Nuevas señales para drag (arrastrar)
+    frame_drag_started = pyqtSignal(str, int, int)  # camera_name, x, y
+    frame_drag_moved = pyqtSignal(str, int, int)    # camera_name, x, y
+    frame_drag_ended = pyqtSignal(str, int, int)    # camera_name, x, y
     
     def __init__(self, width=1280, height=720):
         super().__init__()
@@ -92,6 +120,9 @@ class CalibrationWindow(QMainWindow):
         # Cámara izquierda
         self.camera_left_label = ClickableLabel()
         self.camera_left_label.clicked.connect(lambda x, y: self.frame_clicked.emit("left", x, y))
+        self.camera_left_label.drag_started.connect(lambda x, y: self.frame_drag_started.emit("left", x, y))
+        self.camera_left_label.drag_moved.connect(lambda x, y: self.frame_drag_moved.emit("left", x, y))
+        self.camera_left_label.drag_ended.connect(lambda x, y: self.frame_drag_ended.emit("left", x, y))
         self.camera_left_label.setStyleSheet(f"""
             border: 3px solid {Theme.to_hex(Theme.BORDER_DEFAULT)};
             border-radius: 10px;
@@ -105,6 +136,9 @@ class CalibrationWindow(QMainWindow):
         # Cámara derecha
         self.camera_right_label = ClickableLabel()
         self.camera_right_label.clicked.connect(lambda x, y: self.frame_clicked.emit("right", x, y))
+        self.camera_right_label.drag_started.connect(lambda x, y: self.frame_drag_started.emit("right", x, y))
+        self.camera_right_label.drag_moved.connect(lambda x, y: self.frame_drag_moved.emit("right", x, y))
+        self.camera_right_label.drag_ended.connect(lambda x, y: self.frame_drag_ended.emit("right", x, y))
         self.camera_right_label.setStyleSheet(f"""
             border: 3px solid {Theme.to_hex(Theme.BORDER_DEFAULT)};
             border-radius: 10px;

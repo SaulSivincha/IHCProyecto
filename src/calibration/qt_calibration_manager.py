@@ -100,13 +100,20 @@ class QtCalibrationManager(QObject):
         # Conectar señales
         self.window.capture_requested.connect(self._on_capture)
         self.window.cancel_requested.connect(self._on_cancel)
-        self.window.frame_clicked.connect(self._on_frame_clicked) # Conectar señal de clic
+        self.window.frame_clicked.connect(self._on_frame_clicked)  # Para compatibilidad
+        # Nuevas señales para drag (Fase 4 mejorada)
+        self.window.frame_drag_started.connect(self._on_drag_started)
+        self.window.frame_drag_moved.connect(self._on_drag_moved)
+        self.window.frame_drag_ended.connect(self._on_drag_ended)
         
         self.window.continue_requested.connect(self._on_phase_continue)
         self.window.retry_requested.connect(self._on_retry)
         
-        # Datos para definición de mesa
-        self.table_corners = [] # [TL, TR, BR, BL]
+        # Datos para definición de mesa (rectángulo por drag)
+        self.table_corners = []  # [TL, TR, BR, BL]
+        self.drag_start_point = None  # Punto inicial del drag
+        self.drag_current_point = None  # Punto actual durante drag
+        self.is_dragging = False
         
         # Asegurar directorios
         CalibrationConfig.ensure_directories()
@@ -1448,13 +1455,20 @@ class QtCalibrationManager(QObject):
         """Inicia la fase de definición de esquinas de la mesa"""
         self.current_phase = "table_definition"
         self.table_corners = []
+        self.drag_start_point = None
+        self.drag_current_point = None
+        self.is_dragging = False
         
         instructions = [
             "<b>CONFIGURACIÓN DE PROYECCIÓN AR</b>",
-            "Para proyectar el teclado sobre tu mesa:",
-            "1. Haz CLIC en el video de la <b>CÁMARA IZQUIERDA</b> para marcar las 4 esquinas.",
-            "2. Orden: <b>Arriba-Izq -> Arriba-Der -> Abajo-Der -> Abajo-Izq</b>",
-            "¡Marca el área rectangular donde quieres que aparezca el piano!"
+            "",
+            "📐 <b>ARRASTRA para definir el área del teclado:</b>",
+            "",
+            "1. Haz <b>CLIC</b> en una esquina del área deseada",
+            "2. <b>MANTÉN PRESIONADO</b> y arrastra hasta la esquina opuesta",
+            "3. <b>SUELTA</b> para confirmar el rectángulo",
+            "",
+            "💡 El rectángulo aparecerá en <span style='color:#00FF00'>VERDE</span> mientras arrastras"
         ]
         
         self.window.show_intro_screen(
@@ -1467,10 +1481,10 @@ class QtCalibrationManager(QObject):
              self.cap_left = self._get_or_create_camera("left")
         
         self.timer.start(33)
-        self.window.set_status("Haz clic en la CÁMARA IZQUIERDA para empezar", "#FFFFFF")
+        self.window.set_status("🖱️ Arrastra en la CÁMARA IZQUIERDA para definir el área", "#00C8FF")
 
     def _update_table_definition_frame(self):
-        """Muestra el video y dibuja los puntos marcados"""
+        """Muestra el video y dibuja el rectángulo (durante drag o finalizado)"""
         if not self.cap_left:
              self.cap_left = self._get_or_create_camera("left")
              
@@ -1481,89 +1495,171 @@ class QtCalibrationManager(QObject):
         if frame_left is None:
             return
             
-        # Dibujar puntos y líneas
+        # Dibujar sobre el frame
         display = frame_left.copy()
         
-        # Aplicar transformaciones para display (espejo si es necesario)
-        # OJO: Los clics vienen de la pantalla TRANSFORMA.
-        # ¿Debemos dibujar en el Raw y transformar? O dibujar en el Transformado?
-        # StereoConfig.apply_camera_transforms hace rectificación.
-        # StereoConfig.apply_display_transform hace espejo/resize.
-        # Si el usuario ve ESPEJO, sus clics tendrán coordenadas ESPEJO.
-        # DEBERÍAMOS guardar las coordenadas "Normalizadas" (sin espejo).
-        # PERO para visualización, dibujamos sobre lo que ve.
-        
-        # Simplificación: Usamos el frame TAL CUAL se muestra en la UI para display
+        # Aplicar transformaciones para display
         display = StereoConfig.apply_display_transform(StereoConfig.apply_camera_transforms(display))
 
-        # Dibujar esquinas marcadas
-        for i, pt in enumerate(self.table_corners):
-            cv2.circle(display, pt, 5, (0, 255, 0), -1)
-            cv2.putText(display, str(i+1), (pt[0]+10, pt[1]-10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-            
-        # Dibujar líneas
-        if len(self.table_corners) > 1:
-            for i in range(len(self.table_corners)-1):
-                cv2.line(display, self.table_corners[i], self.table_corners[i+1], (0, 255, 0), 2)
+        # Obtener dimensiones del label y frame para conversión de coordenadas
+        lbl_w = self.window.camera_left_label.width()
+        lbl_h = self.window.camera_left_label.height()
+        frame_h, frame_w = display.shape[:2]
         
-        # Cerrar el polígono
-        if len(self.table_corners) == 4:
-            cv2.line(display, self.table_corners[3], self.table_corners[0], (0, 255, 0), 2)
+        # Si estamos arrastrando, dibujar rectángulo en tiempo real
+        if self.is_dragging and self.drag_start_point and self.drag_current_point:
+            # Convertir coordenadas de label a frame
+            x1 = int(self.drag_start_point[0] * (frame_w / lbl_w))
+            y1 = int(self.drag_start_point[1] * (frame_h / lbl_h))
+            x2 = int(self.drag_current_point[0] * (frame_w / lbl_w))
+            y2 = int(self.drag_current_point[1] * (frame_h / lbl_h))
             
-        self.window.update_frames(frame_left=display) 
+            # Dibujar rectángulo semitransparente
+            overlay = display.copy()
+            cv2.rectangle(overlay, (x1, y1), (x2, y2), (0, 255, 0), -1)
+            cv2.addWeighted(overlay, 0.3, display, 0.7, 0, display)
+            
+            # Dibujar borde del rectángulo
+            cv2.rectangle(display, (x1, y1), (x2, y2), (0, 255, 0), 3)
+            
+            # Dibujar esquinas con círculos
+            for pt in [(x1, y1), (x2, y1), (x2, y2), (x1, y2)]:
+                cv2.circle(display, pt, 8, (0, 255, 0), -1)
+                cv2.circle(display, pt, 8, (255, 255, 255), 2)
+            
+            # Mostrar dimensiones
+            width_px = abs(x2 - x1)
+            height_px = abs(y2 - y1)
+            text = f"{width_px}x{height_px}px"
+            cv2.putText(display, text, (min(x1, x2) + 5, min(y1, y2) - 10), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
         
-    def _on_frame_clicked(self, camera_name, x, y):
-        """Maneja el clic en el video"""
+        # Si ya hay esquinas definidas (después de soltar), dibujar el rectángulo final
+        elif len(self.table_corners) == 4:
+            pts = [self.table_corners[i] for i in range(4)]
+            
+            # Dibujar rectángulo relleno semitransparente
+            overlay = display.copy()
+            pts_array = np.array(pts, np.int32).reshape((-1, 1, 2))
+            cv2.fillPoly(overlay, [pts_array], (0, 255, 0))
+            cv2.addWeighted(overlay, 0.3, display, 0.7, 0, display)
+            
+            # Dibujar bordes
+            cv2.polylines(display, [pts_array], True, (0, 255, 0), 3)
+            
+            # Dibujar esquinas numeradas
+            for i, pt in enumerate(pts):
+                cv2.circle(display, pt, 8, (0, 255, 0), -1)
+                cv2.circle(display, pt, 8, (255, 255, 255), 2)
+                cv2.putText(display, str(i+1), (pt[0]+12, pt[1]-8), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+            
+        self.window.update_frames(frame_left=display)
+
+    def _on_drag_started(self, camera_name, x, y):
+        """Maneja el inicio del arrastre"""
         if self.current_phase != "table_definition":
             return
-            
         if camera_name != "left":
-            print("Por favor, marca en la cámara izquierda.")
             return
-
-        # Ajustar coordenadas: El Label estira la imagen.
+            
+        self.is_dragging = True
+        self.drag_start_point = (x, y)
+        self.drag_current_point = (x, y)
+        self.table_corners = []  # Limpiar esquinas previas
+        self.window.set_status("🎯 Arrastrando... suelta para confirmar", "#FFFF00")
+        print(f"[Drag] Iniciado en ({x}, {y})")
+    
+    def _on_drag_moved(self, camera_name, x, y):
+        """Maneja el movimiento durante el arrastre"""
+        if self.current_phase != "table_definition":
+            return
+        if camera_name != "left":
+            return
+        if not self.is_dragging:
+            return
+            
+        self.drag_current_point = (x, y)
+    
+    def _on_drag_ended(self, camera_name, x, y):
+        """Maneja el fin del arrastre - crea el rectángulo"""
+        if self.current_phase != "table_definition":
+            return
+        if camera_name != "left":
+            return
+        if not self.is_dragging:
+            return
+            
+        self.is_dragging = False
+        self.drag_current_point = (x, y)
+        
+        # Obtener dimensiones para conversión
         lbl_w = self.window.camera_left_label.width()
         lbl_h = self.window.camera_left_label.height()
         
-        # Recuperar tamaño del frame ACTUAL 
+        # Obtener resolución real del frame
         frame_w, frame_h = self.resolution
-        
-        # Intentar obtener resolución real de la cámara si está disponible
         if self.cap_left:
-            # Si el frame mostrado ha pasado por transforms, debemos usar SUS dimensiones.
-            # Como StereoConfig.apply_display_transform solo rota 180, las dimensiones se mantienen.
-            # Pero para estar seguros, idealmente usaríamos el tamaño del 'display' frame.
-            # Aproximación segura: Usar propiedades del capture
             cw = self.cap_left.video_width
             ch = self.cap_left.video_height
             if cw > 0 and ch > 0:
                 frame_w, frame_h = int(cw), int(ch)
         
-        real_x = int(x * (frame_w / lbl_w))
-        real_y = int(y * (frame_h / lbl_h))
+        # Convertir coordenadas de label a frame
+        x1 = int(self.drag_start_point[0] * (frame_w / lbl_w))
+        y1 = int(self.drag_start_point[1] * (frame_h / lbl_h))
+        x2 = int(x * (frame_w / lbl_w))
+        y2 = int(y * (frame_h / lbl_h))
         
-        print(f"[CalibrationManager] Click: ({x}, {y}) on Label ({lbl_w}x{lbl_h}) -> Frame ({frame_w}x{frame_h}) = ({real_x}, {real_y})")
+        # Asegurar que tenemos un rectángulo válido (mínimo 50x50 píxeles)
+        if abs(x2 - x1) < 50 or abs(y2 - y1) < 50:
+            self.window.set_status("⚠️ Área muy pequeña. Intenta de nuevo arrastrando más.", "#FF6600")
+            self.drag_start_point = None
+            self.drag_current_point = None
+            return
         
-        if len(self.table_corners) < 4:
-            self.table_corners.append((real_x, real_y))
-            print(f"Punto guardado: {real_x}, {real_y}")
+        # Crear las 4 esquinas del rectángulo en orden: TL, TR, BR, BL
+        min_x, max_x = min(x1, x2), max(x1, x2)
+        min_y, max_y = min(y1, y2), max(y1, y2)
+        
+        self.table_corners = [
+            (min_x, min_y),  # Top-Left
+            (max_x, min_y),  # Top-Right
+            (max_x, max_y),  # Bottom-Right
+            (min_x, max_y)   # Bottom-Left
+        ]
+        
+        print(f"[Drag] Finalizado: ({x1},{y1}) -> ({x2},{y2})")
+        print(f"[Drag] Rectángulo: {self.table_corners}")
+        
+        # Guardar y finalizar
+        self.window.set_status("✅ ¡Área definida! Guardando...", "#00FF00")
+        self.current_phase = "table_definition_complete"
+        self._save_table_definition()
+        
+        # Mostrar mensaje final
+        QTimer.singleShot(1000, lambda: self.window.show_intro_screen(
+            "¡CALIBRACIÓN FINALIZADA!",
+            [
+                "✅ Has completado todas las fases.",
+                "",
+                f"📐 Área definida: {max_x - min_x} x {max_y - min_y} píxeles",
+                "",
+                "🎹 Tu piano virtual está listo.",
+                "",
+                "Presiona <b>Continuar</b> para comenzar a tocar."
+            ]
+        ))
+        
+    def _on_frame_clicked(self, camera_name, x, y):
+        """Maneja el clic en el video (ya no usado en Fase 4, pero mantenido para compatibilidad)"""
+        # En Fase 4 usamos drag, no clics individuales
+        if self.current_phase == "table_definition":
+            return  # Ignorar clics simples en fase 4
             
-            # Actualizar instrucciones
-            count = len(self.table_corners)
-            msgs = ["Marca Arriba-Derecha", "Marca Abajo-Derecha", "Marca Abajo-Izquierda", "¡Completo!"]
-            
-            if count < 4:
-                self.window.set_status(f"Punto {count}/4 guardado. {msgs[count-1]}", "#00C8FF")
-            else:
-                self.window.set_status("¡DEFINICIÓN COMPLETA! Se ha guardado la mesa.", "#00FF00")
-                self.current_phase = "table_definition_complete"
-                self._save_table_definition()
-                
-                # Auto-avanzar o esperar? Esperar 1seg y mostrar mensaje final
-                QTimer.singleShot(1500, lambda: self.window.show_intro_screen(
-                    "¡CALIBRACIÓN FINALIZADA!",
-                    ["Has completado todas las fases.", "Tu piano AR está listo.", "Presiona Continuar para salir."]
-                ))
+        if camera_name != "left":
+            print("Por favor, marca en la cámara izquierda.")
+            return
 
     def _save_table_definition(self):
         """Guarda la definición de mesa en calibration.json"""

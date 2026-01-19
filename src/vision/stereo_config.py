@@ -178,9 +178,10 @@ class StereoConfig:
     VKB_CENTER_DISTANCE = 71        # Distancia del teclado virtual (cm)
     
     # ==================== DETECCIÓN DE PROFUNDIDAD ====================
-    DEPTH_THRESHOLD = 3.0           # Umbral de profundidad para presión (cm) - 3cm para testing
-                                     # CONTACTO DIRECTO: Solo activa cuando dedo TOCA la mesa
-                                     # depth <= 0.5cm = TECLA ACTIVA (prácticamente 0)
+    DEPTH_THRESHOLD = 4.0           # Umbral de profundidad para presión (cm)
+                                     # Aumentado a 4cm para compensar sesgo vertical en triangulación
+                                     # depth_rel <= 4cm = TECLA ACTIVA
+                                     # depth_rel > 4cm = AIRE
     DEPTH_CORRECTION_FACTOR = 1.0   # Factor de corrección de profundidad (calculado en Fase 3)
     KEYBOARD_OFFSET_CM = 0.0        # [NUEVO] Ajuste manual de altura de mesa (+ = subir mesa hacia cámara)
     

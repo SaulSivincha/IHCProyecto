@@ -393,10 +393,26 @@ class FreeModeWindow(QMainWindow):
                                             depth_abs = point_3d[2]
                                             # CORREGIDO: Sumar offset (+ = subir mesa hacia cámara)
                                             dist_mesa_eff = keyboard_distance + StereoConfig.KEYBOARD_OFFSET_CM
-                                            # CORREGIDO: depth_abs - dist_mesa_eff
-                                            # Si dedo MÁS CERCA de cámara que mesa → depth_rel > 0 → TOQUE
-                                            # Si dedo MÁS LEJOS de cámara que mesa → depth_rel < 0 → AIRE
-                                            depth_rel = depth_abs - dist_mesa_eff
+                                            
+                                            # LÓGICA CORREGIDA:
+                                            # depth_abs = distancia del dedo a la cámara (cm)
+                                            # dist_mesa_eff = distancia de la mesa a la cámara (cm)
+                                            # 
+                                            # Si dedo EN EL AIRE (más cerca de cámara): depth_abs < dist_mesa_eff
+                                            #   → depth_rel = dist_mesa_eff - depth_abs > 0 (POSITIVO = AIRE)
+                                            # Si dedo TOCANDO (en la mesa): depth_abs ≈ dist_mesa_eff
+                                            #   → depth_rel ≈ 0 (CERCA DE CERO = TOCANDO)
+                                            # Si dedo DEBAJO de mesa (imposible pero por ruido): depth_abs > dist_mesa_eff
+                                            #   → depth_rel < 0 (NEGATIVO = TOCANDO)
+                                            #
+                                            # Activación: depth_rel <= threshold (ej: 3cm)
+                                            #   - Si dedo está a 0-3cm sobre la mesa → TOCA
+                                            #   - Si dedo está a >3cm sobre la mesa → AIRE
+                                            depth_rel = dist_mesa_eff - depth_abs  # INVERTIDO: ahora + = aire, cerca de 0 o - = toque
+                                            
+                                            # DEBUG: Ver valores de triangulación
+                                            if self._diag_counter % 30 == 0:
+                                                print(f"[DEPTH] tip={tip_id}: depth_abs={depth_abs:.1f}cm, mesa={dist_mesa_eff:.1f}cm, depth_rel={depth_rel:.1f}cm")
                                             
                                             # Filtro de rango razonable (ajustado)
                                             if abs(depth_rel) < 30:
@@ -413,8 +429,9 @@ class FreeModeWindow(QMainWindow):
                         
                         # B. Fallback Monocular (Si falló estéreo o no hay par)
                         if final_depth is None:
-                            # NO asumir toque - usar valor negativo grande para indicar "aire/desconocido"
-                            final_depth = -10.0  # Muy por debajo del umbral = no activa
+                            # NO asumir toque - usar valor GRANDE positivo para indicar "aire/desconocido"
+                            # Con la nueva lógica: depth_rel > threshold = AIRE
+                            final_depth = 50.0  # Muy por encima del umbral = no activa
                             
                             # DEBUG: Mostrar por qué falló (cada 30 frames)
                             if self._diag_counter % 30 == 0:

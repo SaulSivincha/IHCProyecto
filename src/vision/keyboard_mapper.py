@@ -51,7 +51,7 @@ class KeyboardMapModular:
         # Un dedo en 'pressing' NO puede activar nuevas teclas hasta que suba
         self.finger_state = {}  # {finger_id: 'pressing' | 'released'}
         self.finger_last_depth = {}  # {finger_id: last_depth} - para trackear globalmente
-        self.release_height = 2.5  # cm - debe subir 2.5cm para liberar
+        self.release_height = 5.0  # cm - debe subir a 5cm para liberar (mayor que threshold de 4cm)
         
         # Debugeo
         self._debug_frame_count = 0

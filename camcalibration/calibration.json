@@ -370,7 +370,7 @@
         "height": 720
     },
     "depth_correction": {
-        "keyboard_distance_cm": 41.0,
+        "keyboard_distance_cm": 38.0,
         "keyboard_samples": 5,
         "correction_factor": 0.9602920750681619,
         "real_distance_cm": 41.0,

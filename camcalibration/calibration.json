@@ -364,6 +364,7 @@
         "left": 1,
         "right": 2
     },
+    "cameras_swapped": true,
     "resolution": {
         "width": 1280,
         "height": 720

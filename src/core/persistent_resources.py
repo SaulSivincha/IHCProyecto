@@ -99,6 +99,8 @@ class PersistentResources:
         left_id = self.config.LEFT_CAMERA_SOURCE
         right_id = self.config.RIGHT_CAMERA_SOURCE
         print(f"  Iniciando camaras (LEFT={left_id}, RIGHT={right_id})...")
+        print(f"  [DEBUG] config.LEFT_CAMERA_SOURCE = {self.config.LEFT_CAMERA_SOURCE}")
+        print(f"  [DEBUG] config.RIGHT_CAMERA_SOURCE = {self.config.RIGHT_CAMERA_SOURCE}")
         print("  NOTA: Iniciando secuencialmente para garantizar carga dual...")
         
         try:

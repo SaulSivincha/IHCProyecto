@@ -184,6 +184,10 @@ class FreeModeWindow(QMainWindow):
     def _start_camera_feed(self):
         self.timer.timeout.connect(self._update_frame)
         self.timer.start(30) # ~33 FPS
+        
+        # DEBUG: Mostrar una vez qué cámaras se están usando
+        print(f"[FreeModeWindow] camera_left source: {getattr(self.camera_left, 'video_source', 'unknown')}")
+        print(f"[FreeModeWindow] camera_right source: {getattr(self.camera_right, 'video_source', 'unknown')}")
 
     def _update_frame(self):
         if not self.is_running:

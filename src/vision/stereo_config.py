@@ -50,18 +50,28 @@ class StereoConfig:
                 if 'camera_ids' in data:
                     StereoConfig.LEFT_CAMERA_SOURCE = data['camera_ids']['left']
                     StereoConfig.RIGHT_CAMERA_SOURCE = data['camera_ids']['right']
+                    print(f"  [DEBUG] Cargado camera_ids: LEFT={StereoConfig.LEFT_CAMERA_SOURCE}, RIGHT={StereoConfig.RIGHT_CAMERA_SOURCE}")
                     
                     # Detectar si los IDs están invertidos respecto a la calibración
                     StereoConfig.CAMERAS_SWAPPED = False
-                    if 'calibration_camera_ids' in data:
+                    
+                    # Primero: Verificar flag explícito en JSON
+                    if 'cameras_swapped' in data:
+                        StereoConfig.CAMERAS_SWAPPED = data['cameras_swapped']
+                        print(f"  [DEBUG] cameras_swapped (from JSON): {StereoConfig.CAMERAS_SWAPPED}")
+                    # Segundo: Auto-detectar si los IDs son diferentes
+                    elif 'calibration_camera_ids' in data:
                         calib_left = data['calibration_camera_ids']['left']
                         calib_right = data['calibration_camera_ids']['right']
+                        print(f"  [DEBUG] calibration_camera_ids: LEFT={calib_left}, RIGHT={calib_right}")
                         
                         # Si los IDs actuales son los opuestos a los de calibración
                         if (StereoConfig.LEFT_CAMERA_SOURCE == calib_right and 
                             StereoConfig.RIGHT_CAMERA_SOURCE == calib_left):
                             StereoConfig.CAMERAS_SWAPPED = True
-                            print(f"  [INFO] Camaras invertidas respecto a calibracion - ajustando automaticamente")
+                    
+                    if StereoConfig.CAMERAS_SWAPPED:
+                        print(f"  [INFO] CAMERAS_SWAPPED=True - intercambiando datos L/R en runtime")
                     
                     return True
         except Exception as e:

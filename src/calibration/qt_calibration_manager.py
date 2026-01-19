@@ -107,6 +107,9 @@ class QtCalibrationManager(QObject):
         self.last_corners = None
         self.last_frame = None
         
+        # Variables para Rectificación de cámaras
+        self.guide_line_y = 0.45  # Posición de la línea guía (0.0 = arriba, 1.0 = abajo)
+        
         # Timer para actualizar frames
         self.timer = QTimer()
         self.timer.timeout.connect(self._update_frame)
@@ -125,6 +128,7 @@ class QtCalibrationManager(QObject):
         
         self.window.continue_requested.connect(self._on_phase_continue)
         self.window.retry_requested.connect(self._on_retry)
+        self.window.arrow_key_pressed.connect(self._on_arrow_key)
         
         # Datos para definición de mesa (rectángulo por drag)
         self.table_corners = []  # [TL, TR, BR, BL]
@@ -290,7 +294,12 @@ class QtCalibrationManager(QObject):
             self.square_size_mm = new_size_mm
         else:
             print("Cancelado por usuario en diálogo de configuración")
-            self.finished.emit(False)
+            # Si ya existe calibración previa, continuar con ella
+            if CalibrationConfig.calibration_exists():
+                print("[INFO] Usando calibración existente (cancelado por usuario)")
+                self.finished.emit(True)
+            else:
+                self.finished.emit(False)
             return
 
         # Mostrar ventana
@@ -303,7 +312,10 @@ class QtCalibrationManager(QObject):
 
         # Iniciar según la fase seleccionada en el diálogo
         print(f"[DEBUG] Iniciando fase: {selected_phase}")
-        if selected_phase == 3:
+        if selected_phase == 0:
+            print("\n[OK] Iniciando rectificación de cámaras...")
+            self._start_rectify_intro()
+        elif selected_phase == 3:
             print("\n[OK] Iniciando directamente en Fase 3...")
             print("  Cargando Fase 1...")
             phase1_ok = self._load_phase1_calibration()
@@ -379,16 +391,21 @@ class QtCalibrationManager(QObject):
         """Muestra la introducción para rectificación de cámaras"""
         self.current_phase = "rectify_intro"
         
+        # Ocultar barra de progreso en rectificación
+        self.window.show_progress(False)
+        
         instructions = [
-            "Antes de calibrar, alinearemos las cámaras",
-            "Ajusta ambas cámaras para que la mesa quede nivelada",
-            "Usa la <b>línea guía</b> para igualar la inclinación",
-            "Alinea también la rotación (giro) para que los bordes queden paralelos",
-            "Presiona CONTINUAR cuando estén alineadas"
+            "<b>OBJETIVO:</b> Que ambas cámaras estén niveladas igual",
+            "",
+            "<b>1.</b> Usa <b style='color: #FFFF00;'>↑ ↓ flechas</b> para mover la línea verde",
+            "<b>2.</b> Ajusta cada cámara para que un borde recto (mesa, tablero)",
+            "       quede <b style='color: #00FF00;'>PARALELO</b> a la línea verde",
+            "",
+            "<i>No importa el tamaño del objeto, solo que esté paralelo</i>"
         ]
         
         self.window.show_intro_screen(
-            "RECTIFICACIÓN DE CÁMARAS",
+            "ALINEACIÓN DE CÁMARAS",
             instructions
         )
         
@@ -398,8 +415,19 @@ class QtCalibrationManager(QObject):
     def _start_rectify_preview(self):
         """Inicia vista previa con líneas guía para alinear cámaras"""
         self.current_phase = "rectify_preview"
-        self.window.set_phase(self.current_phase, "RECTIFICACIÓN DE CÁMARAS")
-        self.window.set_status("Alinea las cámaras con la línea guía y presiona CONTINUAR", "#00C8FF")
+        self.window.set_phase(self.current_phase, "ALINEACIÓN DE CÁMARAS")
+        self.window.set_status("Haz que un borde recto quede PARALELO a la línea verde en ambas cámaras", "#00FF00")
+        self.window.show_progress(False)
+        instructions = [
+            "<b style='color: #FFFF00;'>↑ ↓ FLECHAS:</b> Mueve la línea verde arriba/abajo",
+            "",
+            "<b style='color: #00FF00;'>AJUSTA CADA CÁMARA:</b>",
+            "   El borde de la mesa o tablero debe quedar <b>PARALELO</b> a la línea",
+            "   (ver ejemplos BIEN / MAL en pantalla)",
+            "",
+            "<span style='color: #00FF00;'>✔ LISTO:</span> Cuando esté paralelo en AMBAS → <b>CONTINUAR</b>"
+        ]
+        self.window.show_intro_screen("ALINEACIÓN DE CÁMARAS", instructions)
         self.window.show_continue_button(True)
         self.window.show_retry_button(False)
 
@@ -422,9 +450,27 @@ class QtCalibrationManager(QObject):
         self.cap_left = None
         self.cap_right = None
 
+    def _on_arrow_key(self, direction):
+        """Maneja las teclas de flecha para ajustar la altura de la línea guía"""
+        if self.current_phase != "rectify_preview":
+            return
+        
+        # Ajuste de 2% por cada pulsación
+        step = 0.02
+        
+        if direction == 'up':
+            self.guide_line_y = max(0.1, self.guide_line_y - step)
+        elif direction == 'down':
+            self.guide_line_y = min(0.9, self.guide_line_y + step)
+        
+        # Actualizar estado para feedback visual
+        height_pct = int(self.guide_line_y * 100)
+        self.window.set_status(f"Altura de línea: {height_pct}% (usa ↑↓ para ajustar)", "#FFFF00")
+
     def _start_phase1_intro(self):
         """Muestra la pantalla de introducción para Fase 1"""
         self.current_phase = "phase1_intro"
+        self.window.show_progress(True)
         
         instructions = [
             f"Usaremos un tablero de ajedrez de <b>{self.board_cols+1}x{self.board_rows+1}</b>",
@@ -677,6 +723,115 @@ class QtCalibrationManager(QObject):
             self.window.update_frames(frame_left=frame_display)
         else:
             self.window.update_frames(frame_right=frame_display)
+
+    def _update_rectify_preview_frame(self):
+        """Actualiza frames para rectificación de cámaras"""
+        if not self.cap_left or not self.cap_right:
+            return
+
+        finished_left, frame_left = self.cap_left.next(black=True, wait=0.033)
+        finished_right, frame_right = self.cap_right.next(black=True, wait=0.033)
+
+        if frame_left is None or frame_right is None:
+            return
+
+        from ..vision.stereo_config import StereoConfig
+
+        frame_left = StereoConfig.apply_camera_transforms(frame_left)
+        frame_right = StereoConfig.apply_camera_transforms(frame_right)
+
+        # Aplicar display transform PRIMERO (rotación 180)
+        frame_left_display = StereoConfig.apply_display_transform(frame_left)
+        frame_right_display = StereoConfig.apply_display_transform(frame_right)
+
+        # Dibujar guías DESPUÉS de la transformación para que el texto quede derecho
+        frame_left_display = self._draw_rectify_guides(frame_left_display, side="left")
+        frame_right_display = self._draw_rectify_guides(frame_right_display, side="right")
+
+        self.window.update_frames(frame_left=frame_left_display, frame_right=frame_right_display)
+
+    def _draw_rectify_guides(self, frame, side="left"):
+        """Dibuja líneas guía para alinear cámaras - SIMPLIFICADO"""
+        if frame is None:
+            return frame
+        h, w = frame.shape[:2]
+        
+        # === LÍNEA PRINCIPAL (altura configurable con flechas) ===
+        line_y = int(h * self.guide_line_y)
+        
+        # Línea gruesa verde
+        cv2.line(frame, (0, line_y), (w, line_y), (0, 255, 0), 4)
+        
+        # Líneas paralelas de referencia (ayudan a ver si está paralelo)
+        cv2.line(frame, (0, line_y - 25), (w, line_y - 25), (0, 180, 0), 1)
+        cv2.line(frame, (0, line_y + 25), (w, line_y + 25), (0, 180, 0), 1)
+        
+        # === EJEMPLO CORRECTO (esquina superior derecha) ===
+        ex_x = w - 140
+        ex_y = 70
+        
+        # Fondo
+        cv2.rectangle(frame, (ex_x - 5, ex_y - 20), (w - 10, ex_y + 50), (0, 50, 0), -1)
+        cv2.rectangle(frame, (ex_x - 5, ex_y - 20), (w - 10, ex_y + 50), (0, 255, 0), 1)
+        
+        cv2.putText(frame, "BIEN", (ex_x + 40, ex_y - 5),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1, cv2.LINE_AA)
+        
+        # Mini línea verde
+        cv2.line(frame, (ex_x + 5, ex_y + 20), (w - 20, ex_y + 20), (0, 255, 0), 2)
+        
+        # Objeto PARALELO a la línea (horizontal)
+        cv2.rectangle(frame, (ex_x + 20, ex_y + 16), (ex_x + 90, ex_y + 24), (255, 0, 255), -1)
+        cv2.putText(frame, "paralelo", (ex_x + 15, ex_y + 42),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 255, 0), 1, cv2.LINE_AA)
+        
+        # === EJEMPLO INCORRECTO (esquina superior izquierda) ===
+        bad_x = 10
+        bad_y = 70
+        
+        # Fondo
+        cv2.rectangle(frame, (bad_x, bad_y - 20), (bad_x + 130, bad_y + 50), (50, 0, 0), -1)
+        cv2.rectangle(frame, (bad_x, bad_y - 20), (bad_x + 130, bad_y + 50), (0, 0, 255), 1)
+        
+        cv2.putText(frame, "MAL", (bad_x + 45, bad_y - 5),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1, cv2.LINE_AA)
+        
+        # Mini línea verde
+        cv2.line(frame, (bad_x + 5, bad_y + 20), (bad_x + 120, bad_y + 20), (0, 255, 0), 2)
+        
+        # Objeto INCLINADO (no paralelo)
+        pts = np.array([
+            [bad_x + 25, bad_y + 12],
+            [bad_x + 95, bad_y + 24],
+            [bad_x + 93, bad_y + 32],
+            [bad_x + 23, bad_y + 20]
+        ], np.int32)
+        cv2.fillPoly(frame, [pts], (255, 0, 255))
+        cv2.putText(frame, "inclinado", (bad_x + 30, bad_y + 42),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 255), 1, cv2.LINE_AA)
+        
+        # === ETIQUETA DE CÁMARA ===
+        cam_label = "CAM IZQUIERDA" if side == "left" else "CAM DERECHA"
+        label_color = (0, 165, 255) if side == "left" else (255, 165, 0)
+        cv2.putText(frame, cam_label, (w//2 - 100, 35),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.9, label_color, 2, cv2.LINE_AA)
+        
+        # === INDICADOR DE ALTURA ===
+        height_pct = int(self.guide_line_y * 100)
+        cv2.putText(frame, f"[Flechas] Altura: {height_pct}%", (10, h - 15),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2, cv2.LINE_AA)
+        
+        # === INSTRUCCIÓN SIMPLE ===
+        cv2.putText(frame, "Borde de tablero/mesa PARALELO a esta linea", (w//2 - 230, line_y - 40),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2, cv2.LINE_AA)
+        cv2.putText(frame, "(como el ejemplo BIEN)", (w//2 - 120, line_y + 50),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1, cv2.LINE_AA)
+        
+        return frame
+
+    def _draw_alignment_targets(self, frame, side="left"):
+        """Método mantenido por compatibilidad - ya no se usa"""
+        return frame
     
     def _on_capture(self):
         """Maneja el evento de captura"""

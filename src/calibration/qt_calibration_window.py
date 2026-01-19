@@ -63,6 +63,8 @@ class CalibrationWindow(QMainWindow):
     frame_drag_started = pyqtSignal(str, int, int)  # camera_name, x, y
     frame_drag_moved = pyqtSignal(str, int, int)    # camera_name, x, y
     frame_drag_ended = pyqtSignal(str, int, int)    # camera_name, x, y
+    # Señal para teclas de flecha (ajuste de línea guía)
+    arrow_key_pressed = pyqtSignal(str)  # 'up' o 'down'
     
     def __init__(self, width=1280, height=720):
         super().__init__()
@@ -315,6 +317,14 @@ class CalibrationWindow(QMainWindow):
         """Maneja eventos de teclado"""
         key = event.key()
         
+        # Flechas arriba/abajo para ajustar línea guía
+        if key == Qt.Key.Key_Up:
+            self.arrow_key_pressed.emit('up')
+            return
+        elif key == Qt.Key.Key_Down:
+            self.arrow_key_pressed.emit('down')
+            return
+        
         # Permitir Enter para capturar también
         if (key == Qt.Key.Key_Space or key == Qt.Key.Key_Return) and self.capture_button.isEnabled():
             self._on_capture_clicked()
@@ -413,6 +423,11 @@ class CalibrationWindow(QMainWindow):
             self.progress_label.setText(text)
         else:
             self.progress_label.setText(f"Progreso: {current}/{total}")
+
+    def show_progress(self, show=True):
+        """Muestra/oculta la barra de progreso y su etiqueta"""
+        self.progress_label.setVisible(show)
+        self.progress_bar.setVisible(show)
     
     def set_instructions(self, instructions_html):
         """

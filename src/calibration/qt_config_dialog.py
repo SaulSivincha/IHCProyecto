@@ -52,16 +52,21 @@ class CalibrationConfigDialog(QDialog):
         layout.setContentsMargins(20, 20, 20, 20)
         
         # Colores del tema
-        text_color = Theme.to_hex(Theme.TEXT_PRIMARY)
-        highlight_color = Theme.to_hex(Theme.TEXT_HIGHLIGHT)
-        muted_color = Theme.to_hex(Theme.TEXT_SECONDARY)
+        colors = {
+            "text": Theme.to_hex(Theme.TEXT_PRIMARY),
+            "highlight": Theme.to_hex(Theme.TEXT_HIGHLIGHT),
+            "muted": Theme.to_hex(Theme.TEXT_SECONDARY),
+            "border": Theme.to_hex(Theme.BORDER_DEFAULT),
+            "bg": "rgba(255,255,255,0.8)",
+            "bg_input": "rgba(255,255,255,0.9)",
+        }
         
         # Título
         title = QLabel("Parámetros del Tablero de Ajedrez")
         title.setStyleSheet(f"""
             font-size: 18px;
             font-weight: bold;
-            color: {highlight_color};
+            color: {colors['highlight']};
             font-family: 'Comic Sans MS', 'Arial';
             background: transparent;
         """)
@@ -72,12 +77,12 @@ class CalibrationConfigDialog(QDialog):
         dim_group = QGroupBox("Dimensiones (Esquinas Internas)")
         dim_group.setStyleSheet(f"""
             QGroupBox {{
-                color: {highlight_color};
+                color: {colors['highlight']};
                 font-weight: bold;
-                border: 2px solid {Theme.to_hex(Theme.BORDER_DEFAULT)};
+                border: 2px solid {colors['border']};
                 border-radius: 10px;
                 margin-top: 10px;
-                background-color: rgba(255,255,255,0.8);
+                background-color: {colors['bg']};
                 font-family: 'Comic Sans MS', 'Arial';
             }}
             QGroupBox::title {{
@@ -91,15 +96,15 @@ class CalibrationConfigDialog(QDialog):
         # Filas
         row_layout = QHBoxLayout()
         row_label = QLabel("Filas (Alto):")
-        row_label.setStyleSheet(f"color: {text_color}; font-size: 14px; background: transparent;")
+        row_label.setStyleSheet(f"color: {colors['text']}; font-size: 14px; background: transparent;")
         self.row_spin = QSpinBox()
         self.row_spin.setRange(3, 20)
         self.row_spin.setValue(self.rows)
         self.row_spin.setStyleSheet(f"""
             QSpinBox {{
-                background-color: rgba(255,255,255,0.9);
-                color: {text_color};
-                border: 2px solid {Theme.to_hex(Theme.BORDER_DEFAULT)};
+                background-color: {colors['bg_input']};
+                color: {colors['text']};
+                border: 2px solid {colors['border']};
                 border-radius: 5px;
                 padding: 5px;
                 font-size: 14px;
@@ -112,15 +117,15 @@ class CalibrationConfigDialog(QDialog):
         # Columnas
         col_layout = QHBoxLayout()
         col_label = QLabel("Columnas (Ancho):")
-        col_label.setStyleSheet(f"color: {text_color}; font-size: 14px; background: transparent;")
+        col_label.setStyleSheet(f"color: {colors['text']}; font-size: 14px; background: transparent;")
         self.col_spin = QSpinBox()
         self.col_spin.setRange(3, 20)
         self.col_spin.setValue(self.cols)
         self.col_spin.setStyleSheet(f"""
             QSpinBox {{
-                background-color: rgba(255,255,255,0.9);
-                color: {text_color};
-                border: 2px solid {Theme.to_hex(Theme.BORDER_DEFAULT)};
+                background-color: {colors['bg_input']};
+                color: {colors['text']};
+                border: 2px solid {colors['border']};
                 border-radius: 5px;
                 padding: 5px;
                 font-size: 14px;
@@ -137,12 +142,12 @@ class CalibrationConfigDialog(QDialog):
         size_group = QGroupBox("Tamaño Físico")
         size_group.setStyleSheet(f"""
             QGroupBox {{
-                color: {highlight_color};
+                color: {colors['highlight']};
                 font-weight: bold;
-                border: 2px solid {Theme.to_hex(Theme.BORDER_DEFAULT)};
+                border: 2px solid {colors['border']};
                 border-radius: 10px;
                 margin-top: 10px;
-                background-color: rgba(255,255,255,0.8);
+                background-color: {colors['bg']};
                 font-family: 'Comic Sans MS', 'Arial';
             }}
             QGroupBox::title {{
@@ -155,7 +160,7 @@ class CalibrationConfigDialog(QDialog):
         
         size_h_layout = QHBoxLayout()
         size_label = QLabel("Tamaño de cuadro (mm):")
-        size_label.setStyleSheet(f"color: {text_color}; font-size: 14px; background: transparent;")
+        size_label.setStyleSheet(f"color: {colors['text']}; font-size: 14px; background: transparent;")
         self.size_spin = QDoubleSpinBox()
         self.size_spin.setRange(5.0, 100.0)
         self.size_spin.setSingleStep(0.5)
@@ -164,9 +169,9 @@ class CalibrationConfigDialog(QDialog):
         self.size_spin.valueChanged.connect(self._on_size_changed)
         self.size_spin.setStyleSheet(f"""
             QDoubleSpinBox {{
-                background-color: rgba(255,255,255,0.9);
-                color: {text_color};
-                border: 2px solid {Theme.to_hex(Theme.BORDER_DEFAULT)};
+                background-color: {colors['bg_input']};
+                color: {colors['text']};
+                border: 2px solid {colors['border']};
                 border-radius: 5px;
                 padding: 5px;
                 font-size: 14px;
@@ -178,7 +183,7 @@ class CalibrationConfigDialog(QDialog):
         
         # Nota informativa
         note = QLabel("Nota: Mide el lado de un cuadrado negro con una regla.")
-        note.setStyleSheet(f"color: {muted_color}; font-style: italic; font-size: 12px; background: transparent;")
+        note.setStyleSheet(f"color: {colors['muted']}; font-style: italic; font-size: 12px; background: transparent;")
         note.setWordWrap(True)
         size_layout.addWidget(note)
         
@@ -189,12 +194,12 @@ class CalibrationConfigDialog(QDialog):
         phase_group = QGroupBox("Iniciar desde")
         phase_group.setStyleSheet(f"""
             QGroupBox {{
-                color: {highlight_color};
+                color: {colors['highlight']};
                 font-weight: bold;
-                border: 2px solid {Theme.to_hex(Theme.BORDER_DEFAULT)};
+                border: 2px solid {colors['border']};
                 border-radius: 10px;
                 margin-top: 10px;
-                background-color: rgba(255,255,255,0.8);
+                background-color: {colors['bg']};
                 font-family: 'Comic Sans MS', 'Arial';
             }}
             QGroupBox::title {{
@@ -208,9 +213,9 @@ class CalibrationConfigDialog(QDialog):
         self.phase_combo = QComboBox()
         self.phase_combo.setStyleSheet(f"""
             QComboBox {{
-                background-color: rgba(255,255,255,0.9);
-                color: {text_color};
-                border: 2px solid {Theme.to_hex(Theme.BORDER_DEFAULT)};
+                background-color: {colors['bg_input']};
+                color: {colors['text']};
+                border: 2px solid {colors['border']};
                 border-radius: 5px;
                 padding: 8px;
                 font-size: 14px;
@@ -220,11 +225,12 @@ class CalibrationConfigDialog(QDialog):
             }}
             QComboBox QAbstractItemView {{
                 background-color: rgba(255,255,255,0.95);
-                color: {text_color};
-                selection-background-color: {highlight_color};
+                color: {colors['text']};
+                selection-background-color: {colors['highlight']};
             }}
         """)
         
+        self.phase_combo.addItem("Fase 0: Rectificación de Cámaras", 0)
         self.phase_combo.addItem("Fase 1: Calibración Individual (Completa)", 1)
         
         if self.enable_phase2:

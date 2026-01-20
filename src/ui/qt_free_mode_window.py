@@ -214,26 +214,46 @@ class FreeModeWindow(QMainWindow):
         
         # 2. PROCESAMIENTO PERSONALIZADO 
         try:
-            # A. Detección de manos en frames RAW (sin rotar)
+            # A. Detección de manos
+            # SOLUCIÓN: Detectar sobre el frame YA ROTADO (frame_left_display)
+            # Así MediaPipe trabaja en el mismo sistema de coordenadas que el display
+            # y no necesitamos transformar coordenadas manualmente
             if self.hand_detector_left and self.hand_detector_right:
-                self.hand_detector_left.findHands(frame_left)
-                self.hand_detector_right.findHands(frame_right)
+                # Detectar en frames ROTADOS (mismo espacio que display y teclado)
+                self.hand_detector_left.findHands(frame_left_display)
+                self.hand_detector_right.findHands(frame_right)  # frame_right no se usa para display
                 
-                hl_hands, hl_tips = self.hand_detector_left.getFingerTipsPos()
-                hr_hands, hr_tips = self.hand_detector_right.getFingerTipsPos()
+                # Obtener dimensiones del frame para cálculo de coordenadas
+                h_frame, w_frame = frame_left_display.shape[:2]
                 
-                # === CORRECCIÓN DE CÁMARAS INVERTIDAS ===
+                # Obtener coordenadas SIN transformación adicional
+                # porque ya detectamos en el frame rotado
+                # Pasar dimensiones reales del frame para evitar desajustes
+                hl_hands, hl_tips = self.hand_detector_left.getFingerTipsPos(
+                    rotate_180=False, img_width=w_frame, img_height=h_frame)
+                hr_hands, hr_tips = self.hand_detector_right.getFingerTipsPos(rotate_180=False)
+                
+                # GUARDAR coordenadas originales de cámara izquierda ANTES del swap
+                # Estas son las coordenadas correctas para display y mapeo de teclas
+                # porque fueron detectadas en frame_left_display (rotado)
+                hl_tips_display = list(hl_tips)  # Copia para visualización y teclas
+                
+                # === CORRECCIÓN DE CÁMARAS INVERTIDAS (SOLO PARA ESTÉREO) ===
                 # Si los camera_ids están invertidos respecto a la calibración,
-                # intercambiamos los datos de tips para que el matching estéreo funcione
+                # intercambiamos los datos de tips SOLO para el matching estéreo
+                # NOTA: hl_tips_display mantiene las coordenadas originales para display
                 if StereoConfig.CAMERAS_SWAPPED:
-                    hl_tips, hr_tips = hr_tips, hl_tips
+                    hl_tips_stereo, hr_tips_stereo = hr_tips, hl_tips
                     hl_hands, hr_hands = hr_hands, hl_hands
+                else:
+                    hl_tips_stereo, hr_tips_stereo = hl_tips, hr_tips
                 
                 # DEBUG VISUAL: Mostrar coordenadas de dedo índice en pantalla
-                if len(hl_tips) > 0 and len(hr_tips) > 0:
+                # Usar hl_tips_stereo/hr_tips_stereo para el cálculo de disparidad
+                if len(hl_tips_stereo) > 0 and len(hr_tips_stereo) > 0:
                     # Buscar dedo índice (tip_id=8) en ambas cámaras
-                    idx_left = next((t for t in hl_tips if t[1] == 8), None)
-                    idx_right = next((t for t in hr_tips if t[1] == 8), None)
+                    idx_left = next((t for t in hl_tips_stereo if t[1] == 8), None)
+                    idx_right = next((t for t in hr_tips_stereo if t[1] == 8), None)
                     if idx_left and idx_right:
                         xl, yl = int(idx_left[2]), int(idx_left[3])
                         xr, yr = int(idx_right[2]), int(idx_right[3])
@@ -249,20 +269,23 @@ class FreeModeWindow(QMainWindow):
                             cv2.putText(frame_left_display, "DISP INVERTIDA!", (10, 60), 
                                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
                 
-                # Dibujar manos en frame ROTADO con coordenadas transformadas
-                self.hand_detector_left.drawHands(frame_left_display, rotate_180=True)
-                self.hand_detector_left.drawTips(frame_left_display, rotate_180=True)
+                # Dibujar manos en frame ROTADO (sin transformación adicional)
+                # porque ya detectamos en frame_left_display que está rotado
+                self.hand_detector_left.drawHands(frame_left_display, rotate_180=False)
+                self.hand_detector_left.drawTips(frame_left_display, rotate_180=False)
             else:
                 hl_hands, hl_tips = [], []
                 hr_hands, hr_tips = [], []
+                hl_tips_display = []
+                hl_tips_stereo, hr_tips_stereo = [], []
             
             # C. Dibujar teclado en frame ROTADO
             # El método ahora maneja la transformación de coordenadas internamente
             self.virtual_keyboard.draw_virtual_keyboard(frame_left_display, rotated_display=True)
             
             # D. Procesar teclas y audio
-            # CORREGIDO: Procesar incluso con solo cámara izquierda (fallback monocular)
-            if len(hl_tips) > 0:
+            # CORREGIDO: Usar hl_tips_display para detección de teclas (coordenadas correctas para display)
+            if len(hl_tips_display) > 0:
                 finger_depths_dict = {}
                 
                 # Obtener distancia del teclado desde la calibración (Fase 3)
@@ -286,8 +309,8 @@ class FreeModeWindow(QMainWindow):
                 if not hasattr(self, '_diag_counter'): self._diag_counter = 0
                 self._diag_counter += 1
 
-                # === GEOMETRIC MATCHING STRATEGY (NUEVO) ===
-                # Reemplazamos el matching por ID estricto con heurísticas posicionales
+                # === GEOMETRIC MATCHING STRATEGY (PARA TRIANGULACIÓN ESTÉREO) ===
+                # Usar hl_tips_stereo y hr_tips_stereo que tienen coordenadas coherentes para estéreo
                 
                 # 1. Agrupar tips por mano
                 def group_by_hand(tips_list):
@@ -298,8 +321,8 @@ class FreeModeWindow(QMainWindow):
                         groups[h_id].append(t)
                     return groups
 
-                l_hands_dict = group_by_hand(hl_tips)
-                r_hands_dict = group_by_hand(hr_tips)
+                l_hands_dict = group_by_hand(hl_tips_stereo)
+                r_hands_dict = group_by_hand(hr_tips_stereo)
                 
                 l_hand_ids = sorted(list(l_hands_dict.keys()))
                 r_hand_ids = sorted(list(r_hands_dict.keys()))
@@ -336,11 +359,12 @@ class FreeModeWindow(QMainWindow):
                         id_l = l_centers[i][1]
                         id_r = r_centers[i][1]
                         hand_correspondence[id_l] = id_r
+                
+                # Crear mapeo de profundidades usando tips estéreo para triangulación
+                # pero indexados por tip_id para luego asociar con hl_tips_display
+                depth_by_tip_id = {}
                         
                 # 2. PROCESAMIENTO HÍBRIDO (Stereo -> Mono Fallback)
-                # Iteramos sobre todas las manos izquierdas detectadas (Cámara primaria)
-                # Esto permite detectar dedos incluso si la cámara derecha no los ve (Fallback Monocular)
-                
                 for hand_idx, id_l in enumerate(l_hand_ids):
                     tips_l = l_hands_dict[id_l]
                     
@@ -369,12 +393,7 @@ class FreeModeWindow(QMainWindow):
                             # Triangular si tenemos estimador
                             if self.depth_estimator:
                                 try:
-                                    # SIMPLIFICADO: Usar método 'simple' que no requiere rectificación
-                                    # y es más robusto para nuestro caso de uso
-                                    
                                     # VALIDACIÓN: Verificar que los puntos sean coherentes
-                                    # En estéreo, X_right < X_left (el punto se ve más a la izquierda en cam derecha)
-                                    # Y debería ser similar (< 50px diferencia después de rectificación)
                                     y_diff = abs(pt_left[1] - pt_right[1])
                                     x_diff = pt_left[0] - pt_right[0]  # Debería ser POSITIVO
                                     
@@ -384,37 +403,35 @@ class FreeModeWindow(QMainWindow):
                                     
                                     # VALIDAR matching: Y similar y X_L > X_R
                                     if y_diff > 80 or x_diff < 0:
-                                        # Matching incorrecto - no triangular
                                         stereo_reason = f"bad_match(yd={y_diff:.0f},xd={x_diff:.0f})"
                                     else:
                                         point_3d = self.depth_estimator.triangulate_point(pt_left, pt_right, method='simple')
                                         
                                         if point_3d:
                                             depth_abs = point_3d[2]
-                                            # CORREGIDO: Sumar offset (+ = subir mesa hacia cámara)
-                                            dist_mesa_eff = keyboard_distance + StereoConfig.KEYBOARD_OFFSET_CM
+                                            depth_method = "FIJA"
                                             
-                                            # LÓGICA CORREGIDA:
-                                            # depth_abs = distancia del dedo a la cámara (cm)
-                                            # dist_mesa_eff = distancia de la mesa a la cámara (cm)
-                                            # 
-                                            # Si dedo EN EL AIRE (más cerca de cámara): depth_abs < dist_mesa_eff
-                                            #   → depth_rel = dist_mesa_eff - depth_abs > 0 (POSITIVO = AIRE)
-                                            # Si dedo TOCANDO (en la mesa): depth_abs ≈ dist_mesa_eff
-                                            #   → depth_rel ≈ 0 (CERCA DE CERO = TOCANDO)
-                                            # Si dedo DEBAJO de mesa (imposible pero por ruido): depth_abs > dist_mesa_eff
-                                            #   → depth_rel < 0 (NEGATIVO = TOCANDO)
-                                            #
-                                            # Activación: depth_rel <= threshold (ej: 3cm)
-                                            #   - Si dedo está a 0-3cm sobre la mesa → TOCA
-                                            #   - Si dedo está a >3cm sobre la mesa → AIRE
-                                            depth_rel = dist_mesa_eff - depth_abs  # INVERTIDO: ahora + = aire, cerca de 0 o - = toque
+                                            if hasattr(self.depth_estimator, 'has_bilinear_interpolation') and self.depth_estimator.has_bilinear_interpolation():
+                                                depth_rel = self.depth_estimator.get_depth_relative_bilinear(
+                                                    pt_left[0], pt_left[1], depth_abs
+                                                )
+                                                depth_method = "BILINEAR"
+                                            elif hasattr(self.depth_estimator, 'table_plane') and self.depth_estimator.table_plane is not None:
+                                                depth_rel = self.depth_estimator.get_depth_relative_to_plane(
+                                                    pt_left[0], pt_left[1], depth_abs
+                                                )
+                                                depth_method = "PLANO"
+                                                if depth_rel is None:
+                                                    dist_mesa_eff = keyboard_distance + StereoConfig.KEYBOARD_OFFSET_CM
+                                                    depth_rel = dist_mesa_eff - depth_abs
+                                                    depth_method = "FIJA"
+                                            else:
+                                                dist_mesa_eff = keyboard_distance + StereoConfig.KEYBOARD_OFFSET_CM
+                                                depth_rel = dist_mesa_eff - depth_abs
                                             
-                                            # DEBUG: Ver valores de triangulación
                                             if self._diag_counter % 30 == 0:
-                                                print(f"[DEPTH] tip={tip_id}: depth_abs={depth_abs:.1f}cm, mesa={dist_mesa_eff:.1f}cm, depth_rel={depth_rel:.1f}cm")
+                                                print(f"[DEPTH-{depth_method}] tip={tip_id}: abs={depth_abs:.1f}cm, rel={depth_rel:.1f}cm, X={pt_left[0]}")
                                             
-                                            # Filtro de rango razonable (ajustado)
                                             if abs(depth_rel) < 30:
                                                 final_depth = depth_rel
                                                 stereo_reason = "ok"
@@ -427,41 +444,71 @@ class FreeModeWindow(QMainWindow):
                             else:
                                 stereo_reason = "no_estimator"
                         
-                        # B. Fallback Monocular (Si falló estéreo o no hay par)
+                        # B. Fallback Monocular
                         if final_depth is None:
-                            # NO asumir toque - usar valor GRANDE positivo para indicar "aire/desconocido"
-                            # Con la nueva lógica: depth_rel > threshold = AIRE
                             final_depth = 50.0  # Muy por encima del umbral = no activa
-                            
-                            # DEBUG: Mostrar por qué falló (cada 30 frames)
                             if self._diag_counter % 30 == 0:
                                 print(f"[STEREO FAIL] tip={tip_id}, attempted={stereo_attempted}, reason={stereo_reason}") 
                         
-                        # Guardar resultado
-                        
-                        # IMPORTANTE: KeyboardMapper espera clave TUPLA (hand_id, tip_id)
-                        # Recuperamos hand_id original
-                        hand_id = fl[0]
-                        
-                        # Fix TypeError: KeyboardMapper espera float, no dict
-                        finger_depths_dict[(hand_id, tip_id)] = final_depth
+                        # Guardar profundidad por tip_id (para asociar con hl_tips_display después)
+                        depth_by_tip_id[tip_id] = final_depth
 
-                # Actualizar VirtualKeyboard
-                # (La actualización visual ocurre al dibujar con prev_active_keys en el siguiente frame)
-                # if len(finger_depths_dict) > 0:
-                #    self.virtual_keyboard.update_keys_with_depth(finger_depths_dict)
+                # 3. Crear finger_depths_dict usando hl_tips_display (coordenadas de display)
+                for t in hl_tips_display:
+                    hand_id = t[0]
+                    tip_id = t[1]
+                    # Obtener profundidad calculada por estéreo (o fallback)
+                    depth = depth_by_tip_id.get(tip_id, 50.0)
+                    finger_depths_dict[(hand_id, tip_id)] = depth
 
                 # 4. Asignar mapa de teclas
-                # CORREGIDO: Transformar coordenadas RAW a espacio ROTADO
-                # porque el teclado se dibuja en frame_left_display (rotado 180°)
-                h_frame, w_frame = frame_left.shape[:2]
+                # Usar hl_tips_display que tiene coordenadas correctas para el frame rotado
+                h_frame, w_frame = frame_left_display.shape[:2]
+                
+                # Obtener resolución del canvas (donde se dibuja el teclado)
+                canvas_w = self.virtual_keyboard.canvas_w
+                canvas_h = self.virtual_keyboard.canvas_h
+                
+                # Factor de escala de frame a canvas
+                scale_x = canvas_w / w_frame
+                scale_y = canvas_h / h_frame
+                
                 hl_tips_transformed = []
-                for t in hl_tips:
+                for t in hl_tips_display:
                     # t = [hand_id, tip_id, x, y]
-                    # Aplicar rotación 180°: (x,y) -> (w-x, h-y)
-                    tx = w_frame - t[2]
-                    ty = h_frame - t[3]
+                    # Las coordenadas ya están en espacio del display
+                    tx = t[2] * scale_x
+                    ty = t[3] * scale_y
+                    
                     hl_tips_transformed.append([t[0], t[1], tx, ty])
+                
+                # DEBUG VISUAL: Comparar coordenadas del sistema vs MediaPipe
+                # Círculo ROJO = donde el sistema busca teclas (coordenadas transformadas)
+                # Círculo AMARILLO = coordenadas de hl_tips_display (antes de escalar)
+                # Círculo AZUL = puntos de MediaPipe drawTips (referencia visual)
+                # OBJETIVO: ROJO debe coincidir con AZUL cuando rotate_180=True funciona correctamente
+                for t_idx, t in enumerate(hl_tips_transformed):
+                    # Punto ROJO: donde el sistema busca teclas (transformado + escalado)
+                    cv2.circle(frame_left_display, (int(t[2]), int(t[3])), 12, (0, 0, 255), 2)
+                    cv2.putText(frame_left_display, "MAP", (int(t[2])-15, int(t[3])-15),
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 255), 1)
+                    
+                    # Punto AMARILLO: coordenadas de hl_tips_display (sin escalar)
+                    # Estas son las coordenadas correctas del frame rotado
+                    orig_tip = hl_tips_display[t_idx]
+                    cv2.circle(frame_left_display, (int(orig_tip[2]), int(orig_tip[3])), 8, (0, 255, 255), -1)
+                    cv2.putText(frame_left_display, "DSP", (int(orig_tip[2])+10, int(orig_tip[3])),
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 255, 255), 1)
+                
+                # DEBUG: Mostrar coordenadas vs rango del teclado
+                if self._diag_counter % 60 == 0 and len(hl_tips_transformed) > 0:
+                    tip = hl_tips_transformed[0]
+                    kb_x0, kb_x1 = self.virtual_keyboard.kb_x0, self.virtual_keyboard.kb_x1
+                    kb_y0, kb_y1 = self.virtual_keyboard.kb_y0, self.virtual_keyboard.kb_y1
+                    
+                    print(f"\n[DIAG] Dedo transform: ({tip[2]:.1f}, {tip[3]:.1f})")
+                    print(f"[DIAG] Teclado: X=[{kb_x0}, {kb_x1}], Y=[{kb_y0}, {kb_y1}]")
+                    print(f"[DIAG] Dedo en teclado: {'SI' if kb_x0 <= tip[2] <= kb_x1 and kb_y0 <= tip[3] <= kb_y1 else 'NO'}")
                 
                 # Obtener teclas presionadas (usando coordenadas transformadas)
                 on_map, off_map = self.keyboard_mapper.get_kayboard_map(

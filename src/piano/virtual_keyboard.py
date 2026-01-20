@@ -625,6 +625,16 @@ class VirtualKeyboard():
         x = x_pos - self.kb_x0
         y = y_pos - self.kb_y0
 
+        # DEBUG: Mostrar cálculo de tecla
+        if not hasattr(self, '_find_key_debug_counter'):
+            self._find_key_debug_counter = 0
+        self._find_key_debug_counter += 1
+        
+        if self._find_key_debug_counter % 30 == 0:
+            key_index = x / self.white_key_width if self.white_key_width > 0 else -1
+            print(f"[FIND_KEY] input=({x_pos:.0f},{y_pos:.0f}), kb_x0={self.kb_x0}, kb_x1={self.kb_x1}")
+            print(f"[FIND_KEY] x_rel={x:.0f}, key_width={self.white_key_width}, key_index={key_index:.2f}")
+
         key_found = None
         if y < self.black_key_heigth:
             key = x/self.white_key_width*2

@@ -518,6 +518,11 @@ class QtCalibrationManager(QObject):
             self._start_table_definition()
             
         elif self.current_phase == "table_definition_complete":
+            # Fase 4B se inicia automáticamente, pero por si acaso
+            self._start_corner_depth_calibration()
+        
+        elif self.current_phase == "phase4b_complete":
+            # Fase 4B completada - finalizar calibración
             self._finish_calibration(True)
 
         # Lógica de reintento (si el usuario presionó Continuar en lugar de Reintentar en pantalla de error)
@@ -682,6 +687,8 @@ class QtCalibrationManager(QObject):
             self._update_depth_frame()
         elif self.current_phase == "table_definition":
             self._update_table_definition_frame()
+        elif self.current_phase == "corner_depth_calibration":
+            self._update_corner_depth_frame()
     
     def _update_single_camera_frame(self):
         """Actualiza frame para calibración de cámara individual"""
@@ -1883,24 +1890,13 @@ class QtCalibrationManager(QObject):
         print(f"[Drag] Finalizado: ({x1},{y1}) -> ({x2},{y2})")
         print(f"[Drag] Rectángulo: {self.table_corners}")
         
-        # Guardar y finalizar
-        self.window.set_status("✅ ¡Área definida! Guardando...", "#00FF00")
+        # Guardar y pasar a Fase 4B
+        self.window.set_status("✅ ¡Área definida! Preparando calibración de profundidad...", "#00FF00")
         self.current_phase = "table_definition_complete"
         self._save_table_definition()
         
-        # Mostrar mensaje final
-        QTimer.singleShot(1000, lambda: self.window.show_intro_screen(
-            "¡CALIBRACIÓN FINALIZADA!",
-            [
-                "✅ Has completado todas las fases.",
-                "",
-                f"📐 Área definida: {max_x - min_x} x {max_y - min_y} píxeles",
-                "",
-                "🎹 Tu piano virtual está listo.",
-                "",
-                "Presiona <b>Continuar</b> para comenzar a tocar."
-            ]
-        ))
+        # Iniciar Fase 4B después de un breve delay
+        QTimer.singleShot(1000, self._start_corner_depth_calibration)
         
     def _on_frame_clicked(self, camera_name, x, y):
         """Maneja el clic en el video (ya no usado en Fase 4, pero mantenido para compatibilidad)"""
@@ -1913,7 +1909,10 @@ class QtCalibrationManager(QObject):
             return
 
     def _save_table_definition(self):
-        """Guarda la definición de mesa en calibration.json"""
+        """
+        Guarda la definición de mesa en calibration.json.
+        NUEVO: También triangula las esquinas para calcular el plano 3D.
+        """
         # Obtener resolución real usada para la definición
         frame_w, frame_h = 1280, 720 # Valor por defecto seguro si todo falla
         if self.cap_left:
@@ -1926,11 +1925,25 @@ class QtCalibrationManager(QObject):
             with open(CalibrationConfig.CALIBRATION_FILE, 'r') as f:
                 data = json.load(f)
             
-            data['table_definition'] = {
+            # Guardar definición básica 2D
+            table_def = {
                 'corners': self.table_corners,
                 'camera': 'left',
                 'resolution': [frame_w, frame_h]
             }
+            
+            # NUEVO: Intentar calcular plano 3D
+            plane_coeffs = self._calculate_table_plane_3d()
+            if plane_coeffs is not None:
+                table_def['plane_3d'] = {
+                    'coefficients': list(plane_coeffs),
+                    'description': 'Plano ax + by + cz + d = 0'
+                }
+                print(f"[AR] Plano 3D calculado: a={plane_coeffs[0]:.4f}, b={plane_coeffs[1]:.4f}, c={plane_coeffs[2]:.4f}, d={plane_coeffs[3]:.2f}")
+            else:
+                print("[AR] No se pudo calcular plano 3D - usando método de distancia fija")
+            
+            data['table_definition'] = table_def
             
             with open(CalibrationConfig.CALIBRATION_FILE, 'w') as f:
                 json.dump(data, f, indent=4)
@@ -1939,8 +1952,543 @@ class QtCalibrationManager(QObject):
             
         except Exception as e:
             print(f"Error guardando mesa: {e}")
+            import traceback
+            traceback.print_exc()
             self.board_rows = 7
             self.square_size_mm = CalibrationConfig.DEFAULT_SQUARE_SIZE_MM
+
+    def _calculate_table_plane_3d(self):
+        """
+        Calcula el plano 3D de la mesa usando triangulación estéreo.
+        
+        Método:
+        1. Captura frames de ambas cámaras
+        2. Usa template matching para encontrar las esquinas en cámara derecha
+        3. Triangula las 4 esquinas
+        4. Calcula el plano que las contiene
+        
+        Returns:
+            tuple: (a, b, c, d) coeficientes del plano, o None si falla
+        """
+        print("\n[PLANO 3D] Calculando plano de la mesa...")
+        
+        # Verificar que tenemos ambas cámaras
+        if not self.cap_right:
+            self.cap_right = self._get_or_create_camera("right")
+        
+        if not self.cap_left or not self.cap_right:
+            print("  [ERROR] Cámaras no disponibles")
+            return None
+        
+        # Capturar frames de ambas cámaras
+        _, frame_left = self.cap_left.next(wait=0.1)
+        _, frame_right = self.cap_right.next(wait=0.1)
+        
+        if frame_left is None or frame_right is None:
+            print("  [ERROR] No se pudieron capturar frames")
+            return None
+        
+        # Aplicar transformaciones de cámara (igual que en runtime)
+        frame_left = StereoConfig.apply_camera_transforms(frame_left)
+        frame_right = StereoConfig.apply_camera_transforms(frame_right)
+        
+        # Encontrar esquinas correspondientes en cámara derecha
+        corners_right = self._find_corners_in_right_camera(frame_left, frame_right)
+        
+        if corners_right is None or len(corners_right) != 4:
+            print("  [ERROR] No se encontraron correspondencias en cámara derecha")
+            return None
+        
+        print(f"  [OK] Esquinas encontradas en cámara derecha: {corners_right}")
+        
+        # Cargar depth estimator para triangular
+        try:
+            depth_estimator = load_depth_estimator(str(CalibrationConfig.CALIBRATION_FILE))
+        except Exception as e:
+            print(f"  [ERROR] No se pudo cargar depth_estimator: {e}")
+            return None
+        
+        # IMPORTANTE: Si CAMERAS_SWAPPED está activo, las esquinas están en el orden
+        # incorrecto para triangulación. Necesitamos intercambiarlas.
+        corners_left_for_triangulation = self.table_corners
+        corners_right_for_triangulation = corners_right
+        
+        if StereoConfig.CAMERAS_SWAPPED:
+            # Intercambiar: lo que llamamos "left" es realmente "right" y viceversa
+            print("  [INFO] CAMERAS_SWAPPED activo - intercambiando esquinas para triangulación")
+            corners_left_for_triangulation = corners_right
+            corners_right_for_triangulation = self.table_corners
+        
+        # Triangular las 4 esquinas
+        corners_3d = depth_estimator.triangulate_corners(
+            corners_left_for_triangulation, 
+            corners_right_for_triangulation
+        )
+        
+        if corners_3d is None:
+            print("  [ERROR] Triangulación fallida")
+            return None
+        
+        # Calcular plano
+        plane_coeffs = depth_estimator.compute_table_plane(corners_3d)
+        
+        return plane_coeffs
+    
+    # ==================== FASE 4B: CALIBRACIÓN DE PROFUNDIDAD DE ESQUINAS ====================
+    
+    def _start_corner_depth_calibration(self):
+        """Inicia la fase de calibración de profundidad en las 4 esquinas"""
+        self.current_phase = "corner_depth_calibration"
+        self.corner_depth_samples = {0: [], 1: [], 2: [], 3: []}  # Muestras por esquina
+        self.current_corner_index = 0
+        self.samples_per_corner = 30  # Número de muestras por esquina
+        
+        # Inicializar hand detector si no existe
+        if self.hand_detector is None:
+            self.hand_detector = HandDetector(
+                staticImageMode=False,
+                maxHands=1,
+                detectionCon=0.7,
+                trackCon=0.5
+            )
+        
+        # Inicializar depth estimator
+        if self.depth_estimator is None:
+            try:
+                self.depth_estimator = load_depth_estimator(str(CalibrationConfig.CALIBRATION_FILE))
+            except Exception as e:
+                print(f"[ERROR] No se pudo cargar depth_estimator: {e}")
+                self._finish_calibration_without_4b()
+                return
+        
+        # Asegurar cámara derecha activa
+        if not self.cap_right:
+            self.cap_right = self._get_or_create_camera("right")
+        
+        self._show_corner_instructions()
+        self.timer.start(33)
+    
+    def _show_corner_instructions(self):
+        """Muestra instrucciones para la esquina actual"""
+        corner_names = ["Superior-Izquierda", "Superior-Derecha", "Inferior-Derecha", "Inferior-Izquierda"]
+        corner_colors = ["#FF6B6B", "#4ECDC4", "#45B7D1", "#96CEB4"]
+        
+        self.window.show_intro_screen(
+            f"FASE 4B: Calibración de Esquina {self.current_corner_index + 1}/4",
+            [
+                f"<b>📍 Esquina: {corner_names[self.current_corner_index]}</b>",
+                "",
+                f"<span style='color:{corner_colors[self.current_corner_index]}'>●</span> Un círculo marca la esquina en el video",
+                "",
+                "👆 <b>Toca la esquina con tu dedo índice</b>",
+                "",
+                "📊 Mantén el dedo quieto mientras se recogen muestras",
+                "",
+                f"Muestras: 0 / {self.samples_per_corner}",
+                "",
+                "El sistema medirá automáticamente la profundidad."
+            ]
+        )
+        
+        self.window.set_status(f"👆 Toca la esquina {corner_names[self.current_corner_index]} con tu dedo", "#00C8FF")
+    
+    def _update_corner_depth_frame(self):
+        """Actualiza el frame durante la calibración de esquinas"""
+        if not self.cap_left or not self.cap_right:
+            return
+        
+        _, frame_left = self.cap_left.next(wait=0.033)
+        _, frame_right = self.cap_right.next(wait=0.033)
+        
+        if frame_left is None or frame_right is None:
+            return
+        
+        # 1. Aplicar transformaciones de cámara (geometría correcta para detección)
+        frame_left = StereoConfig.apply_camera_transforms(frame_left)
+        frame_right = StereoConfig.apply_camera_transforms(frame_right)
+        
+        h, w = frame_left.shape[:2]
+        
+        # 2. Detectar mano en el espacio RAW (antes de display transform)
+        import copy
+        
+        found_left = self.hand_detector.findHands(frame_left)
+        landmarks_left = None
+        if found_left and self.hand_detector.results.multi_hand_landmarks:
+            landmarks_left = copy.deepcopy(self.hand_detector.results.multi_hand_landmarks[0])
+        
+        # Detector para cámara derecha
+        if not hasattr(self, 'hand_detector_right') or self.hand_detector_right is None:
+            self.hand_detector_right = HandDetector(
+                staticImageMode=False,
+                maxHands=1,
+                detectionCon=0.7,
+                trackCon=0.5
+            )
+        
+        found_right = self.hand_detector_right.findHands(frame_right)
+        landmarks_right = None
+        if found_right and self.hand_detector_right.results.multi_hand_landmarks:
+            landmarks_right = copy.deepcopy(self.hand_detector_right.results.multi_hand_landmarks[0])
+        
+        # 3. Preparar display (aplicar transformación de rotación 180°)
+        display = StereoConfig.apply_display_transform(frame_left)
+        
+        # 4. Dibujar esquinas en espacio DISPLAY (donde fueron definidas en Fase 4)
+        corner_colors = [(255, 107, 107), (78, 205, 196), (69, 183, 209), (150, 206, 180)]  # BGR
+        for i, corner in enumerate(self.table_corners):
+            color = corner_colors[i]
+            thickness = 3 if i == self.current_corner_index else 1
+            radius = 25 if i == self.current_corner_index else 10
+            
+            cv2.circle(display, tuple(corner), radius, color, thickness)
+            cv2.putText(display, str(i+1), (corner[0]-5, corner[1]+5), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
+            
+            if i == self.current_corner_index:
+                pulse = int(15 + 10 * np.sin(time.time() * 5))
+                cv2.circle(display, tuple(corner), pulse, color, 2)
+        
+        # 5. Procesar detección de manos
+        if landmarks_left and landmarks_right:
+            # Obtener punta del índice en espacio RAW
+            tip_left_raw = landmarks_left.landmark[8]
+            tip_right_raw = landmarks_right.landmark[8]
+            
+            pt_left_raw = (int(tip_left_raw.x * w), int(tip_left_raw.y * h))
+            pt_right_raw = (int(tip_right_raw.x * w), int(tip_right_raw.y * h))
+            
+            # Transformar coordenadas al espacio DISPLAY (rotación 180°)
+            # Rotación 180° = (w - x - 1, h - y - 1)
+            pt_left_display = (w - 1 - pt_left_raw[0], h - 1 - pt_left_raw[1])
+            
+            # Dibujar dedo en display
+            cv2.circle(display, pt_left_display, 10, (0, 255, 0), -1)
+            cv2.circle(display, pt_left_display, 12, (255, 255, 255), 2)
+            
+            # Verificar distancia a esquina actual (en espacio display)
+            corner = self.table_corners[self.current_corner_index]
+            distance_to_corner = np.sqrt((pt_left_display[0] - corner[0])**2 + (pt_left_display[1] - corner[1])**2)
+            
+            # Línea desde dedo a esquina
+            line_color = (0, 255, 0) if distance_to_corner < 60 else (0, 165, 255)
+            cv2.line(display, pt_left_display, tuple(corner), line_color, 2)
+            
+            if distance_to_corner < 60:
+                # Triangular profundidad usando coordenadas RAW
+                try:
+                    if StereoConfig.CAMERAS_SWAPPED:
+                        pt_for_left = pt_right_raw
+                        pt_for_right = pt_left_raw
+                    else:
+                        pt_for_left = pt_left_raw
+                        pt_for_right = pt_right_raw
+                    
+                    point_3d = self.depth_estimator.triangulate_point(pt_for_left, pt_for_right, method='simple')
+                        
+                    if point_3d and abs(point_3d[2]) < 100:
+                        depth_cm = point_3d[2]
+                        self.corner_depth_samples[self.current_corner_index].append(depth_cm)
+                        
+                        cv2.putText(display, f"Z: {depth_cm:.1f}cm", (pt_left_display[0]+15, pt_left_display[1]-10),
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+                        
+                        samples = len(self.corner_depth_samples[self.current_corner_index])
+                        corner_names = ["Sup-Izq", "Sup-Der", "Inf-Der", "Inf-Izq"]
+                        self.window.set_status(
+                            f"✅ {corner_names[self.current_corner_index]}: {samples}/{self.samples_per_corner} muestras | Z={depth_cm:.1f}cm",
+                            "#00FF00"
+                        )
+                        
+                        if samples >= self.samples_per_corner:
+                            self._advance_to_next_corner()
+                except Exception as e:
+                    print(f"[4B] Error triangulando: {e}")
+            else:
+                cv2.putText(display, f"Acerca a esquina {self.current_corner_index+1}", 
+                           (pt_left_display[0]+15, pt_left_display[1]-10),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 165, 255), 2)
+        else:
+            cv2.putText(display, "Muestra tu mano", (50, 50),
+                       cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+        
+        # Mostrar progreso
+        total_samples = sum(len(s) for s in self.corner_depth_samples.values())
+        total_needed = self.samples_per_corner * 4
+        progress_pct = int(100 * total_samples / total_needed)
+        cv2.putText(display, f"Progreso: {progress_pct}%", (10, h-20),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+        
+        self.window.update_frames(frame_left=display)
+    
+    def _advance_to_next_corner(self):
+        """Avanza a la siguiente esquina o finaliza"""
+        self.current_corner_index += 1
+        
+        if self.current_corner_index >= 4:
+            # Todas las esquinas calibradas
+            self._finish_corner_depth_calibration()
+        else:
+            # Mostrar instrucciones para la siguiente esquina
+            self._show_corner_instructions()
+    
+    def _finish_corner_depth_calibration(self):
+        """Finaliza la Fase 4B y guarda los resultados"""
+        self.timer.stop()
+        
+        # Calcular profundidad promedio para cada esquina
+        corner_depths = []
+        for i in range(4):
+            samples = self.corner_depth_samples[i]
+            if samples:
+                # Usar mediana para robustez contra outliers
+                avg_depth = float(np.median(samples))
+                corner_depths.append(round(avg_depth, 1))
+                print(f"[4B] Esquina {i}: {len(samples)} muestras, mediana={avg_depth:.1f}cm")
+            else:
+                # Fallback a distancia del teclado
+                fallback = self.depth_estimator.keyboard_distance_cm or 38.0
+                corner_depths.append(fallback)
+                print(f"[4B] Esquina {i}: Sin muestras, usando fallback={fallback}cm")
+        
+        # Guardar en calibration.json
+        self._save_corner_depths(corner_depths)
+        
+        # Mostrar resumen
+        self.window.show_intro_screen(
+            "¡CALIBRACIÓN COMPLETA!",
+            [
+                "✅ Fase 4B completada exitosamente",
+                "",
+                "<b>Profundidades calibradas:</b>",
+                f"  📍 Sup-Izq: {corner_depths[0]:.1f} cm",
+                f"  📍 Sup-Der: {corner_depths[1]:.1f} cm",
+                f"  📍 Inf-Der: {corner_depths[2]:.1f} cm",
+                f"  📍 Inf-Izq: {corner_depths[3]:.1f} cm",
+                "",
+                "🎹 <b>El sesgo horizontal/vertical será corregido</b>",
+                "",
+                "Presiona <b>Continuar</b> para finalizar."
+            ]
+        )
+        
+        self.window.set_status("✅ Calibración de profundidad completada", "#00FF00")
+        self.window.show_continue_button(True)
+        self.current_phase = "phase4b_complete"
+    
+    def _save_corner_depths(self, corner_depths):
+        """Guarda las profundidades de esquinas en calibration.json"""
+        try:
+            with open(CalibrationConfig.CALIBRATION_FILE, 'r') as f:
+                data = json.load(f)
+            
+            if 'table_definition' not in data:
+                data['table_definition'] = {}
+            
+            data['table_definition']['corner_depths'] = corner_depths
+            
+            with open(CalibrationConfig.CALIBRATION_FILE, 'w') as f:
+                json.dump(data, f, indent=4)
+            
+            print(f"[4B] Corner depths guardados: {corner_depths}")
+            
+        except Exception as e:
+            print(f"[4B] Error guardando corner_depths: {e}")
+    
+    def _finish_calibration_without_4b(self):
+        """Finaliza calibración sin Fase 4B (fallback)"""
+        self.timer.stop()
+        self.window.show_intro_screen(
+            "¡CALIBRACIÓN FINALIZADA!",
+            [
+                "✅ Has completado las fases principales.",
+                "",
+                "⚠️ La Fase 4B no pudo completarse.",
+                "   Se usará distancia fija para la detección.",
+                "",
+                "🎹 Tu piano virtual está listo.",
+                "",
+                "Presiona <b>Continuar</b> para comenzar a tocar."
+            ]
+        )
+        self.window.show_continue_button(True)
+        self.current_phase = "complete"
+    
+    def _find_corners_in_right_camera(self, frame_left, frame_right):
+        """
+        Encuentra las esquinas del rectángulo en la cámara derecha.
+        Usa template matching con búsqueda amplia en AMBAS direcciones.
+        
+        Args:
+            frame_left: Frame de cámara izquierda
+            frame_right: Frame de cámara derecha
+            
+        Returns:
+            list: 4 puntos (x, y) en cámara derecha, o None si falla
+        """
+        corners_right = []
+        
+        # Parámetros de búsqueda MÁS AMPLIOS
+        template_size = 100  # píxeles - template más grande
+        search_range = 250   # Rango de búsqueda horizontal AMPLIO
+        
+        gray_left = cv2.cvtColor(frame_left, cv2.COLOR_BGR2GRAY)
+        gray_right = cv2.cvtColor(frame_right, cv2.COLOR_BGR2GRAY)
+        
+        # Aplicar ecualización de histograma para mejorar contraste
+        gray_left = cv2.equalizeHist(gray_left)
+        gray_right = cv2.equalizeHist(gray_right)
+        
+        h, w = gray_left.shape
+        
+        print(f"  [DEBUG] Buscando correspondencias (template={template_size}px, range={search_range}px)")
+        
+        for i, corner in enumerate(self.table_corners):
+            x_l, y_l = corner
+            
+            # Extraer template de la cámara izquierda
+            half = template_size // 2
+            x1 = max(0, x_l - half)
+            y1 = max(0, y_l - half)
+            x2 = min(w, x_l + half)
+            y2 = min(h, y_l + half)
+            
+            template = gray_left[y1:y2, x1:x2]
+            
+            if template.size == 0 or template.shape[0] < 20 or template.shape[1] < 20:
+                print(f"  [WARN] Template muy pequeño o vacío para esquina {i}")
+                return None
+            
+            # BÚSQUEDA AMPLIA: Buscar en AMBAS direcciones horizontalmente
+            # Esto funciona independientemente de si las cámaras están swapped
+            search_x1 = max(0, x_l - search_range - half)
+            search_x2 = min(w, x_l + search_range + half)
+            search_y1 = max(0, y_l - half - 50)  # Margen vertical aumentado
+            search_y2 = min(h, y_l + half + 50)
+            
+            search_region = gray_right[search_y1:search_y2, search_x1:search_x2]
+            
+            if search_region.shape[0] < template.shape[0] or search_region.shape[1] < template.shape[1]:
+                print(f"  [WARN] Región de búsqueda muy pequeña para esquina {i}")
+                # Intentar con toda la imagen
+                search_region = gray_right
+                search_x1, search_y1 = 0, 0
+            
+            # Template matching con múltiples métodos
+            best_val = -1
+            best_loc = None
+            
+            for method in [cv2.TM_CCOEFF_NORMED, cv2.TM_CCORR_NORMED]:
+                result = cv2.matchTemplate(search_region, template, method)
+                _, max_val, _, max_loc = cv2.minMaxLoc(result)
+                
+                if max_val > best_val:
+                    best_val = max_val
+                    best_loc = max_loc
+            
+            if best_val < 0.3:  # Umbral de confianza muy bajo
+                print(f"  [WARN] Muy baja confianza ({best_val:.2f}) para esquina {i} - intentando ORB")
+                # Fallback: usar ORB features
+                orb_result = self._find_corner_with_orb(gray_left, gray_right, (x_l, y_l), template_size)
+                if orb_result:
+                    x_r, y_r = orb_result
+                    disparity = x_l - x_r
+                    print(f"  Esquina {i} (ORB): L=({x_l},{y_l}) -> R=({x_r},{y_r}), disp={disparity}")
+                    corners_right.append((x_r, y_r))
+                    continue
+                else:
+                    print(f"  [ERROR] No se pudo encontrar esquina {i}")
+                    return None
+            
+            # Convertir ubicación local a global
+            x_r = search_x1 + best_loc[0] + half
+            y_r = search_y1 + best_loc[1] + half
+            
+            # Validar que está dentro de la imagen
+            x_r = max(0, min(w-1, x_r))
+            y_r = max(0, min(h-1, y_r))
+            
+            disparity = x_l - x_r
+            print(f"  Esquina {i}: L=({x_l},{y_l}) -> R=({x_r},{y_r}), disp={disparity}, conf={best_val:.2f}")
+            
+            corners_right.append((x_r, y_r))
+        
+        return corners_right
+    
+    def _find_corner_with_orb(self, gray_left, gray_right, corner_left, region_size):
+        """
+        Usa ORB features para encontrar correspondencia de una esquina.
+        
+        Args:
+            gray_left: Imagen izquierda en escala de grises
+            gray_right: Imagen derecha en escala de grises
+            corner_left: (x, y) de la esquina en imagen izquierda
+            region_size: Tamaño de la región a analizar
+            
+        Returns:
+            tuple: (x, y) en imagen derecha, o None si falla
+        """
+        x_l, y_l = corner_left
+        half = region_size // 2
+        h, w = gray_left.shape
+        
+        # Extraer regiones
+        x1 = max(0, x_l - half)
+        y1 = max(0, y_l - half)
+        x2 = min(w, x_l + half)
+        y2 = min(h, y_l + half)
+        
+        region_left = gray_left[y1:y2, x1:x2]
+        
+        # Región más amplia en la derecha
+        search_x1 = max(0, x_l - 300)
+        search_x2 = min(w, x_l + 300)
+        region_right = gray_right[y1:y2, search_x1:search_x2]
+        
+        if region_left.size == 0 or region_right.size == 0:
+            return None
+        
+        # Crear detector ORB
+        orb = cv2.ORB_create(nfeatures=500)
+        
+        # Detectar keypoints y descriptores
+        kp1, des1 = orb.detectAndCompute(region_left, None)
+        kp2, des2 = orb.detectAndCompute(region_right, None)
+        
+        if des1 is None or des2 is None or len(kp1) < 5 or len(kp2) < 5:
+            return None
+        
+        # Matching
+        bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
+        matches = bf.match(des1, des2)
+        
+        if len(matches) < 3:
+            return None
+        
+        # Ordenar por distancia
+        matches = sorted(matches, key=lambda x: x.distance)
+        
+        # Usar los mejores matches para estimar el desplazamiento
+        dx_list = []
+        for m in matches[:10]:
+            pt1 = kp1[m.queryIdx].pt
+            pt2 = kp2[m.trainIdx].pt
+            dx = pt2[0] - pt1[0]  # Diferencia en X
+            dx_list.append(dx)
+        
+        if len(dx_list) == 0:
+            return None
+        
+        # Mediana del desplazamiento (más robusto a outliers)
+        median_dx = np.median(dx_list)
+        
+        # Calcular posición en imagen derecha
+        # El centro del template en imagen izquierda está en (half, half) de la región
+        # En la región derecha, está desplazado por median_dx
+        x_r = search_x1 + half + int(median_dx)
+        y_r = y_l  # Asumimos misma Y (línea epipolar)
+        
+        return (x_r, y_r)
     
     def _save_phase1_only(self):
         """Guarda solo Fase 1"""

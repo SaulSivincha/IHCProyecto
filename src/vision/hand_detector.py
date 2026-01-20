@@ -126,6 +126,9 @@ class HandDetector():
 
     def drawTips(self, img, mirror=False, rotate_180=False):
         if self.results.multi_hand_landmarks:
+            # Usar dimensiones del frame real, no las guardadas
+            h, w = img.shape[:2]
+            
             for id, handLandmarks in enumerate(
                     self.results.multi_hand_landmarks):
                 # print('handLandmarks=id:{}'.format(id))
@@ -133,33 +136,50 @@ class HandDetector():
                     lx, ly = handLandmarks.landmark[indx_tips].x, handLandmarks.landmark[indx_tips].y
                     
                     if rotate_180:
-                        cx = (1.0 - lx) * self.img_width
-                        cy = (1.0 - ly) * self.img_height
+                        cx = (1.0 - lx) * w
+                        cy = (1.0 - ly) * h
                     elif mirror:
-                        cx = (1.0 - lx) * self.img_width
-                        cy = ly * self.img_height
+                        cx = (1.0 - lx) * w
+                        cy = ly * h
                     else:
-                        cx = lx * self.img_width
-                        cy = ly * self.img_height
+                        cx = lx * w
+                        cy = ly * h
                         
                     cv2.circle(img, (int(cx), int(cy)),
                                7, (255, 0, 0), cv2.FILLED)
 
                 # self.mpHands.HandLandmark.INDEX_FINGER_TIP].x
 
-    # TODO: Obtener la referencia W y H una sola vez sin pasar la img
-    def getFingerTipsPos(self):
+    def getFingerTipsPos(self, rotate_180=False, img_width=None, img_height=None):
+        """
+        Obtiene las posiciones de las puntas de los dedos.
+        
+        Args:
+            rotate_180: Si True, transforma las coordenadas para frame rotado 180°
+                       (debe coincidir con cómo se dibuja el frame)
+            img_width: Ancho del frame (si None, usa self.img_width)
+            img_height: Alto del frame (si None, usa self.img_height)
+        """
+        # Usar dimensiones proporcionadas o las por defecto
+        w = img_width if img_width is not None else self.img_width
+        h = img_height if img_height is not None else self.img_height
+        
         fingertips = []
         if self.results.multi_hand_landmarks:
             for hand_id, handLandmarks in enumerate(
                     self.results.multi_hand_landmarks):
-                # print('handLandmarks=id:{}'.format(id))
                 for indx_tips in self.fingerTips:
                     tip_id = indx_tips
-                    cx = handLandmarks.landmark[indx_tips].x * \
-                        self.img_width
-                    cy = handLandmarks.landmark[indx_tips].y * \
-                        self.img_height
+                    lx = handLandmarks.landmark[indx_tips].x
+                    ly = handLandmarks.landmark[indx_tips].y
+                    
+                    if rotate_180:
+                        # Transformar igual que drawTips con rotate_180=True
+                        cx = (1.0 - lx) * w
+                        cy = (1.0 - ly) * h
+                    else:
+                        cx = lx * w
+                        cy = ly * h
                     
                     fingertips.append([hand_id, tip_id, cx, cy])
 

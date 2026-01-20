@@ -188,6 +188,51 @@ class DepthEstimator:
             print("  [ALERTA] Fase 3 no completada - la deteccion de notas puede no funcionar")
             print("    Ejecuta Fase 3 (Calibracion de Distancia) para habilitar la deteccion")
         
+        # NUEVO: Cargar plano 3D de la mesa (Fase 4 mejorada)
+        self.table_plane = None
+        
+        # NUEVO: Interpolación bilineal (Fase 4B)
+        self.bilinear_corners = None  # 4 esquinas [(x,y), ...]
+        self.bilinear_depths = None   # 4 profundidades [z1, z2, z3, z4]
+        self.bilinear_x_min = 0
+        self.bilinear_x_max = 1280
+        self.bilinear_y_min = 0
+        self.bilinear_y_max = 720
+        
+        if 'table_definition' in data:
+            table_def = data['table_definition']
+            
+            # Cargar esquinas 2D para interpolación
+            if 'corners' in table_def:
+                corners = table_def['corners']
+                self.bilinear_corners = np.array(corners, dtype=np.float32)
+                # Calcular bounding box
+                self.bilinear_x_min = min(c[0] for c in corners)
+                self.bilinear_x_max = max(c[0] for c in corners)
+                self.bilinear_y_min = min(c[1] for c in corners)
+                self.bilinear_y_max = max(c[1] for c in corners)
+                print(f"  [INFO] Esquinas del teclado cargadas para interpolación")
+            
+            # Cargar profundidades de esquinas (Fase 4B)
+            if 'corner_depths' in table_def:
+                self.bilinear_depths = np.array(table_def['corner_depths'], dtype=np.float32)
+                print(f"  [INFO] Profundidades de esquinas cargadas: {self.bilinear_depths}")
+                print(f"         [BILINEAR] Interpolación activa para corrección de sesgo")
+            else:
+                print("  [INFO] corner_depths no encontrado - ejecuta Fase 4B para calibrar")
+            
+            # Cargar plano 3D si existe (método alternativo)
+            if 'plane_3d' in table_def:
+                plane_data = table_def['plane_3d']
+                coeffs = plane_data.get('coefficients')
+                if coeffs and len(coeffs) == 4:
+                    self.table_plane = np.array(coeffs, dtype=np.float64)
+                    print(f"  [INFO] Plano 3D de mesa cargado: {self.table_plane}")
+                else:
+                    print("  [ALERTA] Plano 3D encontrado pero coeficientes inválidos")
+        else:
+            print("  [INFO] table_definition no encontrado - usando distancia fija")
+        
         print(f"[EXITO] Calibracion cargada desde: {self.calibration_file}")
         print(f"  Baseline: {self.baseline_cm:.2f} cm")
         print(f"  Resolucion: {self.image_size[0]}x{self.image_size[1]}")
@@ -659,6 +704,269 @@ class DepthEstimator:
                 del self.position_history[landmark_id]
         else:
             self.position_history.clear()
+
+    # ==================== PLANO 3D DEL TECLADO ====================
+    
+    def set_table_plane(self, plane_coeffs):
+        """
+        Establece los coeficientes del plano 3D de la mesa/teclado.
+        
+        El plano se define como: ax + by + cz + d = 0
+        Donde (a, b, c) es el vector normal del plano.
+        
+        Args:
+            plane_coeffs: tuple o lista (a, b, c, d)
+        """
+        self.table_plane = np.array(plane_coeffs, dtype=np.float64)
+        print(f"  [INFO] Plano de mesa configurado: {self.table_plane}")
+    
+    def triangulate_corners(self, corners_left, corners_right):
+        """
+        Triangula las 4 esquinas del teclado para obtener sus coordenadas 3D.
+        
+        Args:
+            corners_left: Lista de 4 puntos (x, y) en cámara izquierda
+            corners_right: Lista de 4 puntos (x, y) en cámara derecha
+            
+        Returns:
+            list: Lista de 4 tuplas (X, Y, Z) en cm, o None si falla
+        """
+        corners_3d = []
+        for i, (pt_l, pt_r) in enumerate(zip(corners_left, corners_right)):
+            point_3d = self.triangulate_point_simple(pt_l, pt_r)
+            if point_3d is None:
+                print(f"  [ERROR] No se pudo triangular esquina {i}: L={pt_l}, R={pt_r}")
+                return None
+            corners_3d.append(point_3d)
+            print(f"  [DEBUG] Esquina {i}: 2D_L={pt_l}, 2D_R={pt_r} -> 3D={point_3d}")
+        return corners_3d
+    
+    def compute_table_plane(self, corners_3d):
+        """
+        Calcula el plano 3D que mejor ajusta las 4 esquinas del teclado.
+        
+        Usa mínimos cuadrados para encontrar el plano ax + by + cz + d = 0
+        que minimiza la distancia a los 4 puntos.
+        
+        Args:
+            corners_3d: Lista de 4 tuplas (X, Y, Z) en cm
+            
+        Returns:
+            tuple: (a, b, c, d) coeficientes del plano, o None si falla
+        """
+        if len(corners_3d) < 3:
+            print("[ERROR] Se necesitan al menos 3 puntos para definir un plano")
+            return None
+        
+        # Convertir a numpy array
+        points = np.array(corners_3d, dtype=np.float64)
+        
+        # Método 1: Usar los primeros 3 puntos para calcular el plano
+        # (más simple pero menos robusto a ruido)
+        p1, p2, p3 = points[0], points[1], points[2]
+        
+        # Vectores en el plano
+        v1 = p2 - p1
+        v2 = p3 - p1
+        
+        # Vector normal (producto cruz)
+        normal = np.cross(v1, v2)
+        normal_magnitude = np.linalg.norm(normal)
+        
+        if normal_magnitude < 1e-10:
+            print("[ERROR] Puntos colineales, no se puede definir plano")
+            return None
+        
+        # Normalizar el vector normal
+        normal = normal / normal_magnitude
+        a, b, c = normal
+        
+        # Calcular d usando el primer punto
+        d = -np.dot(normal, p1)
+        
+        # Verificar ajuste con el 4to punto
+        if len(corners_3d) >= 4:
+            p4 = points[3]
+            distance_to_plane = abs(a * p4[0] + b * p4[1] + c * p4[2] + d)
+            print(f"  [INFO] Distancia del 4to punto al plano: {distance_to_plane:.2f} cm")
+            if distance_to_plane > 5:  # Más de 5cm = algo está mal
+                print(f"  [ALERTA] El 4to punto está lejos del plano, posible error de calibración")
+        
+        # Guardar el plano
+        self.table_plane = np.array([a, b, c, d], dtype=np.float64)
+        
+        print(f"  [INFO] Plano calculado: {a:.4f}x + {b:.4f}y + {c:.4f}z + {d:.2f} = 0")
+        
+        return (a, b, c, d)
+    
+    def get_expected_z_at_pixel(self, x_pixel, y_pixel):
+        """
+        Calcula la profundidad Z esperada del plano de la mesa en una posición (x, y) de píxel.
+        
+        Método: 
+        1. Convertir (x_pixel, y_pixel) a un rayo 3D desde la cámara
+        2. Intersectar el rayo con el plano de la mesa
+        3. Devolver la Z del punto de intersección
+        
+        Args:
+            x_pixel: Coordenada X en píxeles (en resolución runtime)
+            y_pixel: Coordenada Y en píxeles (en resolución runtime)
+            
+        Returns:
+            float: Z esperada en cm, o None si no hay plano definido
+        """
+        if not hasattr(self, 'table_plane') or self.table_plane is None:
+            return None
+        
+        a, b, c, d = self.table_plane
+        
+        # Obtener parámetros intrínsecos escalados
+        fx, fy, cx, cy = self.get_scaled_intrinsics()
+        
+        # Rayo desde la cámara: dirección = ((x - cx)/fx, (y - cy)/fy, 1)
+        # El rayo parte del origen (cámara) en dirección (dx, dy, 1)
+        dx = (x_pixel - cx) / fx
+        dy = (y_pixel - cy) / fy
+        dz = 1.0
+        
+        # Intersección rayo-plano:
+        # Punto en el rayo: P = t * (dx, dy, dz)
+        # Plano: a*x + b*y + c*z + d = 0
+        # Sustituyendo: a*t*dx + b*t*dy + c*t*dz + d = 0
+        # t = -d / (a*dx + b*dy + c*dz)
+        
+        denominator = a * dx + b * dy + c * dz
+        
+        if abs(denominator) < 1e-10:
+            # Rayo paralelo al plano
+            return None
+        
+        t = -d / denominator
+        
+        if t <= 0:
+            # Intersección detrás de la cámara
+            return None
+        
+        # Punto de intersección
+        # X = t * dx, Y = t * dy, Z = t * dz = t
+        Z_cm = t * dz  # = t, ya que dz = 1
+        
+        return Z_cm
+    
+    def get_depth_relative_to_plane(self, finger_x, finger_y, finger_z):
+        """
+        Calcula la profundidad relativa de un dedo respecto al plano de la mesa.
+        
+        Args:
+            finger_x: Coordenada X del dedo en píxeles
+            finger_y: Coordenada Y del dedo en píxeles  
+            finger_z: Profundidad Z del dedo en cm (de triangulación)
+            
+        Returns:
+            float: Profundidad relativa en cm
+                   - Positivo = dedo en el aire (más cerca de cámara que la mesa)
+                   - 0 = dedo tocando la mesa
+                   - Negativo = dedo "debajo" de la mesa (tocando fuerte)
+                   
+                   O None si no hay plano definido
+        """
+        z_expected = self.get_expected_z_at_pixel(finger_x, finger_y)
+        
+        if z_expected is None:
+            return None
+        
+        # depth_rel = z_mesa - z_dedo
+        # Si dedo está en aire (z_dedo < z_mesa): depth_rel > 0
+        # Si dedo toca (z_dedo ≈ z_mesa): depth_rel ≈ 0
+        depth_rel = z_expected - finger_z
+        
+        return depth_rel
+    
+    # ==================== INTERPOLACIÓN BILINEAL (Fase 4B) ====================
+    
+    def setup_bilinear_interpolation(self, corners_2d, corner_depths):
+        """
+        Configura interpolación bilineal desde esquinas con profundidades conocidas.
+        
+        Args:
+            corners_2d: Lista de 4 esquinas [(x,y), ...] en orden:
+                        [top-left, top-right, bottom-right, bottom-left]
+            corner_depths: Lista de 4 profundidades [z_tl, z_tr, z_br, z_bl] en cm
+        """
+        self.bilinear_corners = np.array(corners_2d, dtype=np.float32)
+        self.bilinear_depths = np.array(corner_depths, dtype=np.float32)
+        
+        # Calcular bounding box
+        self.bilinear_x_min = min(c[0] for c in corners_2d)
+        self.bilinear_x_max = max(c[0] for c in corners_2d)
+        self.bilinear_y_min = min(c[1] for c in corners_2d)
+        self.bilinear_y_max = max(c[1] for c in corners_2d)
+        
+        print(f"[INFO] Interpolación bilineal configurada")
+        print(f"       Esquinas: {corners_2d}")
+        print(f"       Profundidades: {corner_depths}")
+    
+    def get_expected_z_bilinear(self, x_pixel, y_pixel):
+        """
+        Calcula Z esperada usando interpolación bilineal de las 4 esquinas.
+        
+        Esto corrige el sesgo horizontal/vertical donde diferentes partes
+        del teclado están a diferentes distancias de la cámara.
+        
+        Args:
+            x_pixel, y_pixel: Coordenadas en píxeles
+            
+        Returns:
+            float: Z esperada en cm, o keyboard_distance_cm si no hay datos
+        """
+        if self.bilinear_depths is None:
+            return self.keyboard_distance_cm if self.keyboard_distance_cm else 38.0
+        
+        # Normalizar coordenadas al rango [0, 1]
+        x_range = self.bilinear_x_max - self.bilinear_x_min
+        y_range = self.bilinear_y_max - self.bilinear_y_min
+        
+        if x_range <= 0 or y_range <= 0:
+            return self.keyboard_distance_cm if self.keyboard_distance_cm else 38.0
+        
+        u = (x_pixel - self.bilinear_x_min) / x_range
+        v = (y_pixel - self.bilinear_y_min) / y_range
+        
+        # Clamp para puntos fuera del área
+        u = np.clip(u, 0, 1)
+        v = np.clip(v, 0, 1)
+        
+        # Interpolación bilineal:
+        # Esquinas: TL=0, TR=1, BR=2, BL=3
+        z_tl, z_tr, z_br, z_bl = self.bilinear_depths
+        
+        # Interpolar horizontalmente (arriba y abajo)
+        z_top = z_tl * (1 - u) + z_tr * u
+        z_bot = z_bl * (1 - u) + z_br * u
+        
+        # Interpolar verticalmente
+        z_expected = z_top * (1 - v) + z_bot * v
+        
+        return float(z_expected)
+    
+    def get_depth_relative_bilinear(self, finger_x, finger_y, finger_z):
+        """
+        Calcula depth_rel usando interpolación bilineal.
+        
+        Args:
+            finger_x, finger_y: Posición del dedo en píxeles
+            finger_z: Profundidad medida del dedo en cm
+            
+        Returns:
+            float: z_expected - finger_z
+                   Positivo = aire, 0 = tocando, negativo = presionando
+        """
+        z_expected = self.get_expected_z_bilinear(finger_x, finger_y)
+        return z_expected - finger_z
+    
+    def has_bilinear_interpolation(self):
+        """Retorna True si la interpolación bilineal está configurada."""
+        return self.bilinear_depths is not None and len(self.bilinear_depths) == 4
 
 
 # Función auxiliar para cargar rápidamente

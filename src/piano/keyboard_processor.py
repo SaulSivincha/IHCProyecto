@@ -199,8 +199,8 @@ class KeyboardProcessor:
                              else:
                                  final_depth = 1.0  # Sin calibración
                              
-                             # Filtro de seguridad
-                             if abs(final_depth) < 50:
+                             # Filtro de seguridad (-30 a 30 cm)
+                             if abs(final_depth) < 30:
                                  pass  # final_depth ya está asignado
                              else:
                                  final_depth = None

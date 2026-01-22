@@ -1065,9 +1065,14 @@ def main():
                     hands_detected_left = left_detector.findHands(frame_left)
                 else:
                     hands_detected_left = None
+                    
+                # Obtener dimensiones actuales
+                h_curr, w_curr = frame_left.shape[:2]
+                
                 if hands_detected_left:
+                    # Pasar dimensiones explícitas
                     hands_left_image, fingers_left_image = \
-                        left_detector.getFingerTipsPos()
+                        left_detector.getFingerTipsPos(img_width=w_curr, img_height=h_curr)
                 else:
                     hands_left_image = fingers_left_image = []
 
@@ -1076,8 +1081,9 @@ def main():
                 else:
                     hands_detected_right = None
                 if hands_detected_right:
+                    # Pasar dimensiones explícitas
                     hands_right_image, fingers_right_image = \
-                        right_detector.getFingerTipsPos()
+                        right_detector.getFingerTipsPos(img_width=w_curr, img_height=h_curr)
 
                 # Dibujar teclado PRIMERO (debajo de las manos)
                 vk_left.draw_virtual_keyboard(frame_left)

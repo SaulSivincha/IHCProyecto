@@ -16,6 +16,9 @@ from src.vision.stereo_config import StereoConfig
 # Sistema modular de algoritmos - solo importar lo necesario
 from src.vision.algorithms.algorithm_manager import AlgorithmManager
 
+# Physics engine for velocity and triggering
+from src.vision.piano_physics import VelocityCalculator, TriggerSystem
+
 
 class KeyboardMapModular:
     """
@@ -59,6 +62,11 @@ class KeyboardMapModular:
         # NUEVO: Sistema modular de algoritmos - USAR SINGLETON GLOBAL
         from src.vision.algorithms import get_algorithm_manager
         self.algorithm_manager = get_algorithm_manager()
+        
+        # PHYSICS ENGINE: Velocity and Triggering
+        self.physics_velocity = VelocityCalculator()
+        self.physics_trigger = TriggerSystem()
+        self.active_velocities = {}  # {key_id: midi_velocity}
         
         # Configuración de suavizado de profundidad (dinámico desde algorithms_config)
         self._update_smoothing_config()
@@ -229,27 +237,38 @@ class KeyboardMapModular:
                 if fid in self.finger_last_depth:
                     del self.finger_last_depth[fid]
             
-            # AHORA: Filtrar detecciones
+            # AHORA: Filtrar detecciones usando PHYSICS ENGINE
             for detection in raw_detections:
                 finger_id, key, depth, velocity, x_pos, y_pos = detection
                 
-                current_state = self.finger_state.get(finger_id, 'released')
-                depth_ok = (depth <= activation_threshold)
+                # A. Calcular Velocidad Real usando Physics Engine
+                midi_vel = self.physics_velocity.calculate_velocity(finger_id, depth, current_time)
                 
-                # DEBUG: Mostrar decisión
-                if self._debug_frame_count % 20 == 0:
-                    print(f"  -> Evaluar: depth={depth:.2f} <= {activation_threshold}? {depth_ok}, state={current_state}")
+                # B. Calcular Z Relativo (Profundidad respecto a la mesa)
+                # depth ya es relativo (depth_absolute - keyboard_distance)
+                # Para physics: z_relative = depth - threshold
+                # Si depth < threshold (ej. 0.5), z_relative es negativo = presión
+                z_relative_physics = depth - self.depth_threshold
                 
-                if not depth_ok:
-                    continue
+                # C. Evaluar Disparo usando Trigger System
+                action = self.physics_trigger.evaluate_trigger(key, z_relative_physics)
                 
-                if current_state == 'released':
+                if action == 'NOTE_ON':
                     self.finger_state[finger_id] = 'pressing'
+                    self.active_velocities[key] = midi_vel  # GUARDAR VELOCIDAD
                     filtered_by_depth.append(detection)
-                    print(f"[ACTIVAR] Tecla {key} (depth={depth:.2f}cm)")
-                else:
-                    # Ya pressing - mantener para noteoff pero no nuevo note
-                    filtered_by_depth.append(detection)
+                    print(f"[NOTE_ON] Tecla {key} (depth={depth:.2f}cm, vel={midi_vel})")
+                    
+                elif action == 'NOTE_OFF':
+                    self.finger_state[finger_id] = 'released'
+                    # Limpiar velocidad almacenada
+                    if key in self.active_velocities:
+                        del self.active_velocities[key]
+                    # No añadimos a filtered, dejar que se apague natural
+                    
+                elif action == 'HOLD':
+                    if self.finger_state.get(finger_id) == 'pressing':
+                        filtered_by_depth.append(detection)
             
             # DEBUG: Mostrar resultado del filtro
             raw_detections = filtered_by_depth

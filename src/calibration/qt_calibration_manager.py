@@ -1945,6 +1945,18 @@ class QtCalibrationManager(QObject):
             
             data['table_definition'] = table_def
             
+            # IMPORTANTE: Preservar el flag cameras_swapped si ya existe
+            if 'cameras_swapped' not in data:
+                # Si no existe, intentar leerlo del archivo actual
+                try:
+                    with open(CalibrationConfig.CALIBRATION_FILE, 'r') as f2:
+                        existing_data = json.load(f2)
+                        if 'cameras_swapped' in existing_data:
+                            data['cameras_swapped'] = existing_data['cameras_swapped']
+                            print(f"[INFO] Preservando cameras_swapped={existing_data['cameras_swapped']}")
+                except:
+                    pass
+            
             with open(CalibrationConfig.CALIBRATION_FILE, 'w') as f:
                 json.dump(data, f, indent=4)
                 
@@ -2287,6 +2299,17 @@ class QtCalibrationManager(QObject):
             
             data['table_definition']['corner_depths'] = corner_depths
             
+            # IMPORTANTE: Preservar el flag cameras_swapped si ya existe
+            if 'cameras_swapped' not in data:
+                try:
+                    with open(CalibrationConfig.CALIBRATION_FILE, 'r') as f2:
+                        existing_data = json.load(f2)
+                        if 'cameras_swapped' in existing_data:
+                            data['cameras_swapped'] = existing_data['cameras_swapped']
+                            print(f"[INFO] Preservando cameras_swapped={existing_data['cameras_swapped']}")
+                except:
+                    pass
+            
             with open(CalibrationConfig.CALIBRATION_FILE, 'w') as f:
                 json.dump(data, f, indent=4)
             
@@ -2514,7 +2537,9 @@ class QtCalibrationManager(QObject):
             'resolution': {
                 'width': self.resolution[0],
                 'height': self.resolution[1]
-            }
+            },
+            # Campo para indicar si las cámaras deben intercambiarse
+            'swap_cameras': False  # Por defecto no intercambiar
         }
         
         with open(CalibrationConfig.CALIBRATION_FILE, 'w') as f:
@@ -2566,6 +2591,31 @@ class QtCalibrationManager(QObject):
     def _save_calibration(self):
         """Guarda calibración completa"""
         output_file = CalibrationConfig.CALIBRATION_FILE
+        
+        # IMPORTANTE: Preservar el flag cameras_swapped y swap_cameras si ya existe
+        cameras_swapped_value = None
+        swap_cameras_value = None
+        try:
+            if os.path.exists(output_file):
+                with open(output_file, 'r') as f:
+                    existing_data = json.load(f)
+                    if 'cameras_swapped' in existing_data:
+                        cameras_swapped_value = existing_data['cameras_swapped']
+                        print(f"[INFO] Preservando cameras_swapped={cameras_swapped_value}")
+                    if 'swap_cameras' in existing_data:
+                        swap_cameras_value = existing_data['swap_cameras']
+                        print(f"[INFO] Preservando swap_cameras={swap_cameras_value}")
+        except Exception as e:
+            print(f"[WARN] No se pudo leer flags del archivo existente: {e}")
+        
+        # Agregar los flags preservados al nuevo archivo
+        if cameras_swapped_value is not None:
+            self.calibration_data['cameras_swapped'] = cameras_swapped_value
+        if swap_cameras_value is not None:
+            self.calibration_data['swap_cameras'] = swap_cameras_value
+        elif 'swap_cameras' not in self.calibration_data:
+            # Si no existe, agregar con valor por defecto
+            self.calibration_data['swap_cameras'] = False
         
         with open(output_file, 'w') as f:
             json.dump(self.calibration_data, f, indent=4)

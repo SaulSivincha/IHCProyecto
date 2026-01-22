@@ -18,14 +18,14 @@ class StereoConfig:
     # ==================== CÁMARAS ====================
     LEFT_CAMERA_SOURCE = 1          # ID de cámara izquierda
     RIGHT_CAMERA_SOURCE =  2         # ID de cámara derecha
-    PIXEL_WIDTH = 640               # Ancho en píxeles
-    PIXEL_HEIGHT = 480              # Alto en píxeles
+    PIXEL_WIDTH = 1280              # Ancho en píxeles (aumentado para mejor precisión)
+    PIXEL_HEIGHT = 720              # Alto en píxeles (aumentado para mejor precisión)
     FRAME_RATE = 30                 # FPS objetivo
     
     # Flag que indica si los IDs de cámara actuales están invertidos
     # respecto a los IDs usados durante la calibración estéreo.
     # Si True, se deben intercambiar los frames/datos L<->R en el procesamiento.
-    CAMERAS_SWAPPED = False
+    CAMERAS_SWAPPED = True
     
     @staticmethod
     def load_camera_ids_from_calibration():
@@ -55,8 +55,11 @@ class StereoConfig:
                     # Detectar si los IDs están invertidos respecto a la calibración
                     StereoConfig.CAMERAS_SWAPPED = False
                     
-                    # Primero: Verificar flag explícito en JSON
-                    if 'cameras_swapped' in data:
+                    # Primero: Verificar flag explícito en JSON (priorizar swap_cameras)
+                    if 'swap_cameras' in data:
+                        StereoConfig.CAMERAS_SWAPPED = data['swap_cameras']
+                        print(f"  [DEBUG] swap_cameras (from JSON): {StereoConfig.CAMERAS_SWAPPED}")
+                    elif 'cameras_swapped' in data:
                         StereoConfig.CAMERAS_SWAPPED = data['cameras_swapped']
                         print(f"  [DEBUG] cameras_swapped (from JSON): {StereoConfig.CAMERAS_SWAPPED}")
                     # Segundo: Auto-detectar si los IDs son diferentes
@@ -143,12 +146,14 @@ class StereoConfig:
     def transform_point_for_display(point, width, height):
         """
         Transforma un punto (x, y) del espacio RAW al espacio DISPLAY.
-        Debe coincidir con la transformación de apply_display_transform.
+        Debe coincidir con la transformación de apply_display_transform (cv2.ROTATE_180).
+        
+        Corrección: Se agrega -1 para coincidir con cv2.ROTATE_180 (índices 0..N-1)
         """
         x, y = point
-        # Rotación 180: (x, y) -> (w-x, h-y)
-        new_x = width - x
-        new_y = height - y
+        # Rotación 180° exacta: (width - 1 - x, height - 1 - y)
+        new_x = (width - 1) - x
+        new_y = (height - 1) - y
         return (new_x, new_y)
 
     # ==================== ORIENTACIÓN DE CÁMARAS ====================

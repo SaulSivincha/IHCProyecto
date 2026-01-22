@@ -165,13 +165,17 @@ class PersistentResources:
             self.left_detector = HandDetector(
                 staticImageMode=False,
                 detectionCon=self.config.HAND_DETECTION_CONFIDENCE,
-                trackCon=self.config.HAND_TRACKING_CONFIDENCE
+                trackCon=self.config.HAND_TRACKING_CONFIDENCE,
+                img_width=self.config.PIXEL_WIDTH,
+                img_height=self.config.PIXEL_HEIGHT
             )
             
             self.right_detector = HandDetector(
                 staticImageMode=False,
                 detectionCon=self.config.HAND_DETECTION_CONFIDENCE,
-                trackCon=self.config.HAND_TRACKING_CONFIDENCE
+                trackCon=self.config.HAND_TRACKING_CONFIDENCE,
+                img_width=self.config.PIXEL_WIDTH,
+                img_height=self.config.PIXEL_HEIGHT
             )
             
             self._detectors_ready = True

@@ -165,6 +165,9 @@ class VirtualKeyboard():
                     'black': False,
                     'pts': np.array([pts], dtype=np.float32)
                 })
+                # DEBUG: Log white key generation (only once)
+                if not hasattr(self, '_gen_logged'):
+                    print(f"[GEN_WHITE] visual_pos={p}, key_id={key_id}, x_range=({x_line_pos},{x_next_pos})")
 
         # 2. Teclas Negras
         for p in range(self.kb_white_n_keys):
@@ -216,6 +219,12 @@ class VirtualKeyboard():
                         'black': True,
                         'pts': np.array([pts], dtype=np.float32)
                     })
+                    # DEBUG: Log black key generation (only once)
+                    if not hasattr(self, '_gen_logged'):
+                        print(f"[GEN_BLACK] visual_pos={p}, key_id={key_id}, x_range=({b_bk_x0},{b_bk_x1})")
+        
+        # Mark as logged
+        self._gen_logged = True
         return geometries
 
 
@@ -422,6 +431,15 @@ class VirtualKeyboard():
                     'black': key_geom['black'],
                     'contour': pts_dst.astype(np.int32)
                 })
+            
+            # DEBUG: Log polygon order (only once)
+            if not hasattr(self, '_polygon_order_logged'):
+                print(f"\n[POLYGON_ORDER] Generated {len(self.screen_key_polygons)} polygons:")
+                for i, poly in enumerate(self.screen_key_polygons[:5]):  # Show first 5
+                    print(f"  [{i}] key_id={poly['id']}, black={poly['black']}")
+                if len(self.screen_key_polygons) > 5:
+                    print(f"  ... ({len(self.screen_key_polygons) - 5} more)")
+                self._polygon_order_logged = True
                 
         except Exception as e:
             # Fallback a dibujar normal si falla la matriz
@@ -602,6 +620,9 @@ class VirtualKeyboard():
                 if dist >= -10: 
                     found_key_id = poly['id']
                     found_poly_type = "Black" if poly['black'] else "White"
+                    # DEBUG: Log key detection
+                    midi_note = self.__keyboard_piano_map.get(found_key_id, -1)
+                    print(f"[FIND_KEY] coords=({check_x:.0f},{check_y:.0f}) → key_id={found_key_id} ({found_poly_type}) → MIDI={midi_note}")
                     if poly['black']:
                         break
                     break
@@ -658,4 +679,6 @@ class VirtualKeyboard():
         return key_found
 
     def note_from_key(self, key):
-        return self.__keyboard_piano_map[key]
+        midi_note = self.__keyboard_piano_map[key]
+        print(f"[NOTE_FROM_KEY] key_id={key} → MIDI={midi_note}")
+        return midi_note

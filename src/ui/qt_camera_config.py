@@ -541,11 +541,27 @@ class CameraConfigDialog(QDialog):
             else:
                 data = {}
             
+            # Detectar si las cámaras están intercambiadas respecto a la calibración original
+            swap_cameras = False
+            if 'calibration_camera_ids' in data:
+                # Comparar con los IDs originales de calibración
+                orig_left = data['calibration_camera_ids'].get('left')
+                orig_right = data['calibration_camera_ids'].get('right')
+                
+                # Si el usuario invirtió los IDs, marcar swap_cameras = True
+                if orig_left is not None and orig_right is not None:
+                    if left_id == orig_right and right_id == orig_left:
+                        swap_cameras = True
+                        print(f"[CameraConfig] Cámaras intercambiadas detectado: swap_cameras=True")
+            
             # Guardar los IDs seleccionados por el usuario
             data['camera_ids'] = {
                 'left': left_id,
                 'right': right_id
             }
+            
+            # Guardar el flag de intercambio
+            data['swap_cameras'] = swap_cameras
             
             # Si no existe calibration_camera_ids, crearlo con los IDs actuales
             # (Esto preserva los IDs originales de la calibración estéreo)
@@ -562,7 +578,7 @@ class CameraConfigDialog(QDialog):
             with open(calib_path, 'w') as f:
                 json.dump(data, f, indent=4)
             
-            print(f"[CameraConfig] Guardado: LEFT={left_id}, RIGHT={right_id}")
+            print(f"[CameraConfig] Guardado: LEFT={left_id}, RIGHT={right_id}, SWAP={swap_cameras}")
         except Exception as e:
             print(f"[CameraConfig] Error: {e}")
 

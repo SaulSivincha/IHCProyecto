@@ -203,50 +203,58 @@ class FreeModeWindow(QMainWindow):
         from src.vision.stereo_config import StereoConfig
 
         # === CORREGIDO: ARQUITECTURA DE TRANSFORMACIONES ===
-        # ESTRATEGIA: Rotar frame PRIMERO, luego dibujar con coordenadas transformadas
+        # ESTRATEGIA NUEVA: Detectar en frames RAW para estéreo, rotar solo para display
         
-        # Aplicar transformaciones para DETECCIÓN (geometría correcta)
+        # Aplicar transformaciones de cámara (corrección de distorsión, etc.)
         frame_left = StereoConfig.apply_camera_transforms(frame_left)
         frame_right = StereoConfig.apply_camera_transforms(frame_right)
         
-        # ROTAR frame para display ANTES de dibujar
-        frame_left_display = StereoConfig.apply_display_transform(frame_left)
-        
         # 2. PROCESAMIENTO PERSONALIZADO 
         try:
-            # A. Detección de manos
-            # SOLUCIÓN: Detectar sobre el frame YA ROTADO (frame_left_display)
-            # Así MediaPipe trabaja en el mismo sistema de coordenadas que el display
-            # y no necesitamos transformar coordenadas manualmente
+            # A. Detección de manos EN FRAMES RAW (antes de rotar)
+            # Esto es CRÍTICO para que la triangulación estéreo funcione correctamente
             if self.hand_detector_left and self.hand_detector_right:
-                # Detectar en frames ROTADOS (mismo espacio que display y teclado)
-                self.hand_detector_left.findHands(frame_left_display)
-                self.hand_detector_right.findHands(frame_right)  # frame_right no se usa para display
+                # CORREGIDO: Detectar en frames RAW (sin rotar) para ambas cámaras
+                # Esto asegura que las coordenadas estén en el mismo sistema de referencia
+                self.hand_detector_left.findHands(frame_left)   # RAW
+                self.hand_detector_right.findHands(frame_right) # RAW
                 
-                # Obtener dimensiones del frame para cálculo de coordenadas
+                # Obtener dimensiones reales del frame actual
+                h_raw, w_raw = frame_left.shape[:2]
+                
+                # CORREGIDO: Pasar dimensiones explícitas para evitar escalado erróneo a 640x480
+                hl_hands, hl_tips_raw = self.hand_detector_left.getFingerTipsPos(
+                    rotate_180=False, 
+                    img_width=w_raw, 
+                    img_height=h_raw
+                )
+                hr_hands, hr_tips_raw = self.hand_detector_right.getFingerTipsPos(
+                    rotate_180=False, 
+                    img_width=w_raw, 
+                    img_height=h_raw
+                )
+                
+                # AHORA rotar frame izquierdo para display
+                frame_left_display = StereoConfig.apply_display_transform(frame_left)
                 h_frame, w_frame = frame_left_display.shape[:2]
                 
-                # Obtener coordenadas SIN transformación adicional
-                # porque ya detectamos en el frame rotado
-                # Pasar dimensiones reales del frame para evitar desajustes
-                hl_hands, hl_tips = self.hand_detector_left.getFingerTipsPos(
-                    rotate_180=False, img_width=w_frame, img_height=h_frame)
-                hr_hands, hr_tips = self.hand_detector_right.getFingerTipsPos(rotate_180=False)
-                
-                # GUARDAR coordenadas originales de cámara izquierda ANTES del swap
-                # Estas son las coordenadas correctas para display y mapeo de teclas
-                # porque fueron detectadas en frame_left_display (rotado)
-                hl_tips_display = list(hl_tips)  # Copia para visualización y teclas
+                # Transformar coordenadas de hl_tips_raw al espacio rotado para display
+                # Rotación 180° con cv2.ROTATE_180 = (x, y) → (w - 1 - x, h - 1 - y)
+                hl_tips_display = []
+                for tip in hl_tips_raw:
+                    hand_id, tip_id, x_raw, y_raw = tip
+                    x_rot = w_frame - 1 - x_raw
+                    y_rot = h_frame - 1 - y_raw
+                    hl_tips_display.append([hand_id, tip_id, x_rot, y_rot])
                 
                 # === CORRECCIÓN DE CÁMARAS INVERTIDAS (SOLO PARA ESTÉREO) ===
                 # Si los camera_ids están invertidos respecto a la calibración,
                 # intercambiamos los datos de tips SOLO para el matching estéreo
-                # NOTA: hl_tips_display mantiene las coordenadas originales para display
                 if StereoConfig.CAMERAS_SWAPPED:
-                    hl_tips_stereo, hr_tips_stereo = hr_tips, hl_tips
+                    hl_tips_stereo, hr_tips_stereo = hr_tips_raw, hl_tips_raw
                     hl_hands, hr_hands = hr_hands, hl_hands
                 else:
-                    hl_tips_stereo, hr_tips_stereo = hl_tips, hr_tips
+                    hl_tips_stereo, hr_tips_stereo = hl_tips_raw, hr_tips_raw
                 
                 # DEBUG VISUAL: Mostrar coordenadas de dedo índice en pantalla
                 # Usar hl_tips_stereo/hr_tips_stereo para el cálculo de disparidad
@@ -269,19 +277,80 @@ class FreeModeWindow(QMainWindow):
                             cv2.putText(frame_left_display, "DISP INVERTIDA!", (10, 60), 
                                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
                 
-                # Dibujar manos en frame ROTADO (sin transformación adicional)
-                # porque ya detectamos en frame_left_display que está rotado
-                self.hand_detector_left.drawHands(frame_left_display, rotate_180=False)
-                self.hand_detector_left.drawTips(frame_left_display, rotate_180=False)
+                # Dibujar manos en frame ROTADO
+                # IMPORTANTE: Necesitamos dibujar usando las coordenadas RAW en el frame RAW,
+                # luego MediaPipe internamente las dibujará correctamente
+                # PERO como el frame ya está rotado, necesitamos crear un detector temporal
+                # o dibujar manualmente los puntos transformados
+                
+                # Dibujar esqueleto de manos manualmente usando coordenadas transformadas
+                # (MediaPipe drawHands no funciona bien con coordenadas transformadas)
+                for tip in hl_tips_display:
+                    hand_id, tip_id, x, y = tip
+                    # Dibujar punto azul (MediaPipe)
+                    cv2.circle(frame_left_display, (int(x), int(y)), 8, (255, 0, 0), -1)
+                    cv2.putText(frame_left_display, f"{tip_id}", (int(x)+10, int(y)),
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 0, 0), 1)
             else:
-                hl_hands, hl_tips = [], []
-                hr_hands, hr_tips = [], []
+                # Si no hay detectores, crear frame_left_display de todos modos
+                frame_left_display = StereoConfig.apply_display_transform(frame_left)
+                hl_hands, hl_tips_raw = [], []
+                hr_hands, hr_tips_raw = [], []
                 hl_tips_display = []
                 hl_tips_stereo, hr_tips_stereo = [], []
             
             # C. Dibujar teclado en frame ROTADO
-            # El método ahora maneja la transformación de coordenadas internamente
-            self.virtual_keyboard.draw_virtual_keyboard(frame_left_display, rotated_display=True)
+            # CORREGIDO: Usar modo AR (draw_perspective) si TABLE_CORNERS está disponible
+            from src.vision.stereo_config import StereoConfig
+            
+            if StereoConfig.TABLE_CORNERS is not None and len(StereoConfig.TABLE_CORNERS) == 4:
+                # Modo AR: Dibujar con perspectiva usando las esquinas calibradas
+                h_frame, w_frame = frame_left_display.shape[:2]
+                
+                # Obtener resolución de calibración
+                calib_w = getattr(StereoConfig, 'CALIB_PIXEL_WIDTH', 1280) or 1280
+                calib_h = getattr(StereoConfig, 'CALIB_PIXEL_HEIGHT', 720) or 720
+                
+                # IMPORTANTE: Solo escalar si las resoluciones son diferentes
+                if w_frame == calib_w and h_frame == calib_h:
+                    # Resoluciones coinciden: usar TABLE_CORNERS directamente
+                    scaled_corners = StereoConfig.TABLE_CORNERS
+                    
+                    if not hasattr(self, '_corners_scale_logged'):
+                        print(f"[DEBUG] Resoluciones coinciden ({w_frame}x{h_frame})")
+                        print(f"  Usando TABLE_CORNERS sin escalar: {scaled_corners}")
+                        self._corners_scale_logged = True
+                else:
+                    # Resoluciones diferentes: escalar TABLE_CORNERS
+                    scale_x = w_frame / calib_w
+                    scale_y = h_frame / calib_h
+                    
+                    scaled_corners = []
+                    for corner in StereoConfig.TABLE_CORNERS:
+                        scaled_x = int(corner[0] * scale_x)
+                        scaled_y = int(corner[1] * scale_y)
+                        scaled_corners.append([scaled_x, scaled_y])
+                    
+                    if not hasattr(self, '_corners_scale_logged'):
+                        print(f"[DEBUG] Escalando TABLE_CORNERS:")
+                        print(f"  Calibración: {calib_w}x{calib_h}")
+                        print(f"  Actual: {w_frame}x{h_frame}")
+                        print(f"  Escala: {scale_x:.2f}x, {scale_y:.2f}y")
+                        print(f"  Original: {StereoConfig.TABLE_CORNERS}")
+                        print(f"  Escalado: {scaled_corners}")
+                        self._corners_scale_logged = True
+                
+                self.virtual_keyboard.draw_perspective(
+                    frame_left_display, 
+                    scaled_corners,
+                    active_keys=list(self.active_notes) if hasattr(self, 'active_notes') else None
+                )
+            else:
+                # Fallback: Modo plano
+                if not hasattr(self, '_flat_mode_logged'):
+                    print(f"[DEBUG] TABLE_CORNERS no disponible, usando modo plano")
+                    self._flat_mode_logged = True
+                self.virtual_keyboard.draw_virtual_keyboard(frame_left_display, rotated_display=True)
             
             # D. Procesar teclas y audio
             # CORREGIDO: Usar hl_tips_display para detección de teclas (coordenadas correctas para display)
@@ -462,25 +531,30 @@ class FreeModeWindow(QMainWindow):
                     finger_depths_dict[(hand_id, tip_id)] = depth
 
                 # 4. Asignar mapa de teclas
-                # Usar hl_tips_display que tiene coordenadas correctas para el frame rotado
-                h_frame, w_frame = frame_left_display.shape[:2]
+                # CORREGIDO: En modo AR, NO escalar coordenadas (ya están en espacio del frame)
+                # En modo plano, SÍ escalar al canvas
+                from src.vision.stereo_config import StereoConfig
                 
-                # Obtener resolución del canvas (donde se dibuja el teclado)
-                canvas_w = self.virtual_keyboard.canvas_w
-                canvas_h = self.virtual_keyboard.canvas_h
-                
-                # Factor de escala de frame a canvas
-                scale_x = canvas_w / w_frame
-                scale_y = canvas_h / h_frame
-                
-                hl_tips_transformed = []
-                for t in hl_tips_display:
-                    # t = [hand_id, tip_id, x, y]
-                    # Las coordenadas ya están en espacio del display
-                    tx = t[2] * scale_x
-                    ty = t[3] * scale_y
+                if StereoConfig.TABLE_CORNERS is not None and len(StereoConfig.TABLE_CORNERS) == 4:
+                    # MODO AR: Usar coordenadas directas del frame (sin escalar)
+                    hl_tips_transformed = hl_tips_display
                     
-                    hl_tips_transformed.append([t[0], t[1], tx, ty])
+                    if not hasattr(self, '_ar_coords_logged'):
+                        print(f"[DEBUG] Modo AR: Usando coordenadas directas del frame (sin escalar)")
+                        self._ar_coords_logged = True
+                else:
+                    # MODO PLANO: Escalar al canvas
+                    h_frame, w_frame = frame_left_display.shape[:2]
+                    canvas_w = self.virtual_keyboard.canvas_w
+                    canvas_h = self.virtual_keyboard.canvas_h
+                    scale_x = canvas_w / w_frame
+                    scale_y = canvas_h / h_frame
+                    
+                    hl_tips_transformed = []
+                    for t in hl_tips_display:
+                        tx = t[2] * scale_x
+                        ty = t[3] * scale_y
+                        hl_tips_transformed.append([t[0], t[1], tx, ty])
                 
                 # DEBUG VISUAL: Comparar coordenadas del sistema vs MediaPipe
                 # Círculo ROJO = donde el sistema busca teclas (coordenadas transformadas)

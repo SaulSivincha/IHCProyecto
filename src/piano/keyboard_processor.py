@@ -80,11 +80,20 @@ class KeyboardProcessor:
         hands_right_image = []
         fingers_right_image = []
         
+        # Obtener dimensiones reales del frame
+        h_raw, w_raw = frame_left.shape[:2]
+        
         if hands_detected_left:
-            hands_left_image, fingers_left_image = hand_detector_left.getFingerTipsPos()
+            hands_left_image, fingers_left_image = hand_detector_left.getFingerTipsPos(
+                img_width=w_raw, 
+                img_height=h_raw
+            )
         
         if hands_detected_right:
-            hands_right_image, fingers_right_image = hand_detector_right.getFingerTipsPos()
+            hands_right_image, fingers_right_image = hand_detector_right.getFingerTipsPos(
+                img_width=w_raw, 
+                img_height=h_raw
+            )
         
         # [AR OCCLUSION] Obtener TODOS los landmarks de las manos para oclusión visual
         hand_landmarks_for_occlusion = []
@@ -224,21 +233,25 @@ class KeyboardProcessor:
                 for k_pos in active_keys:
                     hit_result = rhythm_game.check_hit(k_pos)
                     if hit_result:
+                        # RECUPERAR VELOCIDAD CALCULADA (fallback a 80)
+                        velocity = getattr(self.km, 'active_velocities', {}).get(k_pos, 80)
                         self.synth.noteon(
                             chan=0,
                             key=virtual_keyboard.note_from_key(k_pos) + self.octave_base,
-                            vel=127 * 2 // 3
+                            vel=velocity
                         )
             else:
                 # Modo libre/songs: reproducir todas las teclas
                 if np.any(on_map):
                     for k_pos, on_key in enumerate(on_map):
                         if on_key:
-                            print(f"♪ NOTE ON: {k_pos}")
+                            # RECUPERAR VELOCIDAD CALCULADA (fallback a 80)
+                            velocity = getattr(self.km, 'active_velocities', {}).get(k_pos, 80)
+                            print(f"♪ NOTE ON: {k_pos} (Vel: {velocity})")
                             self.synth.noteon(
                                 chan=0,
                                 key=virtual_keyboard.note_from_key(k_pos) + self.octave_base,
-                                vel=127 * 2 // 3
+                                vel=velocity
                             )
                 
                 if np.any(off_map):

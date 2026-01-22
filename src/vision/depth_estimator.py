@@ -908,43 +908,49 @@ class DepthEstimator:
     
     def get_expected_z_bilinear(self, x_pixel, y_pixel):
         """
-        Calcula Z esperada usando interpolación bilineal de las 4 esquinas.
+        Calcula Z esperada usando corrección de perspectiva (Homografía).
+        Transforma el trapecio visual a un cuadrado unitario para interpolar con precisión.
         
-        Esto corrige el sesgo horizontal/vertical donde diferentes partes
-        del teclado están a diferentes distancias de la cámara.
-        
-        Args:
-            x_pixel, y_pixel: Coordenadas en píxeles
-            
-        Returns:
-            float: Z esperada en cm, o keyboard_distance_cm si no hay datos
+        Esto corrige el "efecto trapecio" donde la cámara inclinada hace que
+        el centro físico del teclado no coincida con el centro visual.
         """
-        if self.bilinear_depths is None:
-            return self.keyboard_distance_cm if self.keyboard_distance_cm else 38.0
-        
-        # Normalizar coordenadas al rango [0, 1]
-        x_range = self.bilinear_x_max - self.bilinear_x_min
-        y_range = self.bilinear_y_max - self.bilinear_y_min
-        
-        if x_range <= 0 or y_range <= 0:
-            return self.keyboard_distance_cm if self.keyboard_distance_cm else 38.0
-        
-        u = (x_pixel - self.bilinear_x_min) / x_range
-        v = (y_pixel - self.bilinear_y_min) / y_range
-        
-        # Clamp para puntos fuera del área
-        u = np.clip(u, 0, 1)
-        v = np.clip(v, 0, 1)
-        
-        # Interpolación bilineal:
-        # Esquinas: TL=0, TR=1, BR=2, BL=3
+        if self.bilinear_depths is None or self.bilinear_corners is None:
+            return self.keyboard_distance_cm if self.keyboard_distance_cm else 40.0
+
+        # 1. Definir coordenadas origen (Esquinas detectadas en Fase 4) y destino (Cuadrado Unitario)
+        # Orden asumido: TL, TR, BR, BL
+        src_pts = self.bilinear_corners
+        dst_pts = np.array([[0, 0], [1, 0], [1, 1], [0, 1]], dtype=np.float32)
+
+        try:
+            # 2. Calcular Matriz de Perspectiva (Homografía)
+            # Esto 'endereza' el teclado matemáticamente
+            M = cv2.getPerspectiveTransform(src_pts, dst_pts)
+
+            # 3. Transformar el punto del dedo (x, y)
+            point_array = np.array([[[x_pixel, y_pixel]]], dtype=np.float32)
+            transformed_point = cv2.perspectiveTransform(point_array, M)[0][0]
+            
+            u, v = transformed_point[0], transformed_point[1]
+            
+            # Clamp de seguridad (evitar valores extremos fuera de la mesa)
+            u = np.clip(u, -0.1, 1.1)
+            v = np.clip(v, -0.1, 1.1)
+
+        except Exception as e:
+            # Fallback lineal si falla la matriz (método antiguo)
+            x_range = self.bilinear_x_max - self.bilinear_x_min
+            y_range = self.bilinear_y_max - self.bilinear_y_min
+            u = (x_pixel - self.bilinear_x_min) / x_range if x_range > 0 else 0.5
+            v = (y_pixel - self.bilinear_y_min) / y_range if y_range > 0 else 0.5
+
+        # 4. Interpolación Bilineal usando coordenadas corregidas (u, v)
         z_tl, z_tr, z_br, z_bl = self.bilinear_depths
         
-        # Interpolar horizontalmente (arriba y abajo)
+        # Fórmula exacta: Z(u,v) = (1-u)(1-v)Ztl + u(1-v)Ztr + (1-u)v*Zbl + uv*Zbr
         z_top = z_tl * (1 - u) + z_tr * u
         z_bot = z_bl * (1 - u) + z_br * u
         
-        # Interpolar verticalmente
         z_expected = z_top * (1 - v) + z_bot * v
         
         return float(z_expected)

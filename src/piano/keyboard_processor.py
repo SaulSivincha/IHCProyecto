@@ -175,19 +175,35 @@ class KeyboardProcessor:
                          # Triangular
                          depth_absolute = self._calculate_depth(finger_left, finger_right)
                          
-                         if self.depth_estimator and self.depth_estimator.keyboard_distance_cm:
-                             kb_dist = self.depth_estimator.keyboard_distance_cm
-                             # Aplicar offset de seguridad calibrado (SUMAR para subir mesa)
-                             offset = getattr(StereoConfig, 'KEYBOARD_OFFSET_CM', 0.0)
-                             kb_dist += offset
+                         # === LÓGICA CORREGIDA Y UNIFICADA ===
+                         if self.depth_estimator:
+                             # 1. Intentar interpolación precisa (Fase 4B)
+                             if self.depth_estimator.has_bilinear_interpolation():
+                                 # Usar coordenadas RAW (finger_left[2], finger_left[3])
+                                 # get_depth_relative_bilinear hace: Z_Mesa - Z_Dedo
+                                 # Resultado: Positivo = Aire, Negativo = Presión
+                                 final_depth = self.depth_estimator.get_depth_relative_bilinear(
+                                     finger_left[2], finger_left[3], depth_absolute
+                                 )
+                                 
+                             # 2. Fallback a distancia plana (Fase 3)
+                             elif self.depth_estimator.keyboard_distance_cm:
+                                 kb_dist = self.depth_estimator.keyboard_distance_cm
+                                 offset = getattr(StereoConfig, 'KEYBOARD_OFFSET_CM', 0.0)
+                                 kb_dist += offset
+                                 
+                                 # CORRECCIÓN DE SIGNO: Mesa - Dedo
+                                 # Positivo = Aire (dedo más cerca que mesa)
+                                 # Negativo = Presión (dedo atravesó mesa)
+                                 final_depth = kb_dist - depth_absolute
+                             else:
+                                 final_depth = 1.0  # Sin calibración
                              
-                             # CORREGIDO: depth_absolute - kb_dist
-                             # Si dedo está MÁS CERCA de cámara que mesa → rel_depth > 0 → TOQUE
-                             # Si dedo está MÁS LEJOS de cámara que mesa → rel_depth < 0 → AIRE
-                             rel_depth = depth_absolute - kb_dist
-                             # Filtro básico de rango (-50 a +50 cm)
-                             if abs(rel_depth) < 50:
-                                 final_depth = rel_depth
+                             # Filtro de seguridad
+                             if abs(final_depth) < 50:
+                                 pass  # final_depth ya está asignado
+                             else:
+                                 final_depth = None
                          else:
                              # MATCH Estéreo pero sin calibración de profundidad -> Asumir toque
                              final_depth = 1.0

@@ -54,8 +54,10 @@ class DepthCalibrator:
         # Resultados de mediciones
         self.measurements = []  # [(distancia_real, distancia_medida), ...]
         
-        # Factor calculado
-        self.correction_factor = 1.0
+        # Parámetros de regresión lineal (Real = slope * Medido + intercept)
+        self.slope = 1.0
+        self.intercept = 0.0
+        self.correction_factor = 1.0  # Mantener por retrocompatibilidad
         
         # Distancia del plano del teclado (calculada automáticamente)
         self.keyboard_distance = None
@@ -160,52 +162,79 @@ class DepthCalibrator:
 
     def calculate_and_save(self):
         """
-        Calcula el factor de corrección final y lo guarda
+        Calcula la regresión lineal (m y b) o offset simple y la guarda.
         
         Returns:
-            float: Factor de corrección calculado o None si falla
+            tuple: (slope, intercept) o None si falla
         """
-        if len(self.measurements) < 3:
-            print(f"[ERROR] Se necesitan al menos 3 mediciones (tienes {len(self.measurements)})")
+        # CAMBIO: Permitir >= 1 en lugar de < 2
+        if len(self.measurements) < 1:
+            print(f"[ERROR] Se necesita al menos 1 medición")
             return None
             
-        self.correction_factor = self._calculate_correction_factor()
-        self._save_correction_factor()
+        # Calcular pendiente (slope) y offset (intercept)
+        self.slope, self.intercept = self._calculate_regression()
         
-        return self.correction_factor
+        # Mantener correction_factor por retrocompatibilidad (usar slope)
+        self.correction_factor = self.slope
+        
+        self._save_calibration_params()
+        
+        return self.slope, self.intercept
     
-    def _calculate_correction_factor(self):
+    def _calculate_regression(self):
         """
-        Calcula el factor de corrección óptimo usando regresión lineal
+        Calcula regresión lineal o offset simple.
         
         Returns:
-            float: Factor de corrección (slope de la regresión)
+            tuple: (slope, intercept)
         """
         if not self.measurements:
-            return 1.0
+            return 1.0, 0.0
         
-        real_distances = np.array([m[0] for m in self.measurements])
-        measured_distances = np.array([m[1] for m in self.measurements])
+        # CASO 1 PUNTO: Asumir pendiente perfecta (1.0) y solo corregir el error constante (offset)
+        if len(self.measurements) == 1:
+            real_val = self.measurements[0][0]
+            measured_val = self.measurements[0][1]
+            
+            slope = 1.0
+            intercept = real_val - measured_val
+            
+            print(f"[DEBUG] Calibración de 1 punto:")
+            print(f"  Pendiente fija: {slope:.4f}")
+            print(f"  Offset calculado: {intercept:.4f} cm (Diferencia Real - Medido)")
+            return slope, intercept
+
+        # CASO MULTIPLES PUNTOS (Regresión Lineal normal)
+        # x = medidas del sistema (lo que ve la cámara)
+        # y = distancias reales (lo que el usuario mide con regla)
+        x = np.array([m[1] for m in self.measurements])
+        y = np.array([m[0] for m in self.measurements])
         
-        # Regresión lineal: real = factor * medido
-        # factor = mean(real / medido)
-        ratios = real_distances / measured_distances
-        factor = np.mean(ratios)
+        # Ajuste lineal de grado 1 (y = mx + b)
+        # polyfit devuelve [pendiente, intercepto]
+        slope, intercept = np.polyfit(x, y, 1)
         
-        return factor
-    
-    def _save_correction_factor(self):
-        """Guarda el factor de corrección y distancia del teclado en el archivo de calibración"""
+        print(f"[DEBUG] Regresión calculada:")
+        print(f"  Pendiente (m): {slope:.4f}")
+        print(f"  Offset (b):    {intercept:.4f} cm")
+        
+        return slope, intercept
+
+    def _save_calibration_params(self):
+        """Guarda los parámetros m y b en el JSON"""
         try:
             calib_file = CalibrationConfig.CALIBRATION_FILE
             
-            # Leer calibración existente
             with open(calib_file, 'r') as f:
                 calib_data = json.load(f)
             
-            # Agregar sección de profundidad (Fase 3)
+            # Guardar estructura nueva con regresión lineal
             calib_data['depth_correction'] = {
-                'factor': self.correction_factor,
+                'method': 'linear_regression',
+                'slope': self.slope,           # m
+                'intercept': self.intercept,   # b
+                'correction_factor': self.slope,  # Retrocompatibilidad
                 'keyboard_distance_cm': self.keyboard_distance,
                 'measurements': [
                     {'real_cm': real, 'measured_cm': measured}
@@ -214,15 +243,14 @@ class DepthCalibrator:
                 'num_samples': len(self.measurements)
             }
             
-            # Guardar
             with open(calib_file, 'w') as f:
                 json.dump(calib_data, f, indent=4)
             
-            print(f"[OK] Factor de correccion guardado en: {calib_file}")
-            print(f"[OK] Distancia del teclado: {self.keyboard_distance:.2f} cm")
+            print(f"[OK] Calibración de profundidad guardada (Regresión Lineal)")
+            print(f"  Fórmula: Real = {self.slope:.4f} * Medido + {self.intercept:.4f}")
             
         except Exception as e:
-            print(f"⚠ Error al guardar factor de corrección: {e}")
+            print(f"⚠ Error al guardar: {e}")
     
     def add_keyboard_distance_sample(self, depth):
         """

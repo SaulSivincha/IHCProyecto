@@ -904,13 +904,32 @@ class QtCalibrationManager(QObject):
         
         # Mostrar resumen
         camera_display = "IZQUIERDA" if self.current_camera == "left" else "DERECHA"
-        summary_html = f"<h3 style='color: #00FF00;'>CÁMARA {camera_display} CALIBRADA</h3>"
-        summary_html += "<table style='width: 100%; color: #FFFFFF;'>"
-        summary_html += f"<tr><td><b>Configuración:</b></td><td>{self.board_cols}x{self.board_rows} esquinas ({self.square_size_mm} mm)</td></tr>"
-        summary_html += f"<tr><td><b>Imágenes capturadas:</b></td><td>{self.photo_count}</td></tr>"
-        summary_html += f"<tr><td><b>Error de reproyección:</b></td><td>{result['reprojection_error']:.6f} px</td></tr>"
+        
+        # Definir color según la calidad del error (Verde < 0.5, Amarillo < 1.0, Rojo > 1.0)
+        error_val = result['reprojection_error']
+        color_error = "#00FF00" if error_val < 0.5 else "#FFFF00" if error_val < 1.0 else "#FF0000"
+        
+        summary_html = f"<h3 style='color: #00FF00;'>CÁMARA {camera_display} FINALIZADA</h3>"
+        summary_html += "<table style='width: 100%; color: #FFFFFF; font-size: 14px;'>"
+        
+        # Dato de la cámara actual
+        summary_html += f"<tr><td><b>Fotos:</b></td><td>{self.photo_count}</td></tr>"
+        summary_html += f"<tr><td><b>RMS Actual:</b></td><td style='color:{color_error};'><b>{error_val:.4f} px</b></td></tr>"
+        
+        # TRUCO: Si estamos en la DERECHA, mostrar también el error de la IZQUIERDA anterior
+        if self.current_camera == "right" and self.calibrator_left and self.calibrator_left.is_calibrated:
+            prev_err = self.calibrator_left.reprojection_error
+            c_prev = "#00FF00" if prev_err < 0.5 else "#FFFF00" if prev_err < 1.0 else "#FF0000"
+            summary_html += "<tr><td colspan='2'><hr></td></tr>" # Separador
+            summary_html += f"<tr><td>RMS Izquierda:</td><td style='color:{c_prev};'>{prev_err:.4f} px</td></tr>"
+            summary_html += f"<tr><td>RMS Derecha:</td><td style='color:{color_error};'>{error_val:.4f} px</td></tr>"
+            
         summary_html += "</table>"
-        summary_html += "<p style='color: #00FF00; margin-top: 20px;'><b>Presiona CONTINUAR o ENTER</b></p>"
+        
+        if error_val > 1.0:
+            summary_html += "<p style='color: #FF0000; margin-top: 10px;'>⚠ Error alto. Se recomienda <b>Reintentar</b>.</p>"
+        else:
+            summary_html += "<p style='color: #00FF00; margin-top: 20px;'><b>✔ Calibración Correcta</b><br>Presiona CONTINUAR</p>"
         
         self.window.set_instructions(summary_html)
         self.window.set_status("[OK] Calibracion completada", "#00FF00")
@@ -1189,30 +1208,43 @@ class QtCalibrationManager(QObject):
         
         layout.addSpacing(8)
         
-        # Input de distancia
-        input_layout = QHBoxLayout()
-        input_layout.addStretch()
+        # Input 1: Altura para la PRIMERA MEDICIÓN (Mano)
+        input_layout1 = QHBoxLayout()
+        input_layout1.addStretch()
+        label1 = QLabel("1. Altura medición MANO:")
+        input_layout1.addWidget(label1)
+        self.spin_calib_height = QDoubleSpinBox()
+        self.spin_calib_height.setRange(10, 200)
+        self.spin_calib_height.setValue(20)  # Sugerencia: 20cm
+        self.spin_calib_height.setSuffix(" cm")
+        self.spin_calib_height.setDecimals(1)
+        self.spin_calib_height.setSingleStep(1)
+        self.spin_calib_height.setFixedWidth(140)
+        input_layout1.addWidget(self.spin_calib_height)
+        input_layout1.addStretch()
+        layout.addLayout(input_layout1)
         
-        input_label = QLabel("Distancia real:")
-        input_layout.addWidget(input_label)
+        # Input 2: Altura real de la MESA (Teclado)
+        input_layout2 = QHBoxLayout()
+        input_layout2.addStretch()
+        label2 = QLabel("2. Altura real MESA:")
+        input_layout2.addWidget(label2)
+        self.spin_table_height = QDoubleSpinBox()
+        self.spin_table_height.setRange(10, 200)
+        self.spin_table_height.setValue(41)  # Sugerencia: 41cm
+        self.spin_table_height.setSuffix(" cm")
+        self.spin_table_height.setDecimals(1)
+        self.spin_table_height.setSingleStep(1)
+        self.spin_table_height.setFixedWidth(140)
+        input_layout2.addWidget(self.spin_table_height)
+        input_layout2.addStretch()
+        layout.addLayout(input_layout2)
         
-        self.distance_spinbox = QDoubleSpinBox()
-        self.distance_spinbox.setRange(10, 200)
-        self.distance_spinbox.setValue(35)  # Valor por defecto más realista
-        self.distance_spinbox.setSuffix(" cm")
-        self.distance_spinbox.setDecimals(1)
-        self.distance_spinbox.setSingleStep(1)
-        self.distance_spinbox.setFixedWidth(140)
-        input_layout.addWidget(self.distance_spinbox)
-        
-        # Guardar referencia al diálogo para poder acceder al spinbox después
+        # Guardar referencia al diálogo
         self._distance_dialog = dialog
         
-        input_layout.addStretch()
-        layout.addLayout(input_layout)
-        
         # Info adicional
-        info = QLabel("Tip: Mide desde el lente de la camara hasta la superficie donde tocaras")
+        info = QLabel("Tip: Calibra con la mano más cerca (20cm) para mejor precisión\nLuego indica la altura real de la mesa donde tocarás")
         info.setObjectName("info")
         info.setAlignment(Qt.AlignmentFlag.AlignCenter)
         info.setWordWrap(True)
@@ -1242,46 +1274,49 @@ class QtCalibrationManager(QObject):
     
     def _on_distance_entered(self, dialog, skip=False):
         """Procesa la distancia ingresada y continúa con la Fase 3"""
-        # IMPORTANTE: Leer el valor ANTES de cerrar el diálogo
         if skip:
-            self.real_distance_cm = None
-            print("[Fase 3] Omitiendo medicion de distancia real")
+            self.calib_start_height = 20.0
+            self.real_table_height = 41.0
+            print("[Fase 3] Omitiendo, usando valores por defecto (20cm, 41cm)")
         else:
-            # Leer valor del spinbox antes de cerrar
-            self.real_distance_cm = self.distance_spinbox.value()
+            # Leer los DOS valores
+            self.calib_start_height = self.spin_calib_height.value()
+            self.real_table_height = self.spin_table_height.value()
+            
             print(f"")
             print(f"========================================")
-            print(f"[Fase 3] DISTANCIA REAL INGRESADA: {self.real_distance_cm} cm")
+            print(f"[Fase 3] Configuración:")
+            print(f"  - Iniciar medición mano en: {self.calib_start_height} cm")
+            print(f"  - Altura real de la mesa:   {self.real_table_height} cm")
             print(f"========================================")
             print(f"")
         
-        # Ahora sí cerrar el diálogo
         dialog.accept()
         
-        # Mostrar instrucciones de la Fase 3
-        if self.real_distance_cm:
-            instructions = [
-                f"Distancia real configurada: <b>{self.real_distance_cm} cm</b>",
-                "Ahora pon tu <b>mano</b> en el lugar donde tocaras las teclas",
-                "Manten la mano <b>apoyada</b> sobre el teclado/mesa",
-                "El sistema medira y calculara el <b>factor de correccion</b>",
-                "Capturaremos <b>5 muestras</b> para mayor precision"
-            ]
-        else:
-            instructions = [
-                "Pon tu <b>mano</b> en el lugar donde tocaras las teclas",
-                "Manten la mano <b>apoyada</b> sobre el teclado/mesa",
-                "El sistema medira la distancia automaticamente",
-                "Capturaremos <b>5 muestras</b> para mayor precision"
-            ]
+        # CAMBIO: Solo 1 paso (la altura que definiste)
+        self.depth_step = 0
+        self.depth_targets = [
+            self.calib_start_height  # Solo un objetivo
+        ]
         
-        self.window.show_intro_screen(
-            "FASE 3 - CALIBRACION DE DISTANCIA",
-            instructions
-        )
+        # Guardar base_height por compatibilidad con otros métodos
+        self.base_height = self.calib_start_height
+        
+        # Instrucciones simplificadas
+        instructions = [
+            f"Configuración: Medir desde <b>{self.calib_start_height} cm</b>",
+            f"Mesa definida a: <b>{self.real_table_height} cm</b>",
+            "",
+            "<b>🎯 CALIBRACIÓN RÁPIDA (1 PUNTO):</b>",
+            f"   1. Pon tu mano a <b>{self.depth_targets[0]:.0f} cm</b> y captura.",
+            "",
+            "El sistema calculará el ajuste automáticamente."
+        ]
+        
+        self.window.show_intro_screen("FASE 3 - CALIBRACIÓN SIMPLE", instructions)
     
     def _start_depth_capture(self):
-        """Inicia la captura de profundidad simplificada"""
+        """Inicia la captura de profundidad con flujo de 3 pasos"""
         try:
             # Inicializar componentes de visión
             if self.hand_detector is None:
@@ -1289,27 +1324,47 @@ class QtCalibrationManager(QObject):
                 QApplication.processEvents()
                 self.hand_detector = HandDetector(maxHands=2)
             
-            if self.depth_estimator is None:
-                self.window.set_status("Cargando estimador de profundidad...", "#FFA500")
-                QApplication.processEvents()
-                # Cargar estimador base (sin calibración fina aún)
-                self.depth_estimator = load_depth_estimator()
+            # --- CAMBIO CRÍTICO: SIEMPRE RECARGAR DE CERO ---
+            self.window.set_status("Reseteando estimador de profundidad...", "#FFA500")
+            QApplication.processEvents()
+            
+            # Forzamos la carga de un estimador NUEVO
+            self.depth_estimator = load_depth_estimator(str(CalibrationConfig.CALIBRATION_FILE))
+            
+            # TRUCO DE SEGURIDAD: Forzar la pendiente a 1.0 en memoria antes de calibrar
+            # Esto evita que una mala calibración anterior contamine la nueva.
+            self.depth_estimator.depth_slope = 1.0
+            self.depth_estimator.depth_intercept = 0.0
+            self.depth_estimator.DEPTH_CORRECTION_FACTOR = 1.0
+            print("[INFO] Estimador reseteado en memoria a Slope=1.0 para calibración limpia.")
+            # -----------------------------------------------
             
             # Inicializar calibrador de profundidad
             self.depth_calibrator = DepthCalibrator(self.depth_estimator)
             
-            # Pasar la distancia real si fue ingresada
-            print(f"[DEBUG] hasattr real_distance_cm: {hasattr(self, 'real_distance_cm')}")
-            print(f"[DEBUG] real_distance_cm value: {getattr(self, 'real_distance_cm', 'NO EXISTE')}")
+            # --- AGREGAR ESTAS LÍNEAS PARA LIMPIAR BASURA VIEJA ---
+            print("[INFO] Limpiando historial de mediciones anteriores...")
+            self.depth_calibrator.measurements = []  # ¡ESTO ES LA CLAVE!
+            self.depth_calibrator.slope = 1.0
+            self.depth_calibrator.intercept = 0.0
+            # ------------------------------------------------------
             
-            if hasattr(self, 'real_distance_cm') and self.real_distance_cm is not None:
-                self.depth_calibrator.set_real_distance(self.real_distance_cm)
-            else:
-                print("[DEBUG] NO se paso distancia real al calibrador!")
-            
-            # Configurar número de muestras (simplificado)
-            self.keyboard_samples_needed = 5
+            # Configurar número de pasos (ahora es 1 medición)
+            self.keyboard_samples_needed = 1
             self.keyboard_samples_collected = 0
+            
+            # Asegurar que tenemos depth_step y depth_targets
+            if not hasattr(self, 'depth_step'):
+                self.depth_step = 0
+            if not hasattr(self, 'depth_targets') or not self.depth_targets:
+                base = getattr(self, 'base_height', 20.0)
+                self.depth_targets = [base]  # Solo 1 target
+                print(f"[DEBUG] depth_targets CREADO con fallback base={base}")
+            else:
+                print(f"[DEBUG] depth_targets YA EXISTEN: {self.depth_targets}")
+            
+            print(f"[DEBUG] base_height = {getattr(self, 'base_height', 'NO EXISTE')}")
+            print(f"[DEBUG] depth_targets = {self.depth_targets}")
 
             # Mostrar estado
             self.window.set_status("Iniciando cámaras...", "#FFA500")
@@ -1328,17 +1383,13 @@ class QtCalibrationManager(QObject):
                 self._finish_calibration(False)
                 return
                 
-            # Actualizar UI
+            # Actualizar UI con instrucciones del paso actual
             self.current_phase = "depth_capture"
-            self.window.set_phase(self.current_phase, "FASE 3 - DISTANCIA DEL TECLADO")
-            self.window.set_status("Pon tu mano sobre el teclado y presiona ESPACIO o CAPTURAR", "#00BFFF")
-            self.window.set_instructions(
-                f"<b>Muestra {self.keyboard_samples_collected + 1} de {self.keyboard_samples_needed}</b><br>"
-                "Mantén la mano apoyada en el plano del teclado<br>"
-                "<span style='color: #FFD700;'>Nota: El valor mostrado puede parecer incorrecto, es normal</span>"
-            )
-            self.window.show_continue_button(False)  # Mostrar botón de captura, no continuar
-            self.window.enable_capture(True)  # Habilitar captura desde el inicio
+            self.window.set_phase(self.current_phase, "FASE 3 - CALIBRACIÓN DE PROFUNDIDAD")
+            self._prompt_next_depth_step()
+            
+            self.window.show_continue_button(False)
+            self.window.enable_capture(True)
             
             # Mostrar botón de reintentar
             self.window.show_retry_button(True)
@@ -1353,6 +1404,23 @@ class QtCalibrationManager(QObject):
             traceback.print_exc()
             self.window.set_status(f"Error: {str(e)}", "#FF0000")
             self._finish_calibration(False)
+    
+    def _prompt_next_depth_step(self):
+        """Guía al usuario paso a paso en la calibración de profundidad"""
+        if self.depth_step < len(self.depth_targets):
+            target = self.depth_targets[self.depth_step]
+            step_num = self.depth_step + 1
+            total_steps = len(self.depth_targets)
+            
+            # Mensaje del paso actual
+            step_msg = f"Coloca tu mano a <b>{target:.1f} cm</b>"
+            
+            self.window.set_instructions(
+                f"<b>🎯 PASO {step_num}/{total_steps}</b><br><br>"
+                f"{step_msg}<br><br>"
+                f"<span style='color: #00FF00;'>Presiona ESPACIO o CAPTURAR cuando esté listo</span>"
+            )
+            self.window.set_status(f"Paso {step_num}/{total_steps}: Pon tu mano a {target:.1f} cm", "#00BFFF")
 
     def _update_depth_frame(self):
         """Actualiza frame para calibración de profundidad"""
@@ -1467,60 +1535,77 @@ class QtCalibrationManager(QObject):
         self.window.update_frames(display_left, display_right)
 
     def _capture_depth_measurement(self):
-        """Captura una muestra de la distancia del teclado"""
+        """Captura una medición de profundidad para el paso actual"""
         if self.last_depth_value is None:
             return
-            
-        # Agregar muestra de distancia del teclado
-        self.depth_calibrator.add_keyboard_distance_sample(self.last_depth_value)
-        self.keyboard_samples_collected += 1
         
-        # Actualizar UI
-        if self.keyboard_samples_collected < self.keyboard_samples_needed:
-            self.window.set_instructions(
-                f"<b>Muestra {self.keyboard_samples_collected + 1} de {self.keyboard_samples_needed}</b><br>"
-                f"Última medición: {self.last_depth_value:.1f} cm<br>"
-                "Mantén la mano apoyada y presiona CAPTURAR"
-            )
-            self.window.set_status(f"[OK] Muestra {self.keyboard_samples_collected} capturada", "#00FF00")
-        else:
-            # Finalizar
-            self._finish_phase3()
+        # Obtener la distancia real objetivo del paso actual
+        if self.depth_step < len(self.depth_targets):
+            real_val = self.depth_targets[self.depth_step]
+            measured_val = self.last_depth_value
+            
+            # Agregar medición al calibrador: (Real, Medido)
+            self.depth_calibrator.add_measurement(real_val, measured_val)
+            print(f"[OK] Captura {self.depth_step + 1}: Real={real_val:.1f} cm, Medido={measured_val:.1f} cm")
+            
+            # Avanzar al siguiente paso
+            self.depth_step += 1
+            self.keyboard_samples_collected += 1
+            
+            # Verificar si tenemos todas las mediciones
+            if self.depth_step >= len(self.depth_targets):
+                # Finalizar calibración
+                self._finish_phase3()
+            else:
+                # Mostrar instrucciones para el siguiente paso
+                self._prompt_next_depth_step()
+                self.window.set_status(f"[OK] Paso {self.depth_step} completado - Continúa con el siguiente", "#00FF00")
 
     def _finish_phase3(self):
-        """Finaliza la Fase 3"""
+        """Finaliza la Fase 3 con regresión lineal"""
         self.timer.stop()
         
-        # Calcular distancia del teclado (y factor de corrección si hay distancia real)
-        keyboard_distance = self.depth_calibrator.calculate_keyboard_distance()
+        # IMPORTANTE: Usar la altura real de la mesa (Input 2) como referencia del teclado
+        # aunque la calibración haya empezado en otra altura (Input 1)
+        if hasattr(self, 'real_table_height') and self.real_table_height:
+            self.depth_calibrator.keyboard_distance = self.real_table_height
+            print(f"[Fase 3] Guardando altura de mesa: {self.real_table_height} cm")
+        else:
+            # Fallback si por alguna razón no existe la variable
+            self.depth_calibrator.keyboard_distance = 41.0
+            print("[Fase 3] Usando altura de mesa por defecto: 41.0 cm")
         
-        if keyboard_distance is None:
-            print("Error en calibracion de distancia")
+        # Calcular regresión lineal y guardar
+        result = self.depth_calibrator.calculate_and_save()
+        
+        if result is None:
+            print("Error en calibracion de profundidad - no hay suficientes mediciones")
             self._finish_calibration(False)
             return
         
-        # Guardar la distancia del teclado y factor de corrección
-        self.depth_calibrator.save_keyboard_distance_only()
+        slope, intercept = result
+        print(f"")
+        print(f"========================================")
+        print(f"[OK] CALIBRACIÓN DE PROFUNDIDAD COMPLETADA")
+        print(f"     Fórmula: Real = {slope:.4f} * Medido + {intercept:.4f}")
+        print(f"========================================")
+        print(f"")
             
         # Recopilar datos para el resumen
         summary_data = {
             'board_config': f"{self.board_cols}x{self.board_rows} ({self.square_size_mm}mm)",
             'left_error': self.calibrator_left.reprojection_error if self.calibrator_left else 'N/A',
             'right_error': self.calibrator_right.reprojection_error if self.calibrator_right else 'N/A',
-            'keyboard_distance': keyboard_distance,
-            'correction_factor': self.depth_calibrator.correction_factor
+            'keyboard_distance': self.depth_calibrator.keyboard_distance,
+            'correction_factor': slope,  # Para retrocompatibilidad en UI
+            'depth_slope': slope,
+            'depth_intercept': intercept
         }
         
-        # Agregar datos de corrección si hay distancia real
-        if self.depth_calibrator.real_distance_cm is not None:
-            measured = float(np.median(self.depth_calibrator.keyboard_distance_samples))
-            error_cm = abs(measured - self.depth_calibrator.real_distance_cm)
-            error_percent = (error_cm / self.depth_calibrator.real_distance_cm) * 100
-            
-            summary_data['real_distance_cm'] = self.depth_calibrator.real_distance_cm
-            summary_data['measured_distance_cm'] = measured
-            summary_data['depth_error_cm'] = error_cm
-            summary_data['depth_error_percent'] = error_percent
+        # Agregar datos de mediciones
+        if self.depth_calibrator.measurements:
+            summary_data['num_measurements'] = len(self.depth_calibrator.measurements)
+            summary_data['regression_formula'] = f"Real = {slope:.3f} × Medido + {intercept:.2f}"
         
         # Agregar datos estéreo si existen
         if self.stereo_calibrator:
@@ -2064,14 +2149,18 @@ class QtCalibrationManager(QObject):
                 trackCon=0.5
             )
         
-        # Inicializar depth estimator
-        if self.depth_estimator is None:
-            try:
-                self.depth_estimator = load_depth_estimator(str(CalibrationConfig.CALIBRATION_FILE))
-            except Exception as e:
-                print(f"[ERROR] No se pudo cargar depth_estimator: {e}")
-                self._finish_calibration_without_4b()
-                return
+        # --- CORRECCIÓN: FORZAR RECARGA DE CALIBRACIÓN NUEVA ---
+        print("[INFO] Recargando calibración actualizada (Fase 3)...")
+        try:
+            # Siempre recargar para obtener la corrección guardada hace un momento
+            self.depth_estimator = load_depth_estimator(str(CalibrationConfig.CALIBRATION_FILE))
+            print(f"[INFO] Estimador recargado. Pendiente actual: {self.depth_estimator.depth_slope:.4f}")
+            print(f"[INFO] Intercept actual: {self.depth_estimator.depth_intercept:.4f}")
+        except Exception as e:
+            print(f"[ERROR] No se pudo cargar depth_estimator: {e}")
+            self._finish_calibration_without_4b()
+            return
+        # -------------------------------------------------------
         
         # Asegurar cámara derecha activa
         if not self.cap_right:
@@ -2196,7 +2285,7 @@ class QtCalibrationManager(QObject):
                         pt_for_left = pt_left_raw
                         pt_for_right = pt_right_raw
                     
-                    point_3d = self.depth_estimator.triangulate_point(pt_for_left, pt_for_right, method='simple')
+                    point_3d = self.depth_estimator.triangulate_point(pt_for_left, pt_for_right, method='DLT')
                         
                     if point_3d and abs(point_3d[2]) < 100:
                         depth_cm = point_3d[2]

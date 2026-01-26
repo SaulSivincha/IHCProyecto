@@ -57,6 +57,7 @@ class DepthEstimator:
         self.smoothing_enabled = True
         self.smoothing_window = 5  # Últimos N frames
         self.position_history = {}  # {landmark_id: deque([(x,y,z), ...], maxlen=N)}
+        self.finger_position_history = {}  # Para KeyboardProcessor: {finger_id: deque}
         
         # Parámetros de rectificación
         self.R1 = None
@@ -165,15 +166,30 @@ class DepthEstimator:
         self.P2 = np.array(rect['P2'], dtype=np.float32)
         self.Q = np.array(rect['Q'], dtype=np.float32)
         
+        # NUEVO: Parámetros de regresión lineal para corrección de profundidad
+        # Real = depth_slope * Medido + depth_intercept
+        self.depth_slope = 1.0
+        self.depth_intercept = 0.0
+        
         # NUEVO: Cargar datos de Fase 3 si existen
         if 'depth_correction' in data:
             depth_corr = data['depth_correction']
             
-            # Factor de corrección (opcional, default 1.0)
-            # Buscar 'correction_factor' primero, luego 'factor' para compatibilidad
-            self.DEPTH_CORRECTION_FACTOR = depth_corr.get('correction_factor', depth_corr.get('factor', 1.0))
-            if self.DEPTH_CORRECTION_FACTOR != 1.0:
-                print(f"  Factor de correccion: {self.DEPTH_CORRECTION_FACTOR:.4f}")
+            # Soporte para nuevo método de regresión lineal
+            if depth_corr.get('method') == 'linear_regression':
+                self.depth_slope = depth_corr.get('slope', 1.0)
+                self.depth_intercept = depth_corr.get('intercept', 0.0)
+                print(f"  [INFO] Regresión lineal cargada:")
+                print(f"         Real = {self.depth_slope:.4f} * Medido + {self.depth_intercept:.4f}")
+                # Mantener DEPTH_CORRECTION_FACTOR para retrocompatibilidad
+                self.DEPTH_CORRECTION_FACTOR = self.depth_slope
+            else:
+                # Soporte retroactivo para método anterior (factor simple)
+                self.DEPTH_CORRECTION_FACTOR = depth_corr.get('correction_factor', depth_corr.get('factor', 1.0))
+                self.depth_slope = self.DEPTH_CORRECTION_FACTOR
+                self.depth_intercept = 0.0
+                if self.DEPTH_CORRECTION_FACTOR != 1.0:
+                    print(f"  Factor de correccion (legacy): {self.DEPTH_CORRECTION_FACTOR:.4f}")
             
             # Distancia del teclado (IMPORTANTE - calculada en Fase 3)
             if 'keyboard_distance_cm' in depth_corr:
@@ -185,6 +201,8 @@ class DepthEstimator:
         else:
             # Sin Fase 3 - usar valores por defecto
             self.DEPTH_CORRECTION_FACTOR = 1.0
+            self.depth_slope = 1.0
+            self.depth_intercept = 0.0
             print("  [ALERTA] Fase 3 no completada - la deteccion de notas puede no funcionar")
             print("    Ejecuta Fase 3 (Calibracion de Distancia) para habilitar la deteccion")
         
@@ -445,7 +463,8 @@ class DepthEstimator:
             Y_cm = Y * 100
             Z_cm = Z * 100
             
-            Z_cm_corrected = Z_cm * self.DEPTH_CORRECTION_FACTOR
+            # Aplicar corrección de regresión lineal: Real = slope * Z + intercept
+            Z_cm_corrected = self.apply_depth_correction(Z_cm)
             
             return (X_cm, Y_cm, Z_cm_corrected)
             
@@ -522,7 +541,10 @@ class DepthEstimator:
         X_cm = (x_left - cx) * Z_cm / focal
         Y_cm = (y_left - cy) * Z_cm / focal
         
-        return (X_cm, Y_cm, Z_cm)
+        # Aplicar corrección de regresión lineal: Real = slope * Z + intercept
+        Z_cm_corrected = self.apply_depth_correction(Z_cm)
+        
+        return (X_cm, Y_cm, Z_cm_corrected)
 
     def triangulate_point(self, point_left, point_right, method='simple'):
         """
@@ -597,6 +619,26 @@ class DepthEstimator:
         if result is None:
             return None
         return result[2]  # Z
+    
+    def apply_depth_correction(self, raw_depth):
+        """
+        Aplica la corrección de profundidad usando regresión lineal.
+        
+        Fórmula: Real = slope * Raw + intercept
+        
+        Args:
+            raw_depth: Profundidad cruda medida por el sistema (cm)
+        
+        Returns:
+            float: Profundidad corregida en cm, o None si raw_depth es None
+        """
+        if raw_depth is None:
+            return None
+        
+        # Aplicar fórmula de regresión lineal: Real = m * Medido + b
+        corrected_depth = (raw_depth * self.depth_slope) + self.depth_intercept
+        
+        return corrected_depth
     
     def batch_triangulate(self, points_left, points_right):
         """

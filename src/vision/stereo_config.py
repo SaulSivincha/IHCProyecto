@@ -151,7 +151,8 @@ class StereoConfig:
         Corrección: Se agrega -1 para coincidir con cv2.ROTATE_180 (índices 0..N-1)
         """
         x, y = point
-        # Rotación 180° exacta: (width - 1 - x, height - 1 - y)
+        # Rotación 180° exact
+        # a: (width - 1 - x, height - 1 - y)
         new_x = (width - 1) - x
         new_y = (height - 1) - y
         return (new_x, new_y)
@@ -188,6 +189,12 @@ class StereoConfig:
                                      # depth_rel <= 4cm = TECLA ACTIVA
                                      # depth_rel > 4cm = AIRE
     DEPTH_CORRECTION_FACTOR = 1.0   # Factor de corrección de profundidad (calculado en Fase 3)
+    
+    # NUEVO: Parámetros de regresión lineal para corrección de profundidad
+    # Fórmula: Real = DEPTH_SLOPE * Medido + DEPTH_INTERCEPT
+    DEPTH_SLOPE = 1.0               # Pendiente (m) de la regresión lineal
+    DEPTH_INTERCEPT = 0.0           # Intersección (b) de la regresión lineal
+    
     KEYBOARD_OFFSET_CM = 0.0        # [NUEVO] Ajuste manual de altura de mesa (+ = subir mesa hacia cámara)
     
     TABLE_CORNERS = None            # [NUEVO] Esquinas de mesa para proyección AR [(x,y), (x,y), (x,y), (x,y)]
@@ -364,11 +371,34 @@ class StereoConfig:
             if 'depth_calibration' in calib_data and 'depth_threshold_cm' in calib_data['depth_calibration']:
                 StereoConfig.DEPTH_THRESHOLD = calib_data['depth_calibration']['depth_threshold_cm']
             
-            # 4. Factor de corrección de profundidad (puede estar en depth_correction o depth_calibration)
-            if 'depth_correction' in calib_data and 'factor' in calib_data['depth_correction']:
-                StereoConfig.DEPTH_CORRECTION_FACTOR = calib_data['depth_correction']['factor']
+            # 4. Factor de corrección de profundidad (soporta nuevo método de regresión lineal)
+            if 'depth_correction' in calib_data:
+                dc = calib_data['depth_correction']
+                
+                # Nuevo método: regresión lineal (slope + intercept)
+                if dc.get('method') == 'linear_regression':
+                    StereoConfig.DEPTH_SLOPE = dc.get('slope', 1.0)
+                    StereoConfig.DEPTH_INTERCEPT = dc.get('intercept', 0.0)
+                    StereoConfig.DEPTH_CORRECTION_FACTOR = StereoConfig.DEPTH_SLOPE  # Retrocompatibilidad
+                    print(f"  [INFO] Regresión lineal cargada: Real = {StereoConfig.DEPTH_SLOPE:.4f} * Medido + {StereoConfig.DEPTH_INTERCEPT:.4f}")
+                elif 'slope' in dc and 'intercept' in dc:
+                    # Formato alternativo sin method explícito
+                    StereoConfig.DEPTH_SLOPE = dc['slope']
+                    StereoConfig.DEPTH_INTERCEPT = dc['intercept']
+                    StereoConfig.DEPTH_CORRECTION_FACTOR = StereoConfig.DEPTH_SLOPE
+                elif 'factor' in dc:
+                    # Método legacy: solo factor
+                    StereoConfig.DEPTH_CORRECTION_FACTOR = dc['factor']
+                    StereoConfig.DEPTH_SLOPE = dc['factor']
+                    StereoConfig.DEPTH_INTERCEPT = 0.0
+                elif 'correction_factor' in dc:
+                    StereoConfig.DEPTH_CORRECTION_FACTOR = dc['correction_factor']
+                    StereoConfig.DEPTH_SLOPE = dc['correction_factor']
+                    StereoConfig.DEPTH_INTERCEPT = 0.0
             elif 'depth_calibration' in calib_data and 'correction_factor' in calib_data['depth_calibration']:
                 StereoConfig.DEPTH_CORRECTION_FACTOR = calib_data['depth_calibration']['correction_factor']
+                StereoConfig.DEPTH_SLOPE = StereoConfig.DEPTH_CORRECTION_FACTOR
+                StereoConfig.DEPTH_INTERCEPT = 0.0
             
             # 5. IDs de cámaras
             if 'camera_ids' in calib_data:

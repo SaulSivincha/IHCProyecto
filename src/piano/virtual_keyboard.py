@@ -49,15 +49,21 @@ class VirtualKeyboard():
         # PRIORIDAD: TABLE_CORNERS (Fase 4) > Ratios fijos
         if StereoConfig.TABLE_CORNERS is not None and len(StereoConfig.TABLE_CORNERS) == 4:
             # Usar esquinas de la calibración Fase 4
-            # NOTA: Las esquinas YA están en coordenadas del frame rotado/transformado
-            # porque durante la calibración el usuario ve el frame con apply_display_transform
-            corners = StereoConfig.TABLE_CORNERS
+            # NOTA: Las esquinas de calibración están en RAW.
+            # Necesitamos transformarlas a DISPLAY para que coincidan con la imagen rotada.
+            raw_corners = StereoConfig.TABLE_CORNERS
             
             # Obtener resolución de calibración
             calib_w = getattr(StereoConfig, 'CALIB_PIXEL_WIDTH', 1280) or 1280
             calib_h = getattr(StereoConfig, 'CALIB_PIXEL_HEIGHT', 720) or 720
             
-            print(f"[VirtualKeyboard] TABLE_CORNERS: {corners}")
+            # --- CORRECCIÓN: Transformar a DISPLAY ---
+            corners = [
+                StereoConfig.transform_point_for_display(pt, calib_w, calib_h) 
+                for pt in raw_corners
+            ]
+            
+            print(f"[VirtualKeyboard] TABLE_CORNERS (Display): {corners}")
             print(f"[VirtualKeyboard] Calib res: {calib_w}x{calib_h}, Canvas: {canvas_w}x{canvas_h}")
             
             # Calcular bounding box del área calibrada
@@ -526,7 +532,10 @@ class VirtualKeyboard():
             cv2.rectangle(img, (kx0, y0), (kx1, y1), (100, 100, 100), 1)
             
             # Nombre de nota
-            note_name = self.white_key_names[i % 7]
+            # Corregir espejo en etiquetas
+            is_mirrored = getattr(StereoConfig, 'MIRROR_HORIZONTAL', False)
+            idx = i if not is_mirrored else (n_keys - 1 - i)
+            note_name = self.white_key_names[idx % 7]
             font_scale = 0.5
             (tw, th), _ = cv2.getTextSize(note_name, cv2.FONT_HERSHEY_SIMPLEX, font_scale, 1)
             tx = kx0 + (key_width - tw) // 2
@@ -622,7 +631,7 @@ class VirtualKeyboard():
                     found_poly_type = "Black" if poly['black'] else "White"
                     # DEBUG: Log key detection
                     midi_note = self.__keyboard_piano_map.get(found_key_id, -1)
-                    print(f"[FIND_KEY] coords=({check_x:.0f},{check_y:.0f}) → key_id={found_key_id} ({found_poly_type}) → MIDI={midi_note}")
+                    # print(f"[FIND_KEY] coords=({check_x:.0f},{check_y:.0f}) → key_id={found_key_id} ({found_poly_type}) → MIDI={midi_note}")
                     if poly['black']:
                         break
                     break
@@ -653,8 +662,8 @@ class VirtualKeyboard():
         
         if self._find_key_debug_counter % 30 == 0:
             key_index = x / self.white_key_width if self.white_key_width > 0 else -1
-            print(f"[FIND_KEY] input=({x_pos:.0f},{y_pos:.0f}), kb_x0={self.kb_x0}, kb_x1={self.kb_x1}")
-            print(f"[FIND_KEY] x_rel={x:.0f}, key_width={self.white_key_width}, key_index={key_index:.2f}")
+            # print(f"[FIND_KEY] input=({x_pos:.0f},{y_pos:.0f}), kb_x0={self.kb_x0}, kb_x1={self.kb_x1}")
+            # print(f"[FIND_KEY] x_rel={x:.0f}, key_width={self.white_key_width}, key_index={key_index:.2f}")
 
         key_found = None
         if y < self.black_key_heigth:
@@ -680,5 +689,5 @@ class VirtualKeyboard():
 
     def note_from_key(self, key):
         midi_note = self.__keyboard_piano_map[key]
-        print(f"[NOTE_FROM_KEY] key_id={key} → MIDI={midi_note}")
+        # print(f"[NOTE_FROM_KEY] key_id={key} → MIDI={midi_note}")
         return midi_note

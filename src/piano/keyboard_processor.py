@@ -175,10 +175,18 @@ class KeyboardProcessor:
                          # Triangular
                          depth_absolute = self._calculate_depth(finger_left, finger_right)
                          
-                         # === LÓGICA CORREGIDA Y UNIFICADA ===
+                         # === LÓGICA AR MEJORADA CON PLANO 3D ===
                          if self.depth_estimator:
-                             # 1. Intentar interpolación precisa (Fase 4B)
-                             if self.depth_estimator.has_bilinear_interpolation():
+                             # 1. PRIORIDAD: Usar plano matemático 3D (Fase 4B AR)
+                             if self.depth_estimator.table_plane is not None:
+                                 # Calcula distancia perpendicular al plano infinito
+                                 # Retorna: Positivo (aire), 0 (toque), Negativo (presión)
+                                 final_depth = self.depth_estimator.get_depth_relative_to_plane(
+                                     finger_left[2], finger_left[3], depth_absolute
+                                 )
+                                 
+                             # 2. Fallback: Interpolación bilineal (Fase 4B simple)
+                             elif self.depth_estimator.has_bilinear_interpolation():
                                  # Usar coordenadas RAW (finger_left[2], finger_left[3])
                                  # get_depth_relative_bilinear hace: Z_Mesa - Z_Dedo
                                  # Resultado: Positivo = Aire, Negativo = Presión
@@ -186,7 +194,7 @@ class KeyboardProcessor:
                                      finger_left[2], finger_left[3], depth_absolute
                                  )
                                  
-                             # 2. Fallback a distancia plana (Fase 3)
+                             # 3. Fallback: Distancia plana (Fase 3)
                              elif self.depth_estimator.keyboard_distance_cm:
                                  kb_dist = self.depth_estimator.keyboard_distance_cm
                                  offset = getattr(StereoConfig, 'KEYBOARD_OFFSET_CM', 0.0)

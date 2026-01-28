@@ -495,55 +495,61 @@ class DepthEstimator:
         
         return rect_pt[0, 0]
 
-    def triangulate_point_simple(self, point_left, point_right):
+    def triangulate_point_simple(self, pt_left, pt_right):
         """
-        Triangulación SIMPLE basada en disparidad horizontal.
-        Más robusto que DLT cuando la calibración no es perfecta.
-        
-        Fórmula: Z = (focal * baseline) / disparity
-        
-        IMPORTANTE: Los parámetros intrínsecos se escalan automáticamente
-        si la resolución de runtime es diferente de la de calibración.
-        
-        Args:
-            point_left: (x, y) en imagen izquierda (coordenadas en resolución RUNTIME)
-            point_right: (x, y) en imagen derecha (coordenadas en resolución RUNTIME)
-        
-        Returns:
-            tuple: (X, Y, Z) coordenadas 3D en cm, o None si falla
+        Triangulación robusta usando fórmula Z = f*B/d
+        Optimizado para coordenadas rectificadas.
         """
-        x_left, y_left = point_left
-        x_right, y_right = point_right
+        # Extraer coordenadas X
+        x_left = pt_left[0]
+        x_right = pt_right[0]
         
-        # Calcular disparidad (diferencia horizontal)
+        # Calcular disparidad
         disparity = abs(x_left - x_right)
         
-        # Validar disparidad mínima (evitar división por cero y ruido)
-        if disparity < 5:  # Menos de 5 pixeles = demasiado cerca o error
+        # Evitar división por cero o disparidad negativa (infinito/detrás)
+        if disparity <= 0.1:
             return None
+
+        # --- SECCIÓN CRÍTICA DE FOCAL ---
+        # Debemos usar la focal de la matriz P (Rectificada), no K (Original)
+        if hasattr(self, 'P1') and self.P1 is not None:
+            scale_x, scale_y = self.get_resolution_scale()
+            # P1[0,0] es la focal rectificada
+            focal = self.P1[0, 0] * scale_x
+            
+            # Ajustar centros ópticos rectificados
+            cx = self.P1[0, 2] * scale_x
+            cy = self.P1[1, 2] * scale_y
+            
+            # DEBUG TEMPORAL
+            # print(f"[DEBUG 4B] Focal Rectificada: {focal:.1f}")
+        else:
+            # Fallback (Causa del error de 37cm)
+            print("[ALERTA] Usando focal NO rectificada (K)")
+            fx, fy, cx, cy = self.get_scaled_intrinsics()
+            focal = (fx + fy) / 2
+        # --------------------------------
         
-        # Obtener parámetros intrínsecos ESCALADOS a resolución runtime
-        fx, fy, cx, cy = self.get_scaled_intrinsics()
-        focal = (fx + fy) / 2
-        
-        # Baseline en cm (ya cargado de calibración)
-        baseline = self.baseline_cm
+        # Baseline en cm
+        B = self.baseline_cm
         
         # Calcular profundidad: Z = (f * B) / d
-        # focal está en pixeles (escalado), baseline en cm → Z en cm
-        Z_cm = (focal * baseline) / disparity
+        Z_cm = (focal * B) / disparity
         
-        # Validar rango razonable (10cm a 200cm)
-        if Z_cm < 10 or Z_cm > 200:
-            return None
-        
-        # Calcular X, Y usando similar triángulos (con cx, cy escalados)
+        # Calcular X, Y usando similar triángulos
+        # Usamos las coordenadas rectificadas y el centro óptico rectificado
         X_cm = (x_left - cx) * Z_cm / focal
-        Y_cm = (y_left - cy) * Z_cm / focal
+        Y_cm = (pt_left[1] - cy) * Z_cm / focal  # Usamos Y izquierda
         
-        # Aplicar corrección de regresión lineal: Real = slope * Z + intercept
+        # Aplicar corrección de regresión lineal (si existe)
+        # Real = slope * Z + intercept
         Z_cm_corrected = self.apply_depth_correction(Z_cm)
         
+        # Validar rango razonable (10cm a 200cm)
+        if Z_cm_corrected and (Z_cm_corrected < 10 or Z_cm_corrected > 200):
+             return None
+             
         return (X_cm, Y_cm, Z_cm_corrected)
 
     def triangulate_point(self, point_left, point_right, method='simple'):
@@ -924,7 +930,35 @@ class DepthEstimator:
         
         return depth_rel
     
-    # ==================== INTERPOLACIÓN BILINEAL (Fase 4B) ====================
+    def pixel_to_point_3d(self, x_pixel, y_pixel, depth_cm):
+        """
+        Convierte un punto 2D (u, v) y una profundidad Z conocida 
+        a coordenadas 3D (X, Y, Z) usando la matriz intrínseca.
+        
+        Args:
+            x_pixel: Coordenada X en píxeles
+            y_pixel: Coordenada Y en píxeles
+            depth_cm: Profundidad Z conocida en cm
+            
+        Returns:
+            tuple: (X, Y, Z) coordenadas 3D en cm, o None si falla
+        """
+        if depth_cm is None or depth_cm <= 0:
+            return None
+            
+        # Obtener intrínsecos escalados a la resolución actual
+        fx, fy, cx, cy = self.get_scaled_intrinsics()
+        
+        # Fórmulas de proyección inversa (Pinhole Camera Model)
+        # x = (u - cx) * Z / fx
+        # y = (v - cy) * Z / fy
+        X = (x_pixel - cx) * depth_cm / fx
+        Y = (y_pixel - cy) * depth_cm / fy
+        Z = depth_cm
+        
+        return (X, Y, Z)
+    
+    # ==================== INTERPOLACIÓN BILINEAR (Fase 4B) ====================
     
     def setup_bilinear_interpolation(self, corners_2d, corner_depths):
         """

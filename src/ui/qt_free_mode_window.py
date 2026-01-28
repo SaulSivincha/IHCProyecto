@@ -311,34 +311,35 @@ class FreeModeWindow(QMainWindow):
                 calib_w = getattr(StereoConfig, 'CALIB_PIXEL_WIDTH', 1280) or 1280
                 calib_h = getattr(StereoConfig, 'CALIB_PIXEL_HEIGHT', 720) or 720
                 
-                # IMPORTANTE: Solo escalar si las resoluciones son diferentes
-                if w_frame == calib_w and h_frame == calib_h:
-                    # Resoluciones coinciden: usar TABLE_CORNERS directamente
-                    scaled_corners = StereoConfig.TABLE_CORNERS
-                    
-                    if not hasattr(self, '_corners_scale_logged'):
-                        print(f"[DEBUG] Resoluciones coinciden ({w_frame}x{h_frame})")
-                        print(f"  Usando TABLE_CORNERS sin escalar: {scaled_corners}")
-                        self._corners_scale_logged = True
-                else:
-                    # Resoluciones diferentes: escalar TABLE_CORNERS
-                    scale_x = w_frame / calib_w
-                    scale_y = h_frame / calib_h
-                    
-                    scaled_corners = []
-                    for corner in StereoConfig.TABLE_CORNERS:
-                        scaled_x = int(corner[0] * scale_x)
-                        scaled_y = int(corner[1] * scale_y)
-                        scaled_corners.append([scaled_x, scaled_y])
-                    
-                    if not hasattr(self, '_corners_scale_logged'):
-                        print(f"[DEBUG] Escalando TABLE_CORNERS:")
-                        print(f"  Calibración: {calib_w}x{calib_h}")
-                        print(f"  Actual: {w_frame}x{h_frame}")
-                        print(f"  Escala: {scale_x:.2f}x, {scale_y:.2f}y")
-                        print(f"  Original: {StereoConfig.TABLE_CORNERS}")
-                        print(f"  Escalado: {scaled_corners}")
-                        self._corners_scale_logged = True
+                # Transformar esquinas de RAW a DISPLAY (Rotación)
+                # Esto es crucial porque TABLE_CORNERS está en RAW, pero dibujamos sobre frame_left_display
+                
+                # 1. Obtener esquinas RAW
+                raw_corners = StereoConfig.TABLE_CORNERS
+                
+                # 2. Transformar a DISPLAY usando resolución de calibración
+                display_corners_calib = [
+                    StereoConfig.transform_point_for_display(p, calib_w, calib_h)
+                    for p in raw_corners
+                ]
+                
+                # 3. Escalar a resolución actual del frame
+                scale_x = w_frame / calib_w
+                scale_y = h_frame / calib_h
+                
+                scaled_corners = []
+                for corner in display_corners_calib:
+                    scaled_x = int(corner[0] * scale_x)
+                    scaled_y = int(corner[1] * scale_y)
+                    scaled_corners.append([scaled_x, scaled_y])
+                
+                if not hasattr(self, '_corners_scale_logged'):
+                    print(f"[DEBUG] AR Transform & Scale:")
+                    print(f"  Calib Res: {calib_w}x{calib_h} -> Frame: {w_frame}x{h_frame}")
+                    print(f"  Raw Corners: {raw_corners}")
+                    print(f"  Disp Corners: {display_corners_calib}")
+                    print(f"  Final Scaled: {scaled_corners}")
+                    self._corners_scale_logged = True
                 
                 self.virtual_keyboard.draw_perspective(
                     frame_left_display, 

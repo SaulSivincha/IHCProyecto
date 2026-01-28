@@ -517,9 +517,20 @@ class QtCalibrationManager(QObject):
             # IR A NUEVA FASE: Definición de Mesa
             self._start_table_definition()
             
+        elif self.current_phase == "table_definition":
+            self._save_table_definition() # Guardar coordenadas
+            self.current_phase = "table_definition_complete"
+            self._start_corner_depth_calibration() # Pasar a tocar esquinas
+            
         elif self.current_phase == "table_definition_complete":
             # Fase 4B se inicia automáticamente, pero por si acaso
             self._start_corner_depth_calibration()
+            
+        elif self.current_phase == "corner_depth_calibration":
+            # El usuario confirmó las instrucciones (Intro)
+            # Ocultamos el botón para que no confunda, la detección ya corre en background
+            self.window.show_continue_button(False)
+            self.window.set_status("👆 Buscando dedo en la esquina...", "#00FF00")
         
         elif self.current_phase == "phase4b_complete":
             # Fase 4B completada - finalizar calibración
@@ -1829,74 +1840,57 @@ class QtCalibrationManager(QObject):
     def _update_table_definition_frame(self):
         """Muestra el video y dibuja el rectángulo (durante drag o finalizado)"""
         if not self.cap_left:
-             self.cap_left = self._get_or_create_camera("left")
-             
+            self.cap_left = self._get_or_create_camera("left")
+            
         frame_left = None
         if self.cap_left:
-             _, frame_left = self.cap_left.next(wait=0.033)
-             
+            _, frame_left = self.cap_left.next(wait=0.033)
+            
         if frame_left is None:
             return
-            
-        # Dibujar sobre el frame
-        display = frame_left.copy()
-        
-        # Aplicar transformaciones para display
-        display = StereoConfig.apply_display_transform(StereoConfig.apply_camera_transforms(display))
 
-        # Obtener dimensiones del label y frame para conversión de coordenadas
-        lbl_w = self.window.camera_left_label.width()
-        lbl_h = self.window.camera_left_label.height()
-        frame_h, frame_w = display.shape[:2]
+        from ..vision.stereo_config import StereoConfig
+        h, w = frame_left.shape[:2]
+
+        # 1. Usar TRANSFORMACIÓN DE DISPLAY (Rotada 180) para que se vea bien
+        display = StereoConfig.apply_display_transform(frame_left.copy())
+        h_disp, w_disp = display.shape[:2]
         
-        # Si estamos arrastrando, dibujar rectángulo en tiempo real
+        # 2. Dibujar rectángulo
+        # CASO A: Estamos arrastrando (Coordenadas de mouse son Display/Rotadas)
         if self.is_dragging and self.drag_start_point and self.drag_current_point:
-            # Convertir coordenadas de label a frame
-            x1 = int(self.drag_start_point[0] * (frame_w / lbl_w))
-            y1 = int(self.drag_start_point[1] * (frame_h / lbl_h))
-            x2 = int(self.drag_current_point[0] * (frame_w / lbl_w))
-            y2 = int(self.drag_current_point[1] * (frame_h / lbl_h))
+            # Escalar coordenadas de mouse (label) a frame
+            lbl_w = self.window.camera_left_label.width()
+            lbl_h = self.window.camera_left_label.height()
             
-            # Dibujar rectángulo semitransparente
+            x1 = int(self.drag_start_point[0] * (w_disp / lbl_w))
+            y1 = int(self.drag_start_point[1] * (h_disp / lbl_h))
+            x2 = int(self.drag_current_point[0] * (w_disp / lbl_w))
+            y2 = int(self.drag_current_point[1] * (h_disp / lbl_h))
+            
+            # Visual UX: Overlay transparente
             overlay = display.copy()
             cv2.rectangle(overlay, (x1, y1), (x2, y2), (0, 255, 0), -1)
             cv2.addWeighted(overlay, 0.3, display, 0.7, 0, display)
             
-            # Dibujar borde del rectángulo
-            cv2.rectangle(display, (x1, y1), (x2, y2), (0, 255, 0), 3)
+            # Borde sólido y esquinas
+            cv2.rectangle(display, (x1, y1), (x2, y2), (0, 255, 0), 2)
+            # Dibujar esquinas resaltadas
+            for corner in [(x1,y1), (x2,y1), (x2,y2), (x1,y2)]:
+                cv2.circle(display, corner, 4, (255, 255, 255), -1)
+                
+            # Texto flotante
+            cv2.putText(display, f"{abs(x2-x1)}x{abs(y2-y1)}", (x1, y1-10), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
             
-            # Dibujar esquinas con círculos
-            for pt in [(x1, y1), (x2, y1), (x2, y2), (x1, y2)]:
-                cv2.circle(display, pt, 8, (0, 255, 0), -1)
-                cv2.circle(display, pt, 8, (255, 255, 255), 2)
-            
-            # Mostrar dimensiones
-            width_px = abs(x2 - x1)
-            height_px = abs(y2 - y1)
-            text = f"{width_px}x{height_px}px"
-            cv2.putText(display, text, (min(x1, x2) + 5, min(y1, y2) - 10), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-        
-        # Si ya hay esquinas definidas (después de soltar), dibujar el rectángulo final
-        elif len(self.table_corners) == 4:
-            pts = [self.table_corners[i] for i in range(4)]
-            
-            # Dibujar rectángulo relleno semitransparente
-            overlay = display.copy()
-            pts_array = np.array(pts, np.int32).reshape((-1, 1, 2))
-            cv2.fillPoly(overlay, [pts_array], (0, 255, 0))
-            cv2.addWeighted(overlay, 0.3, display, 0.7, 0, display)
-            
-            # Dibujar bordes
-            cv2.polylines(display, [pts_array], True, (0, 255, 0), 3)
-            
-            # Dibujar esquinas numeradas
-            for i, pt in enumerate(pts):
-                cv2.circle(display, pt, 8, (0, 255, 0), -1)
-                cv2.circle(display, pt, 8, (255, 255, 255), 2)
-                cv2.putText(display, str(i+1), (pt[0]+12, pt[1]-8), 
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
-            
+        # CASO B: Ya tenemos esquinas guardadas (Están en RAW, convertir a Display)
+        elif self.table_corners:
+            for i, pt in enumerate(self.table_corners):
+                # Convertir RAW -> DISPLAY para dibujar en el lugar correcto
+                disp_pt = StereoConfig.transform_point_for_display(pt, w, h)
+                cv2.circle(display, disp_pt, 8, (0, 255, 0), -1)
+                cv2.putText(display, str(i+1), (disp_pt[0]+10, disp_pt[1]), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255,255,255), 2)
+
         self.window.update_frames(frame_left=display)
 
     def _on_drag_started(self, camera_name, x, y):
@@ -1926,21 +1920,18 @@ class QtCalibrationManager(QObject):
     
     def _on_drag_ended(self, camera_name, x, y):
         """Maneja el fin del arrastre - crea el rectángulo"""
-        if self.current_phase != "table_definition":
-            return
-        if camera_name != "left":
-            return
-        if not self.is_dragging:
-            return
-            
+        if self.current_phase != "table_definition": return
+        if camera_name != "left": return
+        if not self.is_dragging: return
+        
         self.is_dragging = False
         self.drag_current_point = (x, y)
         
-        # Obtener dimensiones para conversión
+        # Obtener dimensiones
         lbl_w = self.window.camera_left_label.width()
         lbl_h = self.window.camera_left_label.height()
         
-        # Obtener resolución real del frame
+        # Resolución real
         frame_w, frame_h = self.resolution
         if self.cap_left:
             cw = self.cap_left.video_width
@@ -1948,41 +1939,42 @@ class QtCalibrationManager(QObject):
             if cw > 0 and ch > 0:
                 frame_w, frame_h = int(cw), int(ch)
         
-        # Convertir coordenadas de label a frame
-        x1 = int(self.drag_start_point[0] * (frame_w / lbl_w))
-        y1 = int(self.drag_start_point[1] * (frame_h / lbl_h))
-        x2 = int(x * (frame_w / lbl_w))
-        y2 = int(y * (frame_h / lbl_h))
+        # 1. Obtener coordenadas en espacio DISPLAY (Rotado)
+        x1_disp = int(self.drag_start_point[0] * (frame_w / lbl_w))
+        y1_disp = int(self.drag_start_point[1] * (frame_h / lbl_h))
+        x2_disp = int(self.drag_current_point[0] * (frame_w / lbl_w))
+        y2_disp = int(self.drag_current_point[1] * (frame_h / lbl_h))
         
-        # Asegurar que tenemos un rectángulo válido (mínimo 50x50 píxeles)
-        if abs(x2 - x1) < 50 or abs(y2 - y1) < 50:
-            self.window.set_status("⚠️ Área muy pequeña. Intenta de nuevo arrastrando más.", "#FF6600")
-            self.drag_start_point = None
-            self.drag_current_point = None
-            return
+        # Ordenar coordenadas (min/max)
+        left = min(x1_disp, x2_disp)
+        right = max(x1_disp, x2_disp)
+        top = min(y1_disp, y2_disp)
+        bottom = max(y1_disp, y2_disp)
         
-        # Crear las 4 esquinas del rectángulo en orden: TL, TR, BR, BL
-        min_x, max_x = min(x1, x2), max(x1, x2)
-        min_y, max_y = min(y1, y2), max(y1, y2)
-        
-        self.table_corners = [
-            (min_x, min_y),  # Top-Left
-            (max_x, min_y),  # Top-Right
-            (max_x, max_y),  # Bottom-Right
-            (min_x, max_y)   # Bottom-Left
+        # Definir las 4 esquinas en orden: TL, TR, BR, BL (en espacio Display)
+        corners_display = [
+            (left, top),      # TL
+            (right, top),     # TR
+            (right, bottom),  # BR
+            (left, bottom)    # BL
         ]
         
-        print(f"[Drag] Finalizado: ({x1},{y1}) -> ({x2},{y2})")
-        print(f"[Drag] Rectángulo: {self.table_corners}")
+        # 2. CONVERTIR A RAW (Invertir rotación) para guardar
+        from ..vision.stereo_config import StereoConfig
+        self.table_corners = []
         
-        # Guardar y pasar a Fase 4B
-        self.window.set_status("✅ ¡Área definida! Preparando calibración de profundidad...", "#00FF00")
-        self.current_phase = "table_definition_complete"
-        self._save_table_definition()
+        for pt in corners_display:
+            # transform_point_for_display es simétrica para rotación 180
+            # (Raw -> Display es igual que Display -> Raw)
+            raw_pt = StereoConfig.transform_point_for_display(pt, frame_w, frame_h)
+            self.table_corners.append(raw_pt)
+            
+        print(f"[Drag] Rectángulo definido (RAW): {self.table_corners}")
         
-        # Iniciar Fase 4B después de un breve delay
-        QTimer.singleShot(1000, self._start_corner_depth_calibration)
-        
+        # CAMBIO: Mostrar botón en lugar de usar Timer automático
+        self.window.set_status("✅ Área definida. Presiona CONTINUAR para calibrar profundidad.", "#00FF00")
+        self.window.show_continue_button(True)
+
     def _on_frame_clicked(self, camera_name, x, y):
         """Maneja el clic en el video (ya no usado en Fase 4, pero mantenido para compatibilidad)"""
         # En Fase 4 usamos drag, no clics individuales
@@ -1992,6 +1984,27 @@ class QtCalibrationManager(QObject):
         if camera_name != "left":
             print("Por favor, marca en la cámara izquierda.")
             return
+
+
+    def _finish_table_definition(self):
+        """Finaliza la Fase 4A e inicia OBLIGATORIAMENTE la Fase 4B (Toque)"""
+        if not self.table_corners or len(self.table_corners) < 4:
+            self.window.set_status("⚠️ Error: Dibuja el rectángulo primero", "#FF0000")
+            return
+
+        print("\n[PLANO 3D] Zona definida. Iniciando Fase 4B (Toque manual)...")
+        
+        # Opcional: Intentar cálculo automático como respaldo
+        try:
+            # Puedes dejar aquí tu lógica de _find_corners_in_right_camera 
+            # pero NO llames a _save_table_definition todavía.
+            pass
+        except:
+            pass
+
+        # Cambiamos el estado y saltamos a la calibración de profundidad por toque
+        self.current_phase = "table_definition_complete"
+        self._start_corner_depth_calibration()
 
     def _save_table_definition(self):
         """
@@ -2018,7 +2031,10 @@ class QtCalibrationManager(QObject):
             }
             
             # NUEVO: Intentar calcular plano 3D
-            plane_coeffs = self._calculate_table_plane_3d()
+            # COMENTAR ESTO: Evita que el programa se cuelgue intentando calcularlo solo
+            # plane_coeffs = self._calculate_table_plane_3d()
+            plane_coeffs = None
+            
             if plane_coeffs is not None:
                 table_def['plane_3d'] = {
                     'coefficients': list(plane_coeffs),
@@ -2105,22 +2121,24 @@ class QtCalibrationManager(QObject):
             print(f"  [ERROR] No se pudo cargar depth_estimator: {e}")
             return None
         
-        # IMPORTANTE: Si CAMERAS_SWAPPED está activo, las esquinas están en el orden
-        # incorrecto para triangulación. Necesitamos intercambiarlas.
-        corners_left_for_triangulation = self.table_corners
-        corners_right_for_triangulation = corners_right
+        # [BLOQUE CORREGIDO]
+        # 1. Rectificar esquinas detectadas usando sus matrices originales
+        rect_corners_L = [depth_estimator.rectify_point(p, is_left=True) for p in self.table_corners]
+        rect_corners_R = [depth_estimator.rectify_point(p, is_left=False) for p in corners_right]
         
+        # 2. Intercambiar para triangulación si es necesario
         if StereoConfig.CAMERAS_SWAPPED:
-            # Intercambiar: lo que llamamos "left" es realmente "right" y viceversa
-            print("  [INFO] CAMERAS_SWAPPED activo - intercambiando esquinas para triangulación")
-            corners_left_for_triangulation = corners_right
-            corners_right_for_triangulation = self.table_corners
-        
-        # Triangular las 4 esquinas
-        corners_3d = depth_estimator.triangulate_corners(
-            corners_left_for_triangulation, 
-            corners_right_for_triangulation
-        )
+            pts_tri_L = rect_corners_R
+            pts_tri_R = rect_corners_L
+        else:
+            pts_tri_L = rect_corners_L
+            pts_tri_R = rect_corners_R
+            
+        # 3. Triangular (Ya están rectificados, pasamos directamente a simple)
+        corners_3d = []
+        for i in range(4):
+            p3d = depth_estimator.triangulate_point_simple(pts_tri_L[i], pts_tri_R[i])
+            if p3d is not None: corners_3d.append(p3d)
         
         if corners_3d is None:
             print("  [ERROR] Triangulación fallida")
@@ -2158,7 +2176,8 @@ class QtCalibrationManager(QObject):
             print(f"[INFO] Intercept actual: {self.depth_estimator.depth_intercept:.4f}")
         except Exception as e:
             print(f"[ERROR] No se pudo cargar depth_estimator: {e}")
-            self._finish_calibration_without_4b()
+            self.window.set_status(f"⚠️ Error cargando calibración: {e}", "#FF0000")
+            # self._finish_calibration_without_4b() # NO SALTAR la fase si hay error
             return
         # -------------------------------------------------------
         
@@ -2197,130 +2216,161 @@ class QtCalibrationManager(QObject):
         """Actualiza el frame durante la calibración de esquinas"""
         if not self.cap_left or not self.cap_right:
             return
+            
+        # 1. Obtener frames CRUDOS
+        _, frame_left_raw = self.cap_left.next(wait=0.033)
+        _, frame_right_raw = self.cap_right.next(wait=0.033)
         
-        _, frame_left = self.cap_left.next(wait=0.033)
-        _, frame_right = self.cap_right.next(wait=0.033)
-        
-        if frame_left is None or frame_right is None:
+        if frame_left_raw is None or frame_right_raw is None:
             return
+
+        from ..vision.stereo_config import StereoConfig
+        h, w = frame_left_raw.shape[:2]
+
+        # 2. Generar frames DISPLAY (Rotados 180) para visualización y DETECCIÓN
+        # MediaPipe funciona mucho mejor con manos "derechas" (dedos hacia arriba)
+        display_left = StereoConfig.apply_display_transform(frame_left_raw.copy())
+        display_right = StereoConfig.apply_display_transform(frame_right_raw.copy())
         
-        # 1. Aplicar transformaciones de cámara (geometría correcta para detección)
-        frame_left = StereoConfig.apply_camera_transforms(frame_left)
-        frame_right = StereoConfig.apply_camera_transforms(frame_right)
+        # Visual UX: Dibujar camino recorrido (Líneas entre esquinas)
+        if self.current_corner_index > 0:
+            for i in range(self.current_corner_index):
+                # Obtener puntos consecutivos
+                p1_raw = self.table_corners[i]
+                p2_raw = self.table_corners[i+1] # Siempre existe porque corners tiene 4 ptos
+                
+                # Transformar a display
+                p1_disp = StereoConfig.transform_point_for_display(p1_raw, w, h)
+                p2_disp = StereoConfig.transform_point_for_display(p2_raw, w, h)
+                
+                # Dibujar línea
+                if i == self.current_corner_index - 1:
+                     # Último tramo hacia el objetivo actual: Amarillo/Pulsante
+                     cv2.line(display_left, p1_disp, p2_disp, (0, 255, 255), 2)
+                else:
+                     # Tramos completados: Verde
+                     cv2.line(display_left, p1_disp, p2_disp, (0, 255, 0), 2)
+
+        # 3. Dibujar objetivo (Círculo amarillo PULSANTE y PROGRESO)
+        # Convertir coordenada de la esquina (RAW) a DISPLAY
+        corner_raw = self.table_corners[self.current_corner_index]
+        corner_disp = StereoConfig.transform_point_for_display(corner_raw, w, h)
         
-        h, w = frame_left.shape[:2]
+        # Calcular pulso
+        pulse = abs(np.sin(time.time() * 5))
+        radius = int(12 + (pulse * 3))
         
-        # 2. Detectar mano en el espacio RAW (antes de display transform)
-        import copy
+        # Color base (Amarillo)
+        color_target = (0, 255, 255) 
         
-        found_left = self.hand_detector.findHands(frame_left)
-        landmarks_left = None
-        if found_left and self.hand_detector.results.multi_hand_landmarks:
-            landmarks_left = copy.deepcopy(self.hand_detector.results.multi_hand_landmarks[0])
+        # Dibujar anillo de progreso
+        count = len(self.corner_depth_samples[self.current_corner_index])
+        total = self.samples_per_corner
         
-        # Detector para cámara derecha
-        if not hasattr(self, 'hand_detector_right') or self.hand_detector_right is None:
-            self.hand_detector_right = HandDetector(
-                staticImageMode=False,
-                maxHands=1,
-                detectionCon=0.7,
-                trackCon=0.5
-            )
+        # Anillo de fondo (Gris)
+        cv2.circle(display_left, corner_disp, 22, (100, 100, 100), 3)
         
-        found_right = self.hand_detector_right.findHands(frame_right)
-        landmarks_right = None
-        if found_right and self.hand_detector_right.results.multi_hand_landmarks:
-            landmarks_right = copy.deepcopy(self.hand_detector_right.results.multi_hand_landmarks[0])
+        # Anillo de progreso (Verde)
+        if total > 0:
+            angle = int((count / total) * 360)
+            # Dibujar arco
+            cv2.ellipse(display_left, corner_disp, (22, 22), -90, 0, angle, (0, 255, 0), 3)
         
-        # 3. Preparar display (aplicar transformación de rotación 180°)
-        display = StereoConfig.apply_display_transform(frame_left)
+        # Dibujar target pulsante
+        cv2.circle(display_left, corner_disp, radius, color_target, 2)
+        cv2.circle(display_left, corner_disp, 3, color_target, -1)
         
-        # 4. Dibujar esquinas en espacio DISPLAY (donde fueron definidas en Fase 4)
-        corner_colors = [(255, 107, 107), (78, 205, 196), (69, 183, 209), (150, 206, 180)]  # BGR
-        for i, corner in enumerate(self.table_corners):
-            color = corner_colors[i]
-            thickness = 3 if i == self.current_corner_index else 1
-            radius = 25 if i == self.current_corner_index else 10
+        # 4. Detectar mano en DISPLAY (para dibujar feedback visual)
+        self.hand_detector.findHands(display_left)
+        # Usamos drawHands y acceso directo en lugar de findPosition
+        self.hand_detector.drawHands(display_left)
+        
+        pt_left_display = None
+        lm_display = None
+        if self.hand_detector.results.multi_hand_landmarks:
+             lm_display = self.hand_detector.results.multi_hand_landmarks[0]
+             
+        if lm_display:
+            # Obtener índice (8)
+            idx = lm_display.landmark[8]
+            h_disp, w_disp = display_left.shape[:2]
+            pt_left_display = (int(idx.x * w_disp), int(idx.y * h_disp))
             
-            cv2.circle(display, tuple(corner), radius, color, thickness)
-            cv2.putText(display, str(i+1), (corner[0]-5, corner[1]+5), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
+            # Dibujar punta
+            cv2.circle(display_left, pt_left_display, 8, (0, 0, 255), -1)
             
-            if i == self.current_corner_index:
-                pulse = int(15 + 10 * np.sin(time.time() * 5))
-                cv2.circle(display, tuple(corner), pulse, color, 2)
-        
-        # 5. Procesar detección de manos
-        if landmarks_left and landmarks_right:
-            # Obtener punta del índice en espacio RAW
-            tip_left_raw = landmarks_left.landmark[8]
-            tip_right_raw = landmarks_right.landmark[8]
-            
-            pt_left_raw = (int(tip_left_raw.x * w), int(tip_left_raw.y * h))
-            pt_right_raw = (int(tip_right_raw.x * w), int(tip_right_raw.y * h))
-            
-            # Transformar coordenadas al espacio DISPLAY (rotación 180°)
-            # Rotación 180° = (w - x - 1, h - y - 1)
-            pt_left_display = (w - 1 - pt_left_raw[0], h - 1 - pt_left_raw[1])
-            
-            # Dibujar dedo en display
-            cv2.circle(display, pt_left_display, 10, (0, 255, 0), -1)
-            cv2.circle(display, pt_left_display, 12, (255, 255, 255), 2)
-            
-            # Verificar distancia a esquina actual (en espacio display)
-            corner = self.table_corners[self.current_corner_index]
-            distance_to_corner = np.sqrt((pt_left_display[0] - corner[0])**2 + (pt_left_display[1] - corner[1])**2)
-            
-            # Línea desde dedo a esquina
-            line_color = (0, 255, 0) if distance_to_corner < 60 else (0, 165, 255)
-            cv2.line(display, pt_left_display, tuple(corner), line_color, 2)
-            
-            if distance_to_corner < 60:
-                # Triangular profundidad usando coordenadas RAW
-                try:
-                    if StereoConfig.CAMERAS_SWAPPED:
-                        pt_for_left = pt_right_raw
-                        pt_for_right = pt_left_raw
-                    else:
-                        pt_for_left = pt_left_raw
-                        pt_for_right = pt_right_raw
-                    
-                    point_3d = self.depth_estimator.triangulate_point(pt_for_left, pt_for_right, method='DLT')
-                        
-                    if point_3d and abs(point_3d[2]) < 100:
-                        depth_cm = point_3d[2]
-                        self.corner_depth_samples[self.current_corner_index].append(depth_cm)
-                        
-                        cv2.putText(display, f"Z: {depth_cm:.1f}cm", (pt_left_display[0]+15, pt_left_display[1]-10),
-                                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
-                        
-                        samples = len(self.corner_depth_samples[self.current_corner_index])
-                        corner_names = ["Sup-Izq", "Sup-Der", "Inf-Der", "Inf-Izq"]
-                        self.window.set_status(
-                            f"✅ {corner_names[self.current_corner_index]}: {samples}/{self.samples_per_corner} muestras | Z={depth_cm:.1f}cm",
-                            "#00FF00"
-                        )
-                        
-                        if samples >= self.samples_per_corner:
-                            self._advance_to_next_corner()
-                except Exception as e:
-                    print(f"[4B] Error triangulando: {e}")
-            else:
-                cv2.putText(display, f"Acerca a esquina {self.current_corner_index+1}", 
-                           (pt_left_display[0]+15, pt_left_display[1]-10),
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 165, 255), 2)
+            # Calcular distancia visual al objetivo
+            distance_to_corner = np.hypot(pt_left_display[0] - corner_disp[0], pt_left_display[1] - corner_disp[1])
         else:
-            cv2.putText(display, "Muestra tu mano", (50, 50),
-                       cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
-        
-        # Mostrar progreso
-        total_samples = sum(len(s) for s in self.corner_depth_samples.values())
-        total_needed = self.samples_per_corner * 4
-        progress_pct = int(100 * total_samples / total_needed)
-        cv2.putText(display, f"Progreso: {progress_pct}%", (10, h-20),
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-        
-        self.window.update_frames(frame_left=display)
+            distance_to_corner = 999
+
+        # 5. Detectar mano en CÁMARA DERECHA (Display)
+        # Usar display frame también para asegurar consistencia
+        if not hasattr(self, 'hand_detector_right') or self.hand_detector_right is None:
+            from ..vision.hand_detector import HandDetector
+            self.hand_detector_right = HandDetector(maxHands=1, detectionCon=0.5)
+            
+        self.hand_detector_right.findHands(display_right)
+        pt_right_display = None
+        if self.hand_detector_right.results.multi_hand_landmarks:
+             lm_right_display = self.hand_detector_right.results.multi_hand_landmarks[0]
+             idx_R = lm_right_display.landmark[8]
+             h_disp, w_disp = display_right.shape[:2]
+             pt_right_display = (int(idx_R.x * w_disp), int(idx_R.y * h_disp))
+
+        # 6. Lógica de Medición (Transformar DISPLAY -> RAW)
+        if pt_left_display and pt_right_display and distance_to_corner < 60:
+            try:
+                # A. Invertir rotación para volver al espacio del sensor (Raw)
+                pt_L_raw = StereoConfig.transform_point_for_display(pt_left_display, w, h)
+                pt_R_raw = StereoConfig.transform_point_for_display(pt_right_display, w, h)
+                
+                # B. RECTIFICAR PRIMERO (Cada sensor con su propia matriz K/D)
+                # Sensor Left (ID 1) usa is_left=True, Sensor Right (ID 2) usa is_left=False
+                rect_L_clean = self.depth_estimator.rectify_point(pt_L_raw, is_left=True)
+                rect_R_clean = self.depth_estimator.rectify_point(pt_R_raw, is_left=False)
+                
+                # C. AHORA SWAP para la triangulación
+                # Si están cruzadas, la cámara derecha (ID 2) es la "izquierda" matemática
+                if StereoConfig.CAMERAS_SWAPPED:
+                    pt_for_tri_L = rect_R_clean # ID 2 rectificado
+                    pt_for_tri_R = rect_L_clean # ID 1 rectificado
+                else:
+                    pt_for_tri_L = rect_L_clean
+                    pt_for_tri_R = rect_R_clean
+                
+                # D. Triangular puntos ya rectificados y correctamente ordenados
+                point_3d = self.depth_estimator.triangulate_point(pt_for_tri_L, pt_for_tri_R, method='simple')
+                
+                if point_3d and 10 < point_3d[2] < 150:
+                    depth_cm = point_3d[2]
+                    self.corner_depth_samples[self.current_corner_index].append(depth_cm)
+                    
+                    # Mostrar texto mejorado (Con fondo)
+                    if pt_left_display:
+                        text = f"Z: {depth_cm:.1f}cm"
+                        (tw, th), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.8, 2)
+                        tx, ty = pt_left_display[0]+20, pt_left_display[1]
+                        
+                        # Fondo oscuro
+                        cv2.rectangle(display_left, (tx-5, ty-th-5), (tx+tw+5, ty+5), (0, 0, 0), -1)
+                        # Texto verde
+                        cv2.putText(display_left, text, (tx, ty), 
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
+                        
+                        # Feedback visual en el target (Cambiar a verde si detecta)
+                        cv2.circle(display_left, corner_disp, radius, (0, 255, 0), 2)
+                    
+                    # Progreso
+                    count = len(self.corner_depth_samples[self.current_corner_index])
+                    self.window.set_status(f"Capturando... {count}/{self.samples_per_corner}", "#00FF00")
+                    
+                    if count >= self.samples_per_corner:
+                        self._advance_to_next_corner()
+            except Exception as e:
+                print(f"Error 4B: {e}")
+
+        self.window.update_frames(frame_left=display_left)
     
     def _advance_to_next_corner(self):
         """Avanza a la siguiente esquina o finaliza"""
@@ -2334,48 +2384,91 @@ class QtCalibrationManager(QObject):
             self._show_corner_instructions()
     
     def _finish_corner_depth_calibration(self):
-        """Finaliza la Fase 4B y guarda los resultados"""
+        """Finaliza la Fase 4B: Calcula el PLANO MATEMÁTICO 3D"""
         self.timer.stop()
         
-        # Calcular profundidad promedio para cada esquina
         corner_depths = []
+        corners_3d = []
+        
+        print("\n[AR] Calculando geometría de la mesa...")
+        
         for i in range(4):
             samples = self.corner_depth_samples[i]
             if samples:
-                # Usar mediana para robustez contra outliers
+                # 1. Obtener profundidad promedio medida
                 avg_depth = float(np.median(samples))
                 corner_depths.append(round(avg_depth, 1))
-                print(f"[4B] Esquina {i}: {len(samples)} muestras, mediana={avg_depth:.1f}cm")
+                
+                # 2. Recuperar la coordenada 2D de esa esquina (de Fase 4)
+                pixel_x, pixel_y = self.table_corners[i]
+                
+                # 3. Convertir a punto 3D real (X, Y, Z)
+                point_3d = self.depth_estimator.pixel_to_point_3d(pixel_x, pixel_y, avg_depth)
+                
+                if point_3d:
+                    corners_3d.append(point_3d)
+                    print(f"  📍 Esquina {i}: 2D({pixel_x}, {pixel_y}) + Z({avg_depth:.1f}) -> 3D{point_3d}")
             else:
-                # Fallback a distancia del teclado
-                fallback = self.depth_estimator.keyboard_distance_cm or 38.0
+                # Fallback
+                fallback = self.depth_estimator.keyboard_distance_cm or 41.0
                 corner_depths.append(fallback)
-                print(f"[4B] Esquina {i}: Sin muestras, usando fallback={fallback}cm")
         
-        # Guardar en calibration.json
-        self._save_corner_depths(corner_depths)
+        # 4. Calcular el Plano Matemático (ax + by + cz + d = 0)
+        plane_coeffs = None
+        if len(corners_3d) >= 3:
+            plane_coeffs = self.depth_estimator.compute_table_plane(corners_3d)
+        
+        # 5. Guardar todo en el JSON
+        self._save_ar_calibration(corner_depths, plane_coeffs)
         
         # Mostrar resumen
-        self.window.show_intro_screen(
-            "¡CALIBRACIÓN COMPLETA!",
-            [
-                "✅ Fase 4B completada exitosamente",
-                "",
-                "<b>Profundidades calibradas:</b>",
-                f"  📍 Sup-Izq: {corner_depths[0]:.1f} cm",
-                f"  📍 Sup-Der: {corner_depths[1]:.1f} cm",
-                f"  📍 Inf-Der: {corner_depths[2]:.1f} cm",
-                f"  📍 Inf-Izq: {corner_depths[3]:.1f} cm",
-                "",
-                "🎹 <b>El sesgo horizontal/vertical será corregido</b>",
-                "",
-                "Presiona <b>Continuar</b> para finalizar."
-            ]
-        )
+        msg = ["✅ Mesa 3D calibrada exitosamente", ""]
+        if plane_coeffs:
+            a, b, c, d = plane_coeffs
+            msg.append(f"📐 Plano detectado: {a:.2f}x + {b:.2f}y + {c:.2f}z + {d:.1f} = 0")
+            msg.append("🎹 El piano se ajustará a la inclinación de tu mesa.")
+        else:
+            msg.append("⚠️ No se pudo calcular el plano (usando modo plano simple).")
         
-        self.window.set_status("✅ Calibración de profundidad completada", "#00FF00")
+        msg.extend([
+            "",
+            "<b>Profundidades calibradas:</b>",
+            f"  📍 Sup-Izq: {corner_depths[0]:.1f} cm",
+            f"  📍 Sup-Der: {corner_depths[1]:.1f} cm",
+            f"  📍 Inf-Der: {corner_depths[2]:.1f} cm",
+            f"  📍 Inf-Izq: {corner_depths[3]:.1f} cm",
+        ])
+            
+        self.window.show_intro_screen("¡CALIBRACIÓN AR COMPLETA!", msg)
+        self.window.set_status("✅ Calibración AR lista", "#00FF00")
         self.window.show_continue_button(True)
         self.current_phase = "phase4b_complete"
+    
+    def _save_ar_calibration(self, corner_depths, plane_coeffs):
+        """Guarda los datos avanzados de AR en el JSON"""
+        try:
+            with open(CalibrationConfig.CALIBRATION_FILE, 'r') as f:
+                data = json.load(f)
+            
+            if 'table_definition' not in data:
+                data['table_definition'] = {}
+                
+            # Guardar profundidades simples
+            data['table_definition']['corner_depths'] = corner_depths
+            
+            # Guardar el plano matemático
+            if plane_coeffs:
+                data['table_definition']['plane_3d'] = {
+                    'coefficients': list(plane_coeffs),
+                    'description': "Plano ax + by + cz + d = 0"
+                }
+            
+            with open(CalibrationConfig.CALIBRATION_FILE, 'w') as f:
+                json.dump(data, f, indent=4)
+            print("[OK] Datos AR guardados en calibration.json")
+            
+        except Exception as e:
+            print(f"[ERROR] Al guardar AR: {e}")
     
     def _save_corner_depths(self, corner_depths):
         """Guarda las profundidades de esquinas en calibration.json"""

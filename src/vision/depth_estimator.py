@@ -221,15 +221,22 @@ class DepthEstimator:
             table_def = data['table_definition']
             
             # Cargar esquinas 2D para interpolación
-            if 'corners' in table_def:
+            if 'corners' in table_def and table_def['corners']:
                 corners = table_def['corners']
                 self.bilinear_corners = np.array(corners, dtype=np.float32)
                 # Calcular bounding box
-                self.bilinear_x_min = min(c[0] for c in corners)
-                self.bilinear_x_max = max(c[0] for c in corners)
-                self.bilinear_y_min = min(c[1] for c in corners)
-                self.bilinear_y_max = max(c[1] for c in corners)
-                print(f"  [INFO] Esquinas del teclado cargadas para interpolación")
+                try:
+                    self.bilinear_x_min = min(c[0] for c in corners)
+                    self.bilinear_x_max = max(c[0] for c in corners)
+                    self.bilinear_y_min = min(c[1] for c in corners)
+                    self.bilinear_y_max = max(c[1] for c in corners)
+                    print(f"  [INFO] Esquinas del teclado cargadas para interpolación")
+                except Exception as e:
+                    print(f"  [ALERTA] Error procesando corners: {e}")
+                    self.bilinear_corners = None
+            else:
+                self.bilinear_corners = None
+                print(f"  [INFO] No hay esquinas definidas ('corners' vacío o ausente)")
             
             # Cargar profundidades de esquinas (Fase 4B)
             if 'corner_depths' in table_def:

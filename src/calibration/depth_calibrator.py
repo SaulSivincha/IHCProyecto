@@ -113,19 +113,37 @@ class DepthCalibrator:
             index_right = landmarks_right[8]
         
         # Convertir a coordenadas de píxel
-        x_left = index_left.x * self.width
-        y_left = index_left.y * self.height
-        x_right = index_right.x * self.width
-        y_right = index_right.y * self.height
+        pt_L = (index_left.x * self.width, index_left.y * self.height)
+        pt_R = (index_right.x * self.width, index_right.y * self.height)
         
         # Triangular sin corrección (usar factor 1.0 temporalmente)
         original_factor = self.depth_estimator.DEPTH_CORRECTION_FACTOR
         self.depth_estimator.DEPTH_CORRECTION_FACTOR = 1.0
         
-        point_3d = self.depth_estimator.triangulate_point_DLT(
-            (x_left, y_left), (x_right, y_right)
-        )
-        
+        # --- CORRECCIÓN FASE 3: Unificar lógica con Fase 4B ---
+        try:
+            from ..vision.stereo_config import StereoConfig
+            
+            # 1. Swap si es necesario
+            if StereoConfig.CAMERAS_SWAPPED:
+                raw_L = pt_R
+                raw_R = pt_L
+            else:
+                raw_L = pt_L
+                raw_R = pt_R
+            
+            # 2. Rectificar (Usando las matrices distorsionadas originales -> Rectificadas)
+            rect_L = self.depth_estimator.rectify_point(raw_L, is_left=True)
+            rect_R = self.depth_estimator.rectify_point(raw_R, is_left=False)
+            
+            # 3. Triangular SIMPLE (Igual que en Fase 4B)
+            # Nota: rectify_point ya devuelve puntos listos para triangulación simple
+            point_3d = self.depth_estimator.triangulate_point(rect_L, rect_R, method='simple')
+            
+        except Exception as e:
+            print(f"[DepthCalibrator] Error en cálculo unificado: {e}")
+            point_3d = None
+            
         self.depth_estimator.DEPTH_CORRECTION_FACTOR = original_factor
         
         if point_3d is not None:

@@ -1509,26 +1509,44 @@ class QtCalibrationManager(QObject):
         self.last_depth_value = None
         
         if landmarks_left and landmarks_right:
-            depth = self.depth_calibrator.calculate_depth(landmarks_left, landmarks_right)
-            
-            if depth is not None and depth > 0:
-                self.last_depth_value = depth
-                self.window.set_status(
-                    f"[OK] Mano detectada - Distancia: {depth:.1f} cm - !PRESIONA ESPACIO o CAPTURAR!", 
-                    "#00FF00"
-                )
-                self.window.enable_capture(True)
-            elif depth is not None:
-                # Profundidad negativa o cero - problema de triangulación
-                self.last_depth_value = abs(depth) if depth != 0 else 50  # Valor temporal
-                self.window.set_status(
-                    f"⚠ Distancia estimada: {abs(depth):.1f} cm - Puedes capturar", 
-                    "#FFA500"
-                )
-                self.window.enable_capture(True)
-            else:
-                self.window.set_status("Calculando profundidad...", "#FFA500")
-                self.window.enable_capture(False)
+            try:
+                # 1. Obtener coordenadas del dedo índice (Landmark 8) de los resultados de MediaPipe
+                # Estas coordenadas vienen en rango 0.0 a 1.0
+                h_raw, w_raw = frame_left.shape[:2]
+                pt_L_raw = (landmarks_left.landmark[8].x * w_raw, landmarks_left.landmark[8].y * h_raw)
+                pt_R_raw = (landmarks_right.landmark[8].x * w_raw, landmarks_right.landmark[8].y * h_raw)
+
+                # 2. RECTIFICAR PRIMERO (Cada sensor con su propia matriz)
+                # IMPORTANTE: Usamos is_left según la ID física de la cámara
+                rect_L = self.depth_estimator.rectify_point(pt_L_raw, is_left=True)
+                rect_R = self.depth_estimator.rectify_point(pt_R_raw, is_left=False)
+
+                # 3. APLICAR SWAP (Si las cámaras están físicamente invertidas)
+                if StereoConfig.CAMERAS_SWAPPED:
+                    pt_for_tri_L = rect_R
+                    pt_for_tri_R = rect_L
+                else:
+                    pt_for_tri_L = rect_L
+                    pt_for_tri_R = rect_R
+
+                # 4. TRIANGULAR con método simple (más robusto para calibración)
+                p3d = self.depth_estimator.triangulate_point(pt_for_tri_L, pt_for_tri_R, method='simple')
+
+                if p3d and 10 < p3d[2] < 150:
+                    depth = p3d[2]
+                    self.last_depth_value = depth
+                    self.window.set_status(
+                        f"[OK] Mano detectada - Distancia: {depth:.1f} cm - !PRESIONA ESPACIO!", 
+                        "#00FF00"
+                    )
+                    self.window.enable_capture(True)
+                else:
+                    self.window.set_status("Calculando profundidad...", "#FFA500")
+                    self.window.enable_capture(False)
+
+            except Exception as e:
+                print(f"[Fase 3] Error en cálculo: {e}")
+                self.window.set_status("Error en triangulación", "#FF0000")
         else:
             status_msg = "Muestra tu mano en "
             if not landmarks_left:

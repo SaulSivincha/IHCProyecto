@@ -991,6 +991,8 @@ def main():
                     print("[MAIN] ⚠️ No se encontró calibración AR. Usando teclado plano estándar.")
             except Exception as e:
                 print(f"[MAIN] ⚠️ Error aplicando AR: {e}")
+                import traceback
+                traceback.print_exc()
             # ==============================================================================
             
             # Inicializar sistemas

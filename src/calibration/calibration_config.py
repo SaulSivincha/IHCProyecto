@@ -137,6 +137,36 @@ class CalibrationConfig:
     
     # ==================== KEY LEVELING (PHASE 4C) ====================
     key_floors = {}
+    
+    # ==================== TABLE CORNERS (AR MODE) ====================
+    _virtual_table_corners = None
+    
+    @property
+    def virtual_table_corners(self):
+        """Loads and returns table corners from calibration.json for AR mode"""
+        if CalibrationConfig._virtual_table_corners is not None:
+            return CalibrationConfig._virtual_table_corners
+        
+        if not self.CALIBRATION_FILE.exists():
+            return None
+        
+        try:
+            import json
+            with open(self.CALIBRATION_FILE, 'r') as f:
+                data = json.load(f)
+            
+            table_def = data.get("table_definition", {})
+            corners = table_def.get("corners", None)
+            
+            if corners and len(corners) == 4:
+                # Convert to list of tuples
+                CalibrationConfig._virtual_table_corners = [tuple(c) for c in corners]
+                print(f"[CONFIG] Loaded virtual_table_corners: {CalibrationConfig._virtual_table_corners}")
+                return CalibrationConfig._virtual_table_corners
+            return None
+        except Exception as e:
+            print(f"[CONFIG] Error loading table corners: {e}")
+            return None
 
     @classmethod
     def load_key_floors(cls):

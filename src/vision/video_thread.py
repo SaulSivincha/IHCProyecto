@@ -19,16 +19,23 @@ class VideoThread:
                  video_frame_rate=30,
                  buffer_all=False,
                  video_fourcc=cv2.VideoWriter_fourcc(*"MJPG"),
-                 try_to_reconnect=False):
+                 try_to_reconnect=False,
+                 calibration_config=None): # Nuevo argumento
 
         self.video_source = video_source
         self.video_width = video_width
         self.video_height = video_height
         self.video_frame_rate = video_frame_rate
         self.video_fourcc = video_fourcc
+        
+        self.calibration_config = calibration_config # Guardar config
 
         self.buffer_all = buffer_all
         self.try_to_reconnect = try_to_reconnect
+        
+        # Inicializar física con config
+        from src.vision.piano_physics import TriggerSystem
+        self.physics = TriggerSystem(calibration_config=self.calibration_config)
 
 
 

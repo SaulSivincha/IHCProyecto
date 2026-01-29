@@ -12,7 +12,11 @@ import numpy as np
 import math
 from src.utils import round_half_up
 from src.config.theme import Theme
+from src.config.theme import Theme
 from src.vision.stereo_config import StereoConfig
+
+# --- CONFIGURACIÓN DE LOGS ---
+DEBUG_MODE = False
 
 class VirtualKeyboard():
     __white_map = {
@@ -171,8 +175,9 @@ class VirtualKeyboard():
                     'black': False,
                     'pts': np.array([pts], dtype=np.float32)
                 })
+
                 # DEBUG: Log white key generation (only once)
-                if not hasattr(self, '_gen_logged'):
+                if DEBUG_MODE and not hasattr(self, '_gen_logged'):
                     print(f"[GEN_WHITE] visual_pos={p}, key_id={key_id}, x_range=({x_line_pos},{x_next_pos})")
 
         # 2. Teclas Negras
@@ -226,7 +231,7 @@ class VirtualKeyboard():
                         'pts': np.array([pts], dtype=np.float32)
                     })
                     # DEBUG: Log black key generation (only once)
-                    if not hasattr(self, '_gen_logged'):
+                    if DEBUG_MODE and not hasattr(self, '_gen_logged'):
                         print(f"[GEN_BLACK] visual_pos={p}, key_id={key_id}, x_range=({b_bk_x0},{b_bk_x1})")
         
         # Mark as logged
@@ -439,7 +444,7 @@ class VirtualKeyboard():
                 })
             
             # DEBUG: Log polygon order (only once)
-            if not hasattr(self, '_polygon_order_logged'):
+            if DEBUG_MODE and not hasattr(self, '_polygon_order_logged'):
                 print(f"\n[POLYGON_ORDER] Generated {len(self.screen_key_polygons)} polygons:")
                 for i, poly in enumerate(self.screen_key_polygons[:5]):  # Show first 5
                     print(f"  [{i}] key_id={poly['id']}, black={poly['black']}")
@@ -596,9 +601,9 @@ class VirtualKeyboard():
         input_x, input_y = x_pos, y_pos
         
         # === MODO AR (WYSIWYG) ===
-        # En modo AR, los polígonos están en el espacio de coordenadas del frame RAW
-        # (porque draw_perspective dibuja sobre el frame sin transformar).
-        # Por lo tanto, usamos las coordenadas RAW directamente sin transformación.
+        # Los polígonos (screen_key_polygons) ahora están en ESPACIO DISPLAY
+        # (porque qt_free_mode_window le pasa esquinas transformadas a draw_perspective).
+        # Por lo tanto, usamos las coordenadas de entrada directamente (que deben venir transformadas).
         if self.ar_mode_active and hasattr(self, 'screen_key_polygons') and self.screen_key_polygons:
             # DEBUG: Mostrar coordenadas de entrada vs rango de poligonos
             if not hasattr(self, '_debug_coord_shown'):
@@ -606,7 +611,7 @@ class VirtualKeyboard():
                 last_poly = self.screen_key_polygons[-1]
                 x1,y1,w1,h1 = cv2.boundingRect(first_poly['contour'])
                 x2,y2,w2,h2 = cv2.boundingRect(last_poly['contour'])
-                print(f"[DEBUG] Using RAW coords in AR: ({input_x:.0f},{input_y:.0f})")
+                print(f"[DEBUG] AR Hit Test: Input=({input_x:.0f},{input_y:.0f}) (Display Space)")
                 print(f"[DEBUG] Poly Range: FirstKey({x1},{y1} to {x1+w1},{y1+h1}), LastKey({x2},{y2} to {x2+w2},{y2+h2})")
                 self._debug_coord_shown = True
             

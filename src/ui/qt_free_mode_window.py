@@ -20,6 +20,10 @@ from PyQt6.QtGui import QImage, QPixmap, QColor
 from src.piano.keyboard_processor import KeyboardProcessor
 from src.config.app_config import AppConfig
 from src.config.theme import Theme
+from src.vision.depth_logger import DepthLogger
+
+# --- CONFIGURACIÓN DE LOGS ---
+DEBUG_MODE = False
 
 class FreeModeWindow(QMainWindow):
     """
@@ -55,6 +59,10 @@ class FreeModeWindow(QMainWindow):
         self.is_running = True
         self.active_notes = set() # Notas sonando actualmente
         self.timer = QTimer()
+        
+        # --- NUEVO: Inicializar Logger ---
+        self.logger = DepthLogger()
+        self.logger.start() # Empieza a grabar al abrir la ventana
         
         # Configuración de ventana
         self.setWindowTitle("Piano Virtual - Modo Libre")
@@ -166,8 +174,15 @@ class FreeModeWindow(QMainWindow):
         self.history_list.setFocusPolicy(Qt.FocusPolicy.NoFocus) # Para no robar foco del teclado
         info_layout.addWidget(self.history_list)
         
-        # 5. Botón Algoritmos
+        # 5. Botones de Control
         info_layout.addStretch()
+        
+        # BOTÓN PARA GUARDAR LO APRENDIDO (Fase 4c)
+        self.btn_save_leveling = QPushButton("💾 Guardar Nivelación")
+        self.btn_save_leveling.clicked.connect(self.save_leveling_data)
+        self.btn_save_leveling.setStyleSheet("background-color: #27ae60; color: white; padding: 10px; font-weight: bold; border-radius: 5px;")
+        info_layout.addWidget(self.btn_save_leveling)
+        
         btn_algo = QPushButton("ALGORITMOS")
         # Estilo heredado del stylesheet global
         btn_algo.clicked.connect(self._open_algorithm_config)
@@ -298,6 +313,9 @@ class FreeModeWindow(QMainWindow):
                 hr_hands, hr_tips_raw = [], []
                 hl_tips_display = []
                 hl_tips_stereo, hr_tips_stereo = [], []
+            
+            # --- NUEVO: Diccionario para este frame (Logger) ---
+            frame_finger_data = {}
             
             # C. Dibujar teclado en frame ROTADO
             # CORREGIDO: Usar modo AR (draw_perspective) si TABLE_CORNERS está disponible
@@ -468,7 +486,7 @@ class FreeModeWindow(QMainWindow):
                                     x_diff = pt_left[0] - pt_right[0]  # Debería ser POSITIVO
                                     
                                     # DEBUG: Ver valores crudos (cada 60 frames)
-                                    if self._diag_counter % 60 == 0:
+                                    if DEBUG_MODE and self._diag_counter % 60 == 0:
                                         print(f"[TRIANGULATE] tip={tip_id}: pt_L=({pt_left[0]:.0f},{pt_left[1]:.0f}), pt_R=({pt_right[0]:.0f},{pt_right[1]:.0f}), x_diff={x_diff:.0f}, y_diff={y_diff:.0f}")
                                     
                                     # VALIDAR matching: Y similar y X_L > X_R
@@ -499,7 +517,7 @@ class FreeModeWindow(QMainWindow):
                                                 dist_mesa_eff = keyboard_distance + StereoConfig.KEYBOARD_OFFSET_CM
                                                 depth_rel = dist_mesa_eff - depth_abs
                                             
-                                            if self._diag_counter % 30 == 0:
+                                            if DEBUG_MODE and self._diag_counter % 30 == 0:
                                                 print(f"[DEPTH-{depth_method}] tip={tip_id}: abs={depth_abs:.1f}cm, rel={depth_rel:.1f}cm, X={pt_left[0]}")
                                             
                                             if abs(depth_rel) < 30:
@@ -517,8 +535,27 @@ class FreeModeWindow(QMainWindow):
                         # B. Fallback Monocular
                         if final_depth is None:
                             final_depth = 50.0  # Muy por encima del umbral = no activa
-                            if self._diag_counter % 30 == 0:
+                            if DEBUG_MODE and self._diag_counter % 30 == 0:
                                 print(f"[STEREO FAIL] tip={tip_id}, attempted={stereo_attempted}, reason={stereo_reason}") 
+                        
+                        # --- NUEVO: GUARDAR DATOS RAW EN LOGGER ---
+                        if stereo_attempted: 
+                            # Si intentamos estéreo, logueamos aunque haya fallado (final_depth puede ser 50.0)
+                            # Si no intentamos, no tenemos datos estéreo para loguear
+                            
+                            # Preparar datos
+                            z_abs_val = point_3d[2] if 'point_3d' in locals() and point_3d else 0.0
+                            z_rel_val = final_depth
+                            
+                            frame_finger_data[(id_l, tip_id)] = {
+                                'z_abs': float(z_abs_val),
+                                'z_rel': float(z_rel_val),
+                                'xl': int(pt_left[0]), 'yl': int(pt_left[1]),
+                                'xr': int(pt_right[0]) if 'pt_right' in locals() else 0, 
+                                'yr': int(pt_right[1]) if 'pt_right' in locals() else 0,
+                                'disp': float(pt_left[0] - pt_right[0]) if 'pt_right' in locals() else 0.0,
+                                'reason': stereo_reason
+                            }
                         
                         # Guardar profundidad por tip_id (para asociar con hl_tips_display después)
                         depth_by_tip_id[tip_id] = final_depth
@@ -541,7 +578,8 @@ class FreeModeWindow(QMainWindow):
                     hl_tips_transformed = hl_tips_display
                     
                     if not hasattr(self, '_ar_coords_logged'):
-                        print(f"[DEBUG] Modo AR: Usando coordenadas directas del frame (sin escalar)")
+                        if DEBUG_MODE:
+                            print(f"[DEBUG] Modo AR: Usando coordenadas directas del frame (sin escalar)")
                         self._ar_coords_logged = True
                 else:
                     # MODO PLANO: Escalar al canvas
@@ -576,7 +614,7 @@ class FreeModeWindow(QMainWindow):
                                cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 255, 255), 1)
                 
                 # DEBUG: Mostrar coordenadas vs rango del teclado
-                if self._diag_counter % 60 == 0 and len(hl_tips_transformed) > 0:
+                if DEBUG_MODE and self._diag_counter % 60 == 0 and len(hl_tips_transformed) > 0:
                     tip = hl_tips_transformed[0]
                     kb_x0, kb_x1 = self.virtual_keyboard.kb_x0, self.virtual_keyboard.kb_x1
                     kb_y0, kb_y1 = self.virtual_keyboard.kb_y0, self.virtual_keyboard.kb_y1
@@ -623,6 +661,7 @@ class FreeModeWindow(QMainWindow):
             traceback.print_exc()
 
         # 3. Mostrar Frame FINAL (ya rotado con todo dibujado)
+        self.logger.log_frame(frame_finger_data)
         self._display_frame(frame_left_display)
 
     def _display_frame(self, frame):
@@ -743,9 +782,25 @@ class FreeModeWindow(QMainWindow):
             self.timer.start(30)
 
     def closeEvent(self, event):
+        # --- NUEVO: Guardar log al cerrar ---
+        self.logger.stop_and_save()
+        
         self.is_running = False
         self.timer.stop()
         event.accept()
+
+    def save_leveling_data(self):
+        """Guardar mapa de alturas aprendido por la física"""
+        # Accedemos al config a través del video thread o detector si es posible
+        if self.camera_left and hasattr(self.camera_left, 'calibration_config') and self.camera_left.calibration_config:
+             # Necesitamos disparar el guardado en TriggerSystem primero para actualizar config,
+             # pero TriggerSystem ya actualiza calibration_config.key_floors en tiempo real.
+             # Solo necesitamos pedirle al config que guarde.
+             self.camera_left.calibration_config.save_key_floors()
+             self.btn_save_leveling.setText("¡Guardado!")
+             print("[UI] Nivelación guardada exitosamente.")
+        else:
+            print("[UI] No se encontró configuración de calibración para guardar.")
 
 # Función helper para lanzar la ventana desde main.py
 def show_free_mode_window(camera_left, camera_right, synth, 

@@ -42,6 +42,12 @@ except ImportError:
     from vision.depth_estimator import load_depth_estimator
     from vision.stereo_config import StereoConfig
 
+# Import VirtualKeyboard for Phase 4C visualization
+try:
+    from ..piano.virtual_keyboard import VirtualKeyboard
+except ImportError:
+    from piano.virtual_keyboard import VirtualKeyboard
+
 
 class QtCalibrationManager(QObject):
     """
@@ -71,6 +77,7 @@ class QtCalibrationManager(QObject):
         
         # Herramientas de visión para Fase 3
         self.hand_detector = None
+        self.hand_detector_right = None # Nuevo detector para cámara derecha
         self.depth_estimator = None
         
         # Ventana PyQt6
@@ -518,6 +525,11 @@ class QtCalibrationManager(QObject):
             self._start_table_definition()
             
         elif self.current_phase == "table_definition":
+            # --- CORRECCIÓN: VALIDACIÓN PARA EVITAR INDEX ERROR ---
+            if not self.table_corners or len(self.table_corners) != 4:
+                self.window.set_status("⚠️ ERROR: Debes dibujar el área del teclado primero", "#FF0000")
+                return
+            # ------------------------------------------------------
             self._save_table_definition() # Guardar coordenadas
             self.current_phase = "table_definition_complete"
             self._start_corner_depth_calibration() # Pasar a tocar esquinas
@@ -533,8 +545,12 @@ class QtCalibrationManager(QObject):
             self.window.set_status("👆 Buscando dedo en la esquina...", "#00FF00")
         
         elif self.current_phase == "phase4b_complete":
-            # Fase 4B completada - finalizar calibración
-            self._finish_calibration(True)
+            # Fase 4B completada - IR A FASE 4C (Nivelación de teclas)
+            self._start_key_depth_calibration()
+            
+        elif self.current_phase == "key_depth_calibration":
+             # Usuario termino de barrer las teclas
+             self._finish_key_calibration()
 
         # Lógica de reintento (si el usuario presionó Continuar en lugar de Reintentar en pantalla de error)
         elif self.current_phase in ["capture_left", "capture_left_intro"]:
@@ -700,6 +716,8 @@ class QtCalibrationManager(QObject):
             self._update_table_definition_frame()
         elif self.current_phase == "corner_depth_calibration":
             self._update_corner_depth_frame()
+        elif self.current_phase == "key_depth_calibration":
+            self._update_key_depth_frame()
     
     def _update_single_camera_frame(self):
         """Actualiza frame para calibración de cámara individual"""
@@ -1335,6 +1353,11 @@ class QtCalibrationManager(QObject):
                 QApplication.processEvents()
                 self.hand_detector = HandDetector(maxHands=2)
             
+            # --- Corrección: Detector para cámara derecha ---
+            if self.hand_detector_right is None:
+                self.hand_detector_right = HandDetector(maxHands=2)
+                # ------------------------------------------------
+            
             # --- CAMBIO CRÍTICO: SIEMPRE RECARGAR DE CERO ---
             self.window.set_status("Reseteando estimador de profundidad...", "#FFA500")
             QApplication.processEvents()
@@ -1463,47 +1486,27 @@ class QtCalibrationManager(QObject):
         if found_left and self.hand_detector.results.multi_hand_landmarks:
             landmarks_left = self.hand_detector.results.multi_hand_landmarks[0]
             
-        # IMPORTANTE: Si usamos el mismo detector, debemos guardar landmarks_left antes de detectar right
-        # O si hay un detector derecho... Revisemos init.
-        # Asumiendo self.hand_detector se usa para Left. Para Right usamos... el mismo?
-        # El código original (línea 1116) usa self.hand_detector.findHands(display_right) SOBREESCRIBIENDO results.
-        # ESTO ES UN BUG POTENCIAL si calculate_depth necesita both results?
-        # No, depth_calibrator.calculate_depth recibe (landmarks_left, landmarks_right).
-        # Así que debemos guardar los objetos landmarks antes de la segunda detección.
+        # Detección derecha con nuevo detector independiente
+        if self.hand_detector_right is None: self.hand_detector_right = HandDetector(maxHands=1)
         
-        # Guardar landmarks izq
-        import copy
-        processed_landmarks_left = copy.deepcopy(landmarks_left) if landmarks_left else None
-
-        found_right = self.hand_detector.findHands(frame_right)
+        found_right = self.hand_detector_right.findHands(frame_right)
         landmarks_right = None
-        if found_right and self.hand_detector.results.multi_hand_landmarks:
-            landmarks_right = self.hand_detector.results.multi_hand_landmarks[0]
+        if found_right and self.hand_detector_right.results.multi_hand_landmarks:
+            landmarks_right = self.hand_detector_right.results.multi_hand_landmarks[0]
 
         # 3. Preparar Display (Espejo para visualización)
         display_left = StereoConfig.apply_display_transform(frame_left)
         display_right = StereoConfig.apply_display_transform(frame_right)
         
         # 4. Dibujar en Display (con rotate_180=True)
-        # Mejor solución: Dibujar Right primero (que está activo en results)
         if landmarks_right:
-            self.hand_detector.drawHands(display_right, rotate_180=True)
+            self.hand_detector_right.drawHands(display_right, rotate_180=True)
             
-        # Para Left, tendríamos que re-inyectar los resultados... o re-detectar en display?
-        # Re-detectar es lento. 
-        # Intentemos "mockear" los resultados para dibujar
-        if processed_landmarks_left:
-            # Restaurar landmarks izq temporalmente
-            class MockResults:
-                def __init__(self, lm): self.multi_hand_landmarks = [lm]
-            
-            original_results = self.hand_detector.results
-            self.hand_detector.results = MockResults(processed_landmarks_left)
+        if landmarks_left:
             self.hand_detector.drawHands(display_left, rotate_180=True)
-            self.hand_detector.results = original_results # Restaurar (que tiene Right)
             
-        # Actualizar variables para cálculo (usamos las copias/referencias directas)
-        landmarks_left = processed_landmarks_left
+        # Actualizar variables para cálculo (ya son independientes)
+        # landmarks_left = landmarks_left
             
         # Calcular profundidad si hay manos en ambas
         self.last_depth_value = None
@@ -1848,6 +1851,11 @@ class QtCalibrationManager(QObject):
             instructions
         )
         
+        # --- CORRECCIÓN ---
+        # Forzar que el botón de continuar esté OCULTO hasta que se dibuje el rectángulo
+        self.window.show_continue_button(False) 
+        # ------------------
+        
         # Iniciar video
         if not self.cap_left:
              self.cap_left = self._get_or_create_camera("left")
@@ -2179,7 +2187,7 @@ class QtCalibrationManager(QObject):
         # Inicializar hand detector si no existe
         if self.hand_detector is None:
             self.hand_detector = HandDetector(
-                staticImageMode=False,
+                mode=False,
                 maxHands=1,
                 detectionCon=0.7,
                 trackCon=0.5
@@ -2200,7 +2208,7 @@ class QtCalibrationManager(QObject):
         # -------------------------------------------------------
         
         # Asegurar cámara derecha activa
-        if not self.cap_right:
+        if not self.cap_right or not self.cap_right.is_available():
             self.cap_right = self._get_or_create_camera("right")
         
         self._show_corner_instructions()
@@ -2235,110 +2243,110 @@ class QtCalibrationManager(QObject):
         if not self.cap_left or not self.cap_right:
             return
             
-        # 1. Obtener frames CRUDOS
-        _, frame_left_raw = self.cap_left.next(wait=0.033)
-        _, frame_right_raw = self.cap_right.next(wait=0.033)
-        
-        if frame_left_raw is None or frame_right_raw is None:
-            return
+        try:
+            # 1. Obtener frames CRUDOS
+            _, frame_left_raw = self.cap_left.next(wait=0.033)
+            _, frame_right_raw = self.cap_right.next(wait=0.033)
+            
+            if frame_left_raw is None or frame_right_raw is None:
+                return
 
-        from ..vision.stereo_config import StereoConfig
-        h, w = frame_left_raw.shape[:2]
+            from ..vision.stereo_config import StereoConfig
+            h, w = frame_left_raw.shape[:2]
 
-        # 2. Generar frames DISPLAY (Rotados 180) para visualización y DETECCIÓN
-        # MediaPipe funciona mucho mejor con manos "derechas" (dedos hacia arriba)
-        display_left = StereoConfig.apply_display_transform(frame_left_raw.copy())
-        display_right = StereoConfig.apply_display_transform(frame_right_raw.copy())
-        
-        # Visual UX: Dibujar camino recorrido (Líneas entre esquinas)
-        if self.current_corner_index > 0:
-            for i in range(self.current_corner_index):
-                # Obtener puntos consecutivos
-                p1_raw = self.table_corners[i]
-                p2_raw = self.table_corners[i+1] # Siempre existe porque corners tiene 4 ptos
+            # 2. Generar frames DISPLAY (Rotados 180) para visualización y DETECCIÓN
+            # MediaPipe funciona mucho mejor con manos "derechas" (dedos hacia arriba)
+            display_left = StereoConfig.apply_display_transform(frame_left_raw.copy())
+            display_right = StereoConfig.apply_display_transform(frame_right_raw.copy())
+            
+            # Visual UX: Dibujar camino recorrido (Líneas entre esquinas)
+            if self.current_corner_index > 0:
+                for i in range(self.current_corner_index):
+                    # Obtener puntos consecutivos
+                    p1_raw = self.table_corners[i]
+                    p2_raw = self.table_corners[i+1] # Siempre existe porque corners tiene 4 ptos
+                    
+                    # Transformar a display
+                    p1_disp = StereoConfig.transform_point_for_display(p1_raw, w, h)
+                    p2_disp = StereoConfig.transform_point_for_display(p2_raw, w, h)
+                    
+                    # Dibujar línea
+                    if i == self.current_corner_index - 1:
+                         # Último tramo hacia el objetivo actual: Amarillo/Pulsante
+                         cv2.line(display_left, p1_disp, p2_disp, (0, 255, 255), 2)
+                    else:
+                         # Tramos completados: Verde
+                         cv2.line(display_left, p1_disp, p2_disp, (0, 255, 0), 2)
+
+            # 3. Dibujar objetivo (Círculo amarillo PULSANTE y PROGRESO)
+            # Convertir coordenada de la esquina (RAW) a DISPLAY
+            corner_raw = self.table_corners[self.current_corner_index]
+            corner_disp = StereoConfig.transform_point_for_display(corner_raw, w, h)
+            
+            # Calcular pulso
+            pulse = abs(np.sin(time.time() * 5))
+            radius = int(12 + (pulse * 3))
+            
+            # Color base (Amarillo)
+            color_target = (0, 255, 255) 
+            
+            # Dibujar anillo de progreso
+            count = len(self.corner_depth_samples[self.current_corner_index])
+            total = self.samples_per_corner
+            
+            # Anillo de fondo (Gris)
+            cv2.circle(display_left, corner_disp, 22, (100, 100, 100), 3)
+            
+            # Anillo de progreso (Verde)
+            if total > 0:
+                angle = int((count / total) * 360)
+                # Dibujar arco
+                cv2.ellipse(display_left, corner_disp, (22, 22), -90, 0, angle, (0, 255, 0), 3)
+            
+            # Dibujar target pulsante
+            cv2.circle(display_left, corner_disp, radius, color_target, 2)
+            cv2.circle(display_left, corner_disp, 3, color_target, -1)
+            
+            # 4. Detectar mano en DISPLAY (para dibujar feedback visual)
+            self.hand_detector.findHands(display_left)
+            # Usamos drawHands y acceso directo en lugar de findPosition
+            self.hand_detector.drawHands(display_left)
+            
+            pt_left_display = None
+            lm_display = None
+            if self.hand_detector.results.multi_hand_landmarks:
+                 lm_display = self.hand_detector.results.multi_hand_landmarks[0]
+                 
+            if lm_display:
+                # Obtener índice (8)
+                idx = lm_display.landmark[8]
+                h_disp, w_disp = display_left.shape[:2]
+                pt_left_display = (int(idx.x * w_disp), int(idx.y * h_disp))
                 
-                # Transformar a display
-                p1_disp = StereoConfig.transform_point_for_display(p1_raw, w, h)
-                p2_disp = StereoConfig.transform_point_for_display(p2_raw, w, h)
+                # Dibujar punta
+                cv2.circle(display_left, pt_left_display, 8, (0, 0, 255), -1)
                 
-                # Dibujar línea
-                if i == self.current_corner_index - 1:
-                     # Último tramo hacia el objetivo actual: Amarillo/Pulsante
-                     cv2.line(display_left, p1_disp, p2_disp, (0, 255, 255), 2)
-                else:
-                     # Tramos completados: Verde
-                     cv2.line(display_left, p1_disp, p2_disp, (0, 255, 0), 2)
+                # Calcular distancia visual al objetivo
+                distance_to_corner = np.hypot(pt_left_display[0] - corner_disp[0], pt_left_display[1] - corner_disp[1])
+            else:
+                distance_to_corner = 999
 
-        # 3. Dibujar objetivo (Círculo amarillo PULSANTE y PROGRESO)
-        # Convertir coordenada de la esquina (RAW) a DISPLAY
-        corner_raw = self.table_corners[self.current_corner_index]
-        corner_disp = StereoConfig.transform_point_for_display(corner_raw, w, h)
-        
-        # Calcular pulso
-        pulse = abs(np.sin(time.time() * 5))
-        radius = int(12 + (pulse * 3))
-        
-        # Color base (Amarillo)
-        color_target = (0, 255, 255) 
-        
-        # Dibujar anillo de progreso
-        count = len(self.corner_depth_samples[self.current_corner_index])
-        total = self.samples_per_corner
-        
-        # Anillo de fondo (Gris)
-        cv2.circle(display_left, corner_disp, 22, (100, 100, 100), 3)
-        
-        # Anillo de progreso (Verde)
-        if total > 0:
-            angle = int((count / total) * 360)
-            # Dibujar arco
-            cv2.ellipse(display_left, corner_disp, (22, 22), -90, 0, angle, (0, 255, 0), 3)
-        
-        # Dibujar target pulsante
-        cv2.circle(display_left, corner_disp, radius, color_target, 2)
-        cv2.circle(display_left, corner_disp, 3, color_target, -1)
-        
-        # 4. Detectar mano en DISPLAY (para dibujar feedback visual)
-        self.hand_detector.findHands(display_left)
-        # Usamos drawHands y acceso directo en lugar de findPosition
-        self.hand_detector.drawHands(display_left)
-        
-        pt_left_display = None
-        lm_display = None
-        if self.hand_detector.results.multi_hand_landmarks:
-             lm_display = self.hand_detector.results.multi_hand_landmarks[0]
-             
-        if lm_display:
-            # Obtener índice (8)
-            idx = lm_display.landmark[8]
-            h_disp, w_disp = display_left.shape[:2]
-            pt_left_display = (int(idx.x * w_disp), int(idx.y * h_disp))
-            
-            # Dibujar punta
-            cv2.circle(display_left, pt_left_display, 8, (0, 0, 255), -1)
-            
-            # Calcular distancia visual al objetivo
-            distance_to_corner = np.hypot(pt_left_display[0] - corner_disp[0], pt_left_display[1] - corner_disp[1])
-        else:
-            distance_to_corner = 999
+            # 5. Detectar mano en CÁMARA DERECHA (Display)
+            # Usar display frame también para asegurar consistencia
+            if not hasattr(self, 'hand_detector_right') or self.hand_detector_right is None:
+                from ..vision.hand_detector import HandDetector
+                self.hand_detector_right = HandDetector(maxHands=1, detectionCon=0.5)
+                
+            self.hand_detector_right.findHands(display_right)
+            pt_right_display = None
+            if self.hand_detector_right.results.multi_hand_landmarks:
+                 lm_right_display = self.hand_detector_right.results.multi_hand_landmarks[0]
+                 idx_R = lm_right_display.landmark[8]
+                 h_disp, w_disp = display_right.shape[:2]
+                 pt_right_display = (int(idx_R.x * w_disp), int(idx_R.y * h_disp))
 
-        # 5. Detectar mano en CÁMARA DERECHA (Display)
-        # Usar display frame también para asegurar consistencia
-        if not hasattr(self, 'hand_detector_right') or self.hand_detector_right is None:
-            from ..vision.hand_detector import HandDetector
-            self.hand_detector_right = HandDetector(maxHands=1, detectionCon=0.5)
-            
-        self.hand_detector_right.findHands(display_right)
-        pt_right_display = None
-        if self.hand_detector_right.results.multi_hand_landmarks:
-             lm_right_display = self.hand_detector_right.results.multi_hand_landmarks[0]
-             idx_R = lm_right_display.landmark[8]
-             h_disp, w_disp = display_right.shape[:2]
-             pt_right_display = (int(idx_R.x * w_disp), int(idx_R.y * h_disp))
-
-        # 6. Lógica de Medición (Transformar DISPLAY -> RAW)
-        if pt_left_display and pt_right_display and distance_to_corner < 60:
-            try:
+            # 6. Lógica de Medición (Transformar DISPLAY -> RAW)
+            if pt_left_display and pt_right_display and distance_to_corner < 60:
                 # A. Invertir rotación para volver al espacio del sensor (Raw)
                 pt_L_raw = StereoConfig.transform_point_for_display(pt_left_display, w, h)
                 pt_R_raw = StereoConfig.transform_point_for_display(pt_right_display, w, h)
@@ -2356,39 +2364,30 @@ class QtCalibrationManager(QObject):
                 else:
                     pt_for_tri_L = rect_L_clean
                     pt_for_tri_R = rect_R_clean
+                    
+                # D. TRIANGULAR
+                # Ahora usamos triangulate_point_simple que espera puntos YA rectificados
+                depth_pt = self.depth_estimator.triangulate_point_simple(pt_for_tri_L, pt_for_tri_R)
                 
-                # D. Triangular puntos ya rectificados y correctamente ordenados
-                point_3d = self.depth_estimator.triangulate_point(pt_for_tri_L, pt_for_tri_R, method='simple')
-                
-                if point_3d and 10 < point_3d[2] < 150:
-                    depth_cm = point_3d[2]
-                    self.corner_depth_samples[self.current_corner_index].append(depth_cm)
-                    
-                    # Mostrar texto mejorado (Con fondo)
-                    if pt_left_display:
-                        text = f"Z: {depth_cm:.1f}cm"
-                        (tw, th), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.8, 2)
-                        tx, ty = pt_left_display[0]+20, pt_left_display[1]
-                        
-                        # Fondo oscuro
-                        cv2.rectangle(display_left, (tx-5, ty-th-5), (tx+tw+5, ty+5), (0, 0, 0), -1)
-                        # Texto verde
-                        cv2.putText(display_left, text, (tx, ty), 
-                               cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
-                        
-                        # Feedback visual en el target (Cambiar a verde si detecta)
-                        cv2.circle(display_left, corner_disp, radius, (0, 255, 0), 2)
-                    
-                    # Progreso
-                    count = len(self.corner_depth_samples[self.current_corner_index])
-                    self.window.set_status(f"Capturando... {count}/{self.samples_per_corner}", "#00FF00")
-                    
-                    if count >= self.samples_per_corner:
-                        self._advance_to_next_corner()
-            except Exception as e:
-                print(f"Error 4B: {e}")
+                if depth_pt:
+                     self.corner_depth_samples[self.current_corner_index].append(depth_pt)
+                     self.window.set_status(f"Capturando muestra {count}/{total}...", "#00FF00")
+            
+            # Avanzar si completamos muestras
+            if len(self.corner_depth_samples[self.current_corner_index]) >= self.samples_per_corner:
+                self.current_corner_index += 1
+                if self.current_corner_index >= 4:
+                     self._finish_corner_depth_calibration()
+                else:
+                     self._show_corner_instructions()
 
-        self.window.update_frames(frame_left=display_left)
+            self.window.update_frames(frame_left=display_left, frame_right=display_right)
+
+        except Exception as e:
+            print(f"[ERROR UI Loop] {e}")
+            # NO detener timer, solo loguear error para evitar freeze
+            pass
+
     
     def _advance_to_next_corner(self):
         """Avanza a la siguiente esquina o finaliza"""
@@ -2447,15 +2446,6 @@ class QtCalibrationManager(QObject):
             msg.append("🎹 El piano se ajustará a la inclinación de tu mesa.")
         else:
             msg.append("⚠️ No se pudo calcular el plano (usando modo plano simple).")
-        
-        msg.extend([
-            "",
-            "<b>Profundidades calibradas:</b>",
-            f"  📍 Sup-Izq: {corner_depths[0]:.1f} cm",
-            f"  📍 Sup-Der: {corner_depths[1]:.1f} cm",
-            f"  📍 Inf-Der: {corner_depths[2]:.1f} cm",
-            f"  📍 Inf-Izq: {corner_depths[3]:.1f} cm",
-        ])
             
         self.window.show_intro_screen("¡CALIBRACIÓN AR COMPLETA!", msg)
         self.window.set_status("✅ Calibración AR lista", "#00FF00")
@@ -2478,9 +2468,25 @@ class QtCalibrationManager(QObject):
             if plane_coeffs:
                 data['table_definition']['plane_3d'] = {
                     'coefficients': list(plane_coeffs),
-                    'description': "Plano ax + by + cz + d = 0"
+                    'description': "Plano ax + by + cz + d = 0 generado por toque"
                 }
             
+            # Preservar flags importantes
+            # Cargar de nuevo para evitar modificar el 'data' actual si 'cameras_swapped' no existe
+            # y luego intentar leerlo de un archivo que podría no tenerlo.
+            # Mejor: cargar el original y luego mergear.
+            original_data = {}
+            try:
+                with open(CalibrationConfig.CALIBRATION_FILE, 'r') as f_orig:
+                    original_data = json.load(f_orig)
+            except FileNotFoundError:
+                pass # File might not exist yet
+            except json.JSONDecodeError:
+                pass # File might be empty or malformed
+            
+            if 'cameras_swapped' in original_data:
+                 data['cameras_swapped'] = original_data['cameras_swapped']
+                 
             with open(CalibrationConfig.CALIBRATION_FILE, 'w') as f:
                 json.dump(data, f, indent=4)
             print("[OK] Datos AR guardados en calibration.json")
@@ -2821,6 +2827,230 @@ class QtCalibrationManager(QObject):
             json.dump(self.calibration_data, f, indent=4)
         
         print(f"\n[OK] Calibracion guardada en: {output_file}")
+
+    # ==================== FASE 4C: NIVELACIÓN DE TECLAS ====================
+    def _start_key_depth_calibration(self):
+        """FASE 4C: Calibración tecla por tecla con Perspectiva Correcta"""
+        self.current_phase = "key_depth_calibration"
+        
+        instructions = [
+            "<b>🎹 FASE FINAL: NIVELACIÓN DE TECLAS</b>",
+            "El sistema necesita aprender la altura exacta de cada tecla.",
+            "",
+            "1. Pasa tu dedo presionando <b>FIRMEMENTE</b> tecla por tecla.",
+            "2. Asegúrate de tocar también las <b>TECLAS NEGRAS</b>.",
+            "3. Las teclas se pondrán <span style='color:#00FF00'>VERDES</span> al quedar calibradas.",
+            "4. Pulsa <b>Continuar</b> cuando hayas barrido todo el piano."
+        ]
+        
+        self.window.show_intro_screen("NIVELACIÓN DE TECLAS", instructions)
+        self.window.show_continue_button(True)
+        
+        self.temp_key_readings = {} 
+        
+        # --- CORRECCIÓN DE PERSPECTIVA ---
+        if hasattr(self, 'table_corners') and len(self.table_corners) == 4:
+            # 1. Obtener dimensiones
+            h, w = 720, 1280 
+            if self.cap_left:
+                w, h = int(self.cap_left.video_width), int(self.cap_left.video_height)
+            
+            # 2. Transformar esquinas a espacio de pantalla (Display)
+            corners_display = [
+                StereoConfig.transform_point_for_display(pt, w, h) 
+                for pt in self.table_corners
+            ]
+            
+            # 3. Inicializar teclado
+            n_white_keys = 14  # Default: 2 octavas
+            if hasattr(self, 'keyboard_mapper') and self.keyboard_mapper:
+                n_white_keys = getattr(self.keyboard_mapper, 'kb_white_n_keys', 14)
+            
+            self.viz_keyboard = VirtualKeyboard(w, h, n_white_keys)
+            
+            # 4. CALCULAR MATRIZ DE PERSPECTIVA (La clave para que las negras funcionen)
+            # Definimos el rectángulo lógico plano
+            src_pts = np.float32([
+                [self.viz_keyboard.kb_x0, self.viz_keyboard.kb_y0],
+                [self.viz_keyboard.kb_x1, self.viz_keyboard.kb_y0],
+                [self.viz_keyboard.kb_x1, self.viz_keyboard.kb_y1],
+                [self.viz_keyboard.kb_x0, self.viz_keyboard.kb_y1]
+            ])
+            dst_pts = np.float32(corners_display)
+            
+            # Calcular matriz
+            matrix = cv2.getPerspectiveTransform(src_pts, dst_pts)
+            
+            # Inyectar matriz en el teclado para que 'find_key' funcione con perspectiva
+            self.viz_keyboard.M_inv = np.linalg.inv(matrix)
+            self.viz_keyboard.ar_mode_active = True
+            
+            # 5. PRE-CALCULAR POLÍGONOS VISUALES (Para dibujar correctamente)
+            self.viz_keyboard.screen_key_polygons = []
+            logical_geoms = self.viz_keyboard.generate_logical_key_geometries()
+            
+            for key_geom in logical_geoms:
+                pts_src = key_geom['pts']
+                # Proyectar puntos lógicos a pantalla usando la matriz
+                pts_dst = cv2.perspectiveTransform(pts_src, matrix)[0]
+                
+                self.viz_keyboard.screen_key_polygons.append({
+                    'id': key_geom['id'],
+                    'black': key_geom['black'],
+                    'contour': pts_dst.astype(np.int32)
+                })
+            
+            print(f"[Phase 4C] Piano con perspectiva: {len(self.viz_keyboard.screen_key_polygons)} teclas")
+        else:
+            print("[ERROR] No hay esquinas definidas")
+            self.viz_keyboard = None
+        
+        # Reiniciar cámaras y timer
+        if not self.cap_left: self.cap_left = self._get_or_create_camera("left")
+        if not self.cap_right: self.cap_right = self._get_or_create_camera("right")
+        
+        if self.timer.isActive(): self.timer.stop()
+        self.timer.start(30)
+
+    def _update_key_depth_frame(self):
+        """Loop de calibración con visualización AR precisa"""
+        if self.current_phase != "key_depth_calibration": return
+        if not self.cap_left or not self.cap_right: return
+
+        _, frame_l = self.cap_left.next(wait=0.001)
+        _, frame_r = self.cap_right.next(wait=0.001)
+        if frame_l is None: return
+
+        # Transformaciones
+        display_l = StereoConfig.apply_display_transform(frame_l.copy())
+        display_r = StereoConfig.apply_display_transform(frame_r.copy()) if frame_r is not None else None
+        overlay = display_l.copy()
+
+        # Detección de manos
+        self.hand_detector.findHands(display_l)
+        if self.hand_detector_right is None:
+            from ..vision.hand_detector import HandDetector
+            self.hand_detector_right = HandDetector(maxHands=1)
+        if display_r is not None:
+            self.hand_detector_right.findHands(display_r)
+        
+        # Lógica de calibración
+        current_key_id = -1
+        h, w = display_l.shape[:2]
+        
+        # Necesitamos manos en ambas cámaras para triangular Z
+        l_res = self.hand_detector.results.multi_hand_landmarks
+        r_res = self.hand_detector_right.results.multi_hand_landmarks if display_r is not None else None
+        
+        if l_res and r_res:
+            try:
+                # Dedo índice (8)
+                idx_l = l_res[0].landmark[8]
+                idx_r = r_res[0].landmark[8]
+                
+                # Coordenadas pantalla
+                xl, yl = int(idx_l.x * w), int(idx_l.y * h)
+                xr, yr = int(idx_r.x * w), int(idx_r.y * h)
+                
+                # 1. TRIANGULAR Z (Profundidad)
+                # Volver a RAW para cálculo preciso
+                raw_l = StereoConfig.transform_point_for_display((xl, yl), w, h)
+                raw_r = StereoConfig.transform_point_for_display((xr, yr), w, h)
+                
+                rect_l = self.depth_estimator.rectify_point(raw_l, is_left=True)
+                rect_r = self.depth_estimator.rectify_point(raw_r, is_left=False)
+                
+                if StereoConfig.CAMERAS_SWAPPED:
+                    p3d = self.depth_estimator.triangulate_point_simple(rect_r, rect_l)
+                else:
+                    p3d = self.depth_estimator.triangulate_point_simple(rect_l, rect_r)
+                
+                z_cm = p3d[2] if p3d else 0
+                
+                # --- DEBUG: Mostrar coordenadas al lado del dedo ---
+                coords_text = f"X:{xl} Y:{yl} Z:{z_cm:.2f}cm"
+                # Sombra negra (para leer mejor)
+                cv2.putText(display_l, coords_text, (xl + 16, yl - 14), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 3)
+                # Texto amarillo
+                cv2.putText(display_l, coords_text, (xl + 15, yl - 15), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
+                # ---------------------------------------------------
+                
+                # 2. DETECTAR TECLA (Usando la matriz de perspectiva corregida)
+                if self.viz_keyboard:
+                    # find_key usa internamente M_inv que definimos en _start
+                    current_key_id = self.viz_keyboard.find_key(xl, yl)
+                    
+                    if current_key_id is not None and current_key_id >= 0:
+                        if current_key_id not in self.temp_key_readings:
+                            self.temp_key_readings[current_key_id] = []
+                        
+                        # Guardar lectura (filtro simple)
+                        if -10 < z_cm < 50:
+                            self.temp_key_readings[current_key_id].append(z_cm)
+                        
+                        # Feedback: Círculo en el dedo
+                        cv2.circle(display_l, (xl, yl), 8, (0, 255, 255), -1)
+
+            except Exception as e:
+                pass
+
+        # DIBUJAR PIANO AR (Usando los polígonos pre-calculados)
+        if self.viz_keyboard and hasattr(self.viz_keyboard, 'screen_key_polygons'):
+            for poly in self.viz_keyboard.screen_key_polygons:
+                kid = poly['id']
+                pts = poly['contour']
+                
+                # Color logic
+                if kid in self.temp_key_readings and len(self.temp_key_readings[kid]) > 5:
+                    color = (0, 255, 0)  # Verde (Listo)
+                elif kid == current_key_id:
+                    color = (0, 165, 255)  # Naranja (Tocando)
+                else:
+                    color = (0, 0, 0) if poly['black'] else (255, 255, 255)  # Negro/Blanco
+                
+                cv2.fillPoly(overlay, [pts], color)
+                cv2.polylines(display_l, [pts], True, (100, 100, 100), 1)
+
+            # Aplicar transparencia
+            cv2.addWeighted(overlay, 0.5, display_l, 0.5, 0, display_l)
+            
+            # Info
+            total_keys = len(self.viz_keyboard.screen_key_polygons)
+            calibrated = len([k for k, v in self.temp_key_readings.items() if len(v) > 5])
+            cv2.rectangle(display_l, (20, 20), (350, 70), (0, 0, 0), -1)
+            cv2.putText(display_l, f"Calibradas: {calibrated}/{total_keys}", (30, 50), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+            
+            self.window.set_status(f"Progreso: {calibrated} teclas listas.", "#FFFF00")
+
+        self.window.update_frames(frame_left=display_l)
+
+    def _finish_key_calibration(self):
+        """Finaliza la calibración de teclas y guarda los datos"""
+        print("Procesando calibración de teclas...")
+        final_floors = {}
+        
+        # Promediar lecturas
+        for key_id, readings in self.temp_key_readings.items():
+            if len(readings) > 3:  # Mínimo de muestras
+                sorted_r = sorted(readings)
+                n_samples = max(1, int(len(sorted_r) * 0.2))
+                deepest = sorted_r[-n_samples:] 
+                avg_floor = sum(deepest) / len(deepest)
+                
+                final_floors[int(key_id)] = avg_floor
+        
+        # Guardar en config GLOBAL (clase)
+        from .calibration_config import CalibrationConfig
+        CalibrationConfig.key_floors = final_floors
+        CalibrationConfig.save_key_floors()
+        
+        print(f"¡Nivelación guardada! {len(final_floors)} teclas calibradas.")
+        
+        # Finalizar todo
+        self._finish_calibration(True)
 
 
 def run_qt_calibration(cam_left_id=1, cam_right_id=2):

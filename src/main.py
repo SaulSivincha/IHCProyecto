@@ -76,9 +76,7 @@ def show_calibration_menu(ui_helper, pixel_width, pixel_height):
 
 def run_calibration_process(ui_helper, pixel_width, pixel_height, config, force_recalibration=False):
     """Ejecuta el proceso de calibración con el nuevo sistema profesional"""
-    from src.calibration.calibration_config import CalibrationConfig
-    from src.calibration.qt_calibration_summary import CalibrationSummaryDialog, show_calibration_summary
-    
+    # CalibrationConfig ya está importado globalmente
     try:
         # ========== VERIFICAR QUÉ FASES ESTÁN COMPLETAS ==========
         has_phase1 = False
@@ -814,9 +812,7 @@ def main():
             # Si eligió opciones de configuración
             if start_mode == "config_calibration":
                 print("Abriendo calibracion...")
-                from src.calibration.calibration_config import CalibrationConfig
-                from src.calibration.qt_calibration_summary import CalibrationSummaryDialog, show_calibration_summary
-                
+                # Usamos imports globales (CalibrationConfig, CalibrationSummaryDialog, show_calibration_summary)
                 if CalibrationConfig.calibration_exists():
                     # Hay calibración existente: mostrar resumen
                     summary = CalibrationConfig.get_calibration_summary()
@@ -948,6 +944,54 @@ def main():
                                         KEYBOARD_WHIITE_N_KEYS)
             vk_right = vkb.VirtualKeyboard(pixel_width, pixel_height,
                                         KEYBOARD_WHIITE_N_KEYS)
+
+            # ==============================================================================
+            # [AR MODE] APLICAR CALIBRACIÓN AR AL MODO JUEGO
+            # Esto transporta la perspectiva 3D de la Fase 4C al juego real
+            # ==============================================================================
+            try:
+                calib_data = CalibrationConfig()
+                
+                if calib_data.virtual_table_corners and len(calib_data.virtual_table_corners) == 4:
+                    print("[MAIN] 🔮 Aplicando Perspectiva AR al Teclado de Juego...")
+                    
+                    # 1. Obtener esquinas guardadas y ajustarlas a la resolución actual
+                    corners = [StereoConfig.transform_point_for_display(p, pixel_width, pixel_height) 
+                              for p in calib_data.virtual_table_corners]
+                    
+                    # 2. Calcular la Matriz de Transformación
+                    #    Origen: Rectángulo plano perfecto del software
+                    src_pts = np.float32([
+                        [vk_left.kb_x0, vk_left.kb_y0],
+                        [vk_left.kb_x1, vk_left.kb_y0],
+                        [vk_left.kb_x1, vk_left.kb_y1],
+                        [vk_left.kb_x0, vk_left.kb_y1]
+                    ])
+                    #    Destino: Trapezoide real de tu mesa
+                    dst_pts = np.float32(corners)
+                    
+                    matrix = cv2.getPerspectiveTransform(src_pts, dst_pts)
+                    
+                    # 3. Aplicar a los teclados de juego
+                    for vk in [vk_left, vk_right]:
+                        vk.M_inv = np.linalg.inv(matrix)
+                        vk.ar_mode_active = True
+                        
+                        # Generar los polígonos visuales para dibujar
+                        vk.screen_key_polygons = []
+                        for k in vk.generate_logical_key_geometries():
+                            pts_dst = cv2.perspectiveTransform(k['pts'], matrix)[0]
+                            vk.screen_key_polygons.append({
+                                'id': k['id'], 
+                                'black': k['black'], 
+                                'contour': pts_dst.astype(np.int32)
+                            })
+                    print("[MAIN] ✓ Teclado alineado con la mesa real.")
+                else:
+                    print("[MAIN] ⚠️ No se encontró calibración AR. Usando teclado plano estándar.")
+            except Exception as e:
+                print(f"[MAIN] ⚠️ Error aplicando AR: {e}")
+            # ==============================================================================
             
             # Inicializar sistemas
             rhythm_game = RhythmGame(num_keys=KEYBOARD_TOT_KEYS)

@@ -158,24 +158,25 @@ class PersistentResources:
             print(f"  ERROR iniciando camaras: {e}")
     
     def _init_detectors(self):
-        """Inicializa los detectores de manos"""
+        """Inicializa los detectores de manos con la nueva firma"""
         print("  [INFO] Iniciando detectores de manos...")
         
         try:
+            # CORRECCIÓN: Usar los argumentos correctos para el nuevo HandDetector
+            # mode=False, maxHands=2, detectionCon=0.5, trackCon=0.5
+            
             self.left_detector = HandDetector(
-                staticImageMode=False,
+                mode=False,
+                maxHands=self.config.MAX_HANDS,
                 detectionCon=self.config.HAND_DETECTION_CONFIDENCE,
-                trackCon=self.config.HAND_TRACKING_CONFIDENCE,
-                img_width=self.config.PIXEL_WIDTH,
-                img_height=self.config.PIXEL_HEIGHT
+                trackCon=self.config.HAND_TRACKING_CONFIDENCE
             )
             
             self.right_detector = HandDetector(
-                staticImageMode=False,
+                mode=False,
+                maxHands=self.config.MAX_HANDS,
                 detectionCon=self.config.HAND_DETECTION_CONFIDENCE,
-                trackCon=self.config.HAND_TRACKING_CONFIDENCE,
-                img_width=self.config.PIXEL_WIDTH,
-                img_height=self.config.PIXEL_HEIGHT
+                trackCon=self.config.HAND_TRACKING_CONFIDENCE
             )
             
             self._detectors_ready = True
@@ -183,39 +184,44 @@ class PersistentResources:
             
         except Exception as e:
             print(f"  [ERROR] Error iniciando detectores: {e}")
+            import traceback
+            traceback.print_exc()
     
     def _init_synth(self):
-        """Inicializa el sintetizador y carga el SoundFont"""
+        """Inicializa el sintetizador de forma robusta sin usar la clase Settings"""
         print("  [INFO] Iniciando sintetizador...")
         
         try:
-            # Intentar varios drivers de audio en orden de preferencia para Windows
-            drivers = ['dsound', 'wasapi', 'portaudio', 'winmm']
+            # Drivers reportados por tu sistema como compatibles
+            drivers = ['wasapi', 'dsound', 'waveout', 'sdl3']
             started = False
+            
+            # 1. Crear el objeto synth primero
             self.synth = fluidsynth.Synth()
             
-            error_msgs = []
             for driver in drivers:
                 try:
-                    print(f"  [INTENTO] Iniciando driver de audio: {driver}...")
+                    print(f"  [INTENTO] Probando driver de audio: {driver}...")
+                    # En pyfluidsynth, el driver se pasa directamente al método start()
                     self.synth.start(driver=driver)
-                    # Si no lanza excepción, asumimos éxito inicial
+                    
+                    # Si llegamos aquí sin excepción, marcamos como iniciado
                     started = True
-                    print(f"  [EXITO] Driver {driver} iniciado.")
+                    print(f"  [EXITO] Audio configurado con driver: {driver}")
                     break
                 except Exception as e:
-                    error_msgs.append(f"{driver}: {e}")
-                    # Reiniciar objeto synth por si quedo en mal estado
-                    self.synth.delete()
+                    print(f"  [ALERTA] El driver {driver} no pudo iniciar: {e}")
+                    # Limpiar para el siguiente intento
+                    if self.synth:
+                        self.synth.delete()
                     self.synth = fluidsynth.Synth()
             
             if not started:
-                print(f"  [FALLO] No se pudo iniciar audio. Errores: {'; '.join(error_msgs)}")
-                # Continuar sin audio, pero marcar flag
+                print("  [FALLO] No se encontró un driver de audio funcional.")
                 self._synth_ready = False
                 return
 
-            # Buscar SoundFont
+            # 2. Cargar SoundFont (Rutas de tu sistema)
             soundfont_paths = [
                 r"C:\CodingWindows\IHCProyecto\utils\fluid\fluid\FluidR3_GM.sf2",
                 r"C:\CodingWindows\IHCProyecto\utils\fluid\FluidR3_GM.sf2",
@@ -226,18 +232,23 @@ class PersistentResources:
                 if sf_path and os.path.exists(sf_path):
                     try:
                         self.sfid = self.synth.sfload(sf_path)
-                        self.synth.program_select(0, self.sfid, 0, 0)
-                        self._synth_ready = True
-                        print(f"  [EXITO] SoundFont cargado: {os.path.basename(sf_path)}")
-                        break
+                        # Verificar que el SoundFont sea válido (ID >= 0)
+                        if self.sfid != -1:
+                            self.synth.program_select(0, self.sfid, 0, 0)
+                            self._synth_ready = True
+                            print(f"  [EXITO] SoundFont cargado: {os.path.basename(sf_path)}")
+                            break
+                        else:
+                            print(f"  [ALERTA] SF2 inválido o corrupto: {sf_path}")
                     except Exception as e:
                         print(f"  [ALERTA] Error cargando SF2 {sf_path}: {e}")
             
             if not self._synth_ready:
-                print("  [ERROR] No se encontro SoundFont valido")
+                print("  [ERROR] No se pudo cargar ningún SoundFont (Sinte mudo)")
                 
         except Exception as e:
-            print(f"  [ERROR] Error general iniciando sintetizador: {e}")
+            print(f"  [ERROR] Error general en el sintetizador: {e}")
+            self._synth_ready = False
     
     def _init_depth_estimator(self):
         """Inicializa el estimador de profundidad si hay calibración"""
@@ -409,4 +420,3 @@ def cleanup_resources():
     if _resources:
         _resources.cleanup()
         _resources = None
-

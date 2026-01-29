@@ -135,6 +135,49 @@ class CalibrationConfig:
     COLOR_INFO = (255, 255, 100)  # Cyan claro
     COLOR_TITLE = (0, 200, 255)  # Amarillo-naranja
     
+    # ==================== KEY LEVELING (PHASE 4C) ====================
+    key_floors = {}
+
+    @classmethod
+    def load_key_floors(cls):
+        """Loads key_floors from calibration file"""
+        if not cls.CALIBRATION_FILE.exists():
+            return
+        try:
+            import json
+            with open(cls.CALIBRATION_FILE, 'r') as f:
+                data = json.load(f)
+            
+            raw_floors = data.get("key_floors", {})
+            # Convert string keys to int
+            cls.key_floors = {int(k): v for k, v in raw_floors.items()}
+            print(f"[CONFIG] Loaded {len(cls.key_floors)} key floors.")
+        except Exception as e:
+            print(f"[CONFIG] Error loading key floors: {e}")
+
+    @classmethod
+    def save_key_floors(cls):
+        """Saves current key_floors to calibration file"""
+        if not cls.CALIBRATION_FILE.exists():
+            print("[CONFIG] No calibration file to update.")
+            return
+
+        try:
+            import json
+            # Read existing
+            with open(cls.CALIBRATION_FILE, 'r') as f:
+                data = json.load(f)
+            
+            # Update key_floors
+            data["key_floors"] = cls.key_floors
+            
+            # Write back
+            with open(cls.CALIBRATION_FILE, 'w') as f:
+                json.dump(data, f, indent=4)
+            print("[CONFIG] Key floors saved to calibration.json")
+        except Exception as e:
+            print(f"[CONFIG] Error saving key floors: {e}")
+
     @classmethod
     def ensure_directories(cls):
         """Crea los directorios necesarios si no existen"""

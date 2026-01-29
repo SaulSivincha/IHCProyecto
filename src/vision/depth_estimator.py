@@ -320,25 +320,51 @@ class DepthEstimator:
             return (scale_x, scale_y)
         return (1.0, 1.0)
     
+    def pixel_to_point_3d(self, x_pixel, y_pixel, depth_cm):
+        """
+        Convierte un punto 2D (u, v) y una profundidad Z conocida 
+        a coordenadas 3D (X, Y, Z) usando la matriz intrínseca.
+        """
+        if depth_cm is None or depth_cm <= 0:
+            return None
+            
+        # Obtener intrínsecos escalados a la resolución actual
+        fx, fy, cx, cy = self.get_scaled_intrinsics()
+        
+        # Fórmulas de proyección inversa (Pinhole Camera Model)
+        # x = (u - cx) * Z / fx
+        # y = (v - cy) * Z / fy
+        X = (x_pixel - cx) * depth_cm / fx
+        Y = (y_pixel - cy) * depth_cm / fy
+        Z = depth_cm
+        
+        return (X, Y, Z)
+
     def get_scaled_intrinsics(self):
         """
-        Obtiene los parámetros intrínsecos escalados a la resolución de runtime.
-        
-        La matriz K tiene:
-        - fx, fy: focal length en píxeles (deben escalarse)
-        - cx, cy: centro óptico en píxeles (deben escalarse)
-        
-        Returns:
-            tuple: (fx, fy, cx, cy) escalados a resolución runtime
+        Retorna fx, fy, cx, cy ajustados a la resolucion actual de runtime.
         """
-        scale_x, scale_y = self.get_resolution_scale()
+        # Matriz original (de calibracion) de camara IZQUIERDA (usada para deteccion)
+        K = self.K_left
         
-        fx = self.K_left[0, 0] * scale_x
-        fy = self.K_left[1, 1] * scale_y
-        cx = self.K_left[0, 2] * scale_x
-        cy = self.K_left[1, 2] * scale_y
+        # Resolucion original
+        orig_w = 1280.0
+        orig_h = 720.0
+        if hasattr(self, 'calib_width') and self.calib_width:
+             orig_w = float(self.calib_width)
+        if hasattr(self, 'calib_height') and self.calib_height:
+             orig_h = float(self.calib_height)
+             
+        # Factores de escala
+        scale_x = self.runtime_width / orig_w
+        scale_y = self.runtime_height / orig_h
         
-        return (fx, fy, cx, cy)
+        fx = K[0,0] * scale_x
+        fy = K[1,1] * scale_y
+        cx = K[0,2] * scale_x
+        cy = K[1,2] * scale_y
+        
+        return fx, fy, cx, cy
 
     def rectify_images(self, img_left, img_right):
         """

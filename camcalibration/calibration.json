@@ -368,7 +368,7 @@
         "width": 1280,
         "height": 720
     },
-    "swap_cameras": false,
+    "swap_cameras": true,
     "depth_correction": {
         "method": "linear_regression",
         "slope": 1.0,

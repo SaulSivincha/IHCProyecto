@@ -12,7 +12,7 @@ from src.vision.stereo_config import StereoConfig
 # Sistema modular de algoritmos
 from src.vision.algorithms.algorithm_manager import AlgorithmManager
 
-# IMPORTACIÓN CORREGIDA: Importamos las clases individuales, no 'PianoPhysics'
+# Importamos las clases corregidas de piano_physics
 from src.vision.piano_physics import VelocityCalculator, TriggerSystem
 
 class KeyboardMapModular:
@@ -32,9 +32,8 @@ class KeyboardMapModular:
         self.finger_state = {}
         self.finger_last_depth = {}
         
-        # CORRECCIÓN CRÍTICA: Altura de liberación bajada a 0.8 cm
-        # Esto permite tocar rápido sin tener que levantar tanto la mano.
-        self.release_height = 0.8
+        # CORRECCIÓN: Altura de liberación ajustada
+        self.release_height = 2.0
         
         # Debug
         self._debug_frame_count = 0
@@ -43,7 +42,7 @@ class KeyboardMapModular:
         from src.vision.algorithms import get_algorithm_manager
         self.algorithm_manager = get_algorithm_manager()
         
-        # MOTORES DE FÍSICA
+        # MOTORES DE FÍSICA (Usan las clases nuevas)
         self.physics_velocity = VelocityCalculator()
         self.physics_trigger = TriggerSystem()
         self.active_velocities = {}
@@ -82,8 +81,9 @@ class KeyboardMapModular:
             
             depth = finger_depths[finger_id]
             
-            # Filtro básico de rango físico (-5 a +25 cm)
-            if depth < -5.0 or depth > 25.0: continue
+            # --- CORRECCIÓN DEL FILTRO ---
+            # Antes estaba (-5.0 a 25.0). Lo abrimos a (-100 a 100) para aceptar tu meñique (-5.33)
+            if depth < -100.0 or depth > 100.0: continue
             
             if virtual_keyboard.intersect((x_pos, y_pos)):
                 key = virtual_keyboard.find_key(x_pos, y_pos)
@@ -119,10 +119,10 @@ class KeyboardMapModular:
             detected_fingers.add(finger_id)
             self.finger_last_depth[finger_id] = depth
             
-            # Liberación de seguridad por altura
-            if depth > self.release_height:
-                if finger_id in self.finger_state and self.finger_state[finger_id] == 'pressing':
-                    self.finger_state[finger_id] = 'released'
+            # Liberación de seguridad por altura absoluta (opcional, la física lo maneja mejor)
+            # if depth > self.release_height:
+            #    if finger_id in self.finger_state and self.finger_state[finger_id] == 'pressing':
+            #        self.finger_state[finger_id] = 'released'
         
         fingers_to_clean = [fid for fid in self.finger_state if fid not in detected_fingers]
         for fid in fingers_to_clean:
@@ -136,11 +136,11 @@ class KeyboardMapModular:
             # A. Calcular Velocidad Real (Módulo Physics)
             midi_vel = self.physics_velocity.calculate_velocity(finger_id, depth, current_time)
             
-            # B. Usar profundidad directa (ya es relativa al plano)
-            z_relative_physics = depth
+            # B. Usar profundidad directa (ya es relativa al plano o fija)
+            z_current = depth
             
-            # C. Evaluar Disparo (Sticky Trigger)
-            action = self.physics_trigger.evaluate_trigger(key, z_relative_physics)
+            # C. Evaluar Disparo (Auto-Nivelación ocurre aquí dentro)
+            action = self.physics_trigger.evaluate_trigger(key, z_current)
             
             if action == 'NOTE_ON':
                 self.finger_state[finger_id] = 'pressing'
@@ -153,7 +153,7 @@ class KeyboardMapModular:
                 if key in self.active_velocities: del self.active_velocities[key]
                 
             elif action == 'HOLD':
-                # Si está en HOLD, mantenemos la tecla presionada
+                # Si está en HOLD y ya estaba presionando, lo mantenemos
                 if self.finger_state.get(finger_id) == 'pressing':
                     filtered_by_depth.append(detection)
         
@@ -192,5 +192,5 @@ class KeyboardMapModular:
         alg = self.algorithm_manager.get_algorithm('Multi-nota')
         return alg.get_current_chord() if alg and alg.is_enabled() else set()
 
-# Alias
+# Alias para compatibilidad
 KeyboardMap = KeyboardMapModular

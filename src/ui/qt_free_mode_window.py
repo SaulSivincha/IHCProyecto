@@ -513,9 +513,14 @@ class FreeModeWindow(QMainWindow):
                                             depth_method = "FIJA"
                                             
                                             if hasattr(self.depth_estimator, 'has_bilinear_interpolation') and self.depth_estimator.has_bilinear_interpolation():
-                                                depth_rel = self.depth_estimator.get_depth_relative_bilinear(
+                                                raw_rel = self.depth_estimator.get_depth_relative_bilinear(
                                                     pt_left[0], pt_left[1], depth_abs
                                                 )
+                                                # --- AÑADIR SUAVIZADO AQUÍ ---
+                                                # Usamos el ID del dedo (tip_id) para mantener historia separada
+                                                # smooth_position espera (x,y,z), le pasamos (0,0,depth) solo para suavizar Z
+                                                _, _, depth_rel = self.depth_estimator.smooth_position((0, 0, raw_rel), landmark_id=tip_id)
+                                                # -----------------------------
                                                 depth_method = "BILINEAR"
                                             elif hasattr(self.depth_estimator, 'table_plane') and self.depth_estimator.table_plane is not None:
                                                 depth_rel = self.depth_estimator.get_depth_relative_to_plane(

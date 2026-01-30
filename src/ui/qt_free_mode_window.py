@@ -682,7 +682,37 @@ class FreeModeWindow(QMainWindow):
             traceback.print_exc()
 
         # 3. Mostrar Frame FINAL (ya rotado con todo dibujado)
-        self.logger.log_frame(frame_finger_data)
+        # 3. Mostrar Frame FINAL (ya rotado con todo dibujado)
+        if self.logger.is_recording:
+             research_fingers = {}
+             for finger_id, data in frame_finger_data.items():
+                 # Obtener nombre del dedo
+                 # finger_id es (hand_id, tip_id) -> usamos tip_id
+                 tip_id = finger_id[1]
+                 name = self.logger.finger_names.get(tip_id, str(tip_id))
+
+                 # Obtener nota que este dedo está "pisando" (si existe)
+                 # Usamos xl/yl que son coordenadas de cámara izquierda (rectificada)
+                 # find_key espera coordenadas de espacio de dibujo.
+                 # En AR, dibujo se alinea con cámara izq (si no hay escalado raro).
+                 
+                 # NOTA: Asumimos data['xl'] es int.
+                 current_key = self.virtual_keyboard.find_key(data['xl'], data['yl'])
+
+                 # Verificar si esa nota está realmente activa (sonando)
+                 is_active = False
+                 if current_key is not None:
+                      is_active = current_key in self.active_notes
+
+                 research_fingers[name] = {
+                     "x": round(data['xl'], 1),
+                     "y": round(data['yl'], 1),
+                     "z": round(data['z_rel'], 2),
+                     "note": current_key if is_active else None 
+                 }
+
+             # Llamar al nuevo logger modular
+             self.logger.log_frame(research_fingers, list(self.active_notes))
         self._display_frame(frame_left_display)
 
     def _display_frame(self, frame):

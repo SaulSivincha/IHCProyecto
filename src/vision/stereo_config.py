@@ -198,7 +198,11 @@ class StereoConfig:
     
     TABLE_CORNERS = None            # [NUEVO] Esquinas de mesa para proyección AR [(x,y), (x,y), (x,y), (x,y)]
     CALIB_PIXEL_WIDTH = None        # Resolución usada durante la calibración (para escalar puntos)
-    CALIB_PIXEL_HEIGHT = None       # Resolución usada durante la calibración (para escalar puntos)
+    CALIB_PIXEL_HEIGHT = None       # Resolución usada durante la calibración
+
+    # ==================== TECLADO VIRTUAL ====================
+    KEYBOARD_TOTAL_KEYS = 24        # 2 octavas completas (C-B x2)
+    KEYBOARD_WHITE_KEYS = 14        # 7 teclas blancas por octava
     
     # Sistema de detección de movimiento (velocity-based triggering)
     VELOCITY_THRESHOLD = 1.5        # Velocidad mínima hacia abajo (cm/frame) para activar tecla

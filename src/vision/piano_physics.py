@@ -55,11 +55,13 @@ class TriggerSystem:
         # =================================================================
         # LA CORRECCIÓN DE AUTO-NIVELACIÓN
         # =================================================================
-        # Si el dedo baja más que el piso registrado (ej. tu dedo está en -4.29 
-        # y el piso estaba en 41.0), actualizamos el piso a la nueva profundidad.
-        if z_current < floor and z_current > -100.0:
+        # --- FILTRO DE CORDURA IHC ---
+        # Solo bajamos el piso si la lectura es lógica (entre -15 y el piso actual)
+        # Esto evita que un ruido de -83.0 destruya la calibración
+        if -15.0 < z_current < floor:
             floor = z_current
             self.key_floors[key_id] = floor
+            # print(f"[FISICA] Piso validado Tecla {key_id}: {floor:.2f} cm") # Descomentar para debug
             # Descomenta la siguiente línea si quieres ver en consola cuando aprende
             # print(f"[AUTO] Tecla {key_id} piso ajustado a {floor:.2f}")
         # =================================================================

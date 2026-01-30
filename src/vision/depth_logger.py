@@ -20,7 +20,7 @@ class DepthLogger:
         self.frame_data = []
         self.start_time = time.time()
         self.is_recording = True
-        print("[LOGGER] Grabación optimizada iniciada...")
+        print("[LOGGER] Grabación optimizada iniciada (SIN FILTROS)...")
 
     def log_frame(self, fingers_state):
         if not self.is_recording:
@@ -31,24 +31,25 @@ class DepthLogger:
         has_activity = False
 
         for key, data in fingers_state.items():
-            # FILTRO: Solo registrar dedos 'cerca' de la mesa (< 8cm)
-            # Esto elimina todo el ruido cuando la mano está lejos/descansando
+            # --- CORRECCIÓN ---
+            # Antes: if z_rel < 8.0: (Muy estricto)
+            # Ahora: if z_rel < 200.0: (Permite todo para depuración)
             z_rel = data.get('z_rel', 100)
             
-            if z_rel < 8.0: 
+            if z_rel < 200.0: 
                 # Convertir clave tupla (0,8) a nombre legible
                 tip_id = key[1]
                 finger_name = self.finger_names.get(tip_id, str(tip_id))
                 
-                # Guardar solo lo esencial
+                # Guardar datos
                 relevant_data[finger_name] = {
                     'z': round(z_rel, 2),      # Profundidad relativa
                     'abs': round(data.get('z_abs', 0), 1), # Profundidad absoluta
-                    'y': data.get('yl', 0)     # Posición Y (útil para ver si está lejos/cerca)
+                    'y': data.get('yl', 0)     # Posición Y
                 }
                 has_activity = True
 
-        # Solo guardar el frame si hubo actividad relevante
+        # Guardar frame si hubo ALGO de actividad
         if has_activity:
             self.frame_data.append({
                 "t": timestamp,
@@ -58,15 +59,17 @@ class DepthLogger:
     def stop_and_save(self):
         self.is_recording = False
         if not self.frame_data:
-            print("[LOGGER] No hubo actividad relevante para guardar.")
+            print("[LOGGER] ⚠️ El log está vacío (no se detectaron manos).")
             return None
             
         filename = f"smart_log_{int(time.time())}.json"
         filepath = os.path.join(self.output_dir, filename)
         
-        with open(filepath, 'w') as f:
-            # indent=None ahorra mucho espacio
-            json.dump(self.frame_data, f, indent=None) 
-            
-        print(f"[LOGGER] Guardado LOG OPTIMIZADO en {filepath}")
-        return filepath
+        try:
+            with open(filepath, 'w') as f:
+                json.dump(self.frame_data, f, indent=None) 
+            print(f"[LOGGER] ✅ Guardado LOG en {filepath}")
+            return filepath
+        except Exception as e:
+            print(f"[LOGGER] Error guardando archivo: {e}")
+            return None

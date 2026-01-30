@@ -489,11 +489,24 @@ class FreeModeWindow(QMainWindow):
                                     if DEBUG_MODE and self._diag_counter % 60 == 0:
                                         print(f"[TRIANGULATE] tip={tip_id}: pt_L=({pt_left[0]:.0f},{pt_left[1]:.0f}), pt_R=({pt_right[0]:.0f},{pt_right[1]:.0f}), x_diff={x_diff:.0f}, y_diff={y_diff:.0f}")
                                     
-                                    # VALIDAR matching: Y similar y X_L > X_R
-                                    if y_diff > 80 or x_diff < 0:
+                                    # --- CORRECCIÓN CLAVE: ELIMINAR BLOQUEO DE DISPARIDAD NEGATIVA ---
+                                    # Antes: if y_diff > 80 or x_diff < 0:
+                                    # Ahora: Permitimos x_diff negativo porque el usuario tiene cámaras invertidas
+                                    if y_diff > 80: 
                                         stereo_reason = f"bad_match(yd={y_diff:.0f},xd={x_diff:.0f})"
                                     else:
-                                        point_3d = self.depth_estimator.triangulate_point(pt_left, pt_right, method='simple')
+                                        # AHORA: Rectificar primero para precisión milimétrica
+                                        # 1. Ajustar si hay swap
+                                        from src.vision.stereo_config import StereoConfig
+                                        raw_L = pt_right if StereoConfig.CAMERAS_SWAPPED else pt_left
+                                        raw_R = pt_left if StereoConfig.CAMERAS_SWAPPED else pt_right
+
+                                        # 2. Rectificar
+                                        rect_L = self.depth_estimator.rectify_point(raw_L, is_left=True)
+                                        rect_R = self.depth_estimator.rectify_point(raw_R, is_left=False)
+
+                                        # 3. Triangular
+                                        point_3d = self.depth_estimator.triangulate_point(rect_L, rect_R, method='simple')
                                         
                                         if point_3d:
                                             depth_abs = point_3d[2]
@@ -520,7 +533,7 @@ class FreeModeWindow(QMainWindow):
                                             if DEBUG_MODE and self._diag_counter % 30 == 0:
                                                 print(f"[DEPTH-{depth_method}] tip={tip_id}: abs={depth_abs:.1f}cm, rel={depth_rel:.1f}cm, X={pt_left[0]}")
                                             
-                                            if abs(depth_rel) < 30:
+                                            if abs(depth_rel) < 200: # Rango ampliado para debug
                                                 final_depth = depth_rel
                                                 stereo_reason = "ok"
                                             else:
@@ -545,7 +558,10 @@ class FreeModeWindow(QMainWindow):
                             
                             # Preparar datos
                             z_abs_val = point_3d[2] if 'point_3d' in locals() and point_3d else 0.0
-                            z_rel_val = final_depth
+                            # Usar el valor calculado si existe, sino el fallback
+                            z_rel_val = final_depth 
+                            if 'depth_rel' in locals() and depth_rel is not None:
+                                z_rel_val = depth_rel
                             
                             frame_finger_data[(id_l, tip_id)] = {
                                 'z_abs': float(z_abs_val),

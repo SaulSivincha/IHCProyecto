@@ -2056,10 +2056,9 @@ class QtCalibrationManager(QObject):
                 'resolution': [frame_w, frame_h]
             }
             
-            # NUEVO: Intentar calcular plano 3D
-            # COMENTAR ESTO: Evita que el programa se cuelgue intentando calcularlo solo
-            # plane_coeffs = self._calculate_table_plane_3d()
-            plane_coeffs = None
+            # NUEVO: Calcular plano 3D usando las matrices de calibración (Fase 1 y 2)
+            plane_coeffs = self._calculate_table_plane_3d() # <-- ¡DESCOMENTAR!
+            # plane_coeffs = None
             
             if plane_coeffs is not None:
                 table_def['plane_3d'] = {
@@ -2370,7 +2369,7 @@ class QtCalibrationManager(QObject):
                 depth_pt = self.depth_estimator.triangulate_point_simple(pt_for_tri_L, pt_for_tri_R)
                 
                 if depth_pt:
-                     self.corner_depth_samples[self.current_corner_index].append(depth_pt)
+                     self.corner_depth_samples[self.current_corner_index].append(depth_pt[2]) # Guarda SOLO Z (Profundidad)
                      self.window.set_status(f"Capturando muestra {count}/{total}...", "#00FF00")
             
             # Avanzar si completamos muestras

@@ -85,7 +85,7 @@ class KeyboardProcessor:
             try:
                 pt_l = self.depth_estimator.rectify_point((f_l[2], f_l[3]), 'left')
                 pt_r = self.depth_estimator.rectify_point((f_r[2], f_r[3]), 'right')
-                res_3d = self.depth_estimator.triangulate_point(pt_l, pt_r)
+                res_3d = self.depth_estimator.triangulate_point(pt_l, pt_r, method='DLT')
                 if res_3d: return self.depth_estimator.get_depth_relative_to_plane(f_l[2], f_l[3], res_3d[2])
             except: pass
         return None

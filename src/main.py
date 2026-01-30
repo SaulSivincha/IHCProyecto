@@ -1182,7 +1182,7 @@ def main():
                                 pt_r_rect = depth_estimator.rectify_point(point_right, 'right')
                                 
                                 # Triangular con calibración completa
-                                result_3d = depth_estimator.triangulate_point(pt_l_rect, pt_r_rect)
+                                result_3d = depth_estimator.triangulate_point(pt_l_rect, pt_r_rect, method='DLT')
                                 
                                 if result_3d is not None:
                                     X_raw, Y_raw, Z_raw = result_3d

@@ -18,6 +18,7 @@ from PyQt6.QtGui import QImage, QPixmap, QColor
 
 # Importamos utilidades del proyecto
 from src.piano.keyboard_processor import KeyboardProcessor
+from src.vision.stereo_config import StereoConfig
 from src.config.app_config import AppConfig
 from src.config.theme import Theme
 from src.vision.depth_logger import DepthLogger
@@ -209,13 +210,11 @@ class FreeModeWindow(QMainWindow):
             return
             
         # 1. Capturar Frames
-        finished_left, frame_left = self.camera_left.next(black=True, wait=1)
-        finished_right, frame_right = self.camera_right.next(black=True, wait=1)
+        wait_t = getattr(StereoConfig, 'FRAME_WAIT_TIME', 0.01)
+        finished_left, frame_left = self.camera_left.next(black=True, wait=wait_t)
+        finished_right, frame_right = self.camera_right.next(black=True, wait=wait_t)
         
         if frame_left is None: return
-
-        # Importar configuración estéreo (compartida por todos los modos)
-        from src.vision.stereo_config import StereoConfig
 
         # === CORREGIDO: ARQUITECTURA DE TRANSFORMACIONES ===
         # ESTRATEGIA NUEVA: Detectar en frames RAW para estéreo, rotar solo para display
@@ -318,8 +317,8 @@ class FreeModeWindow(QMainWindow):
             frame_finger_data = {}
             
             # C. Dibujar teclado en frame ROTADO
+            # C. Dibujar teclado en frame ROTADO
             # CORREGIDO: Usar modo AR (draw_perspective) si TABLE_CORNERS está disponible
-            from src.vision.stereo_config import StereoConfig
             
             if StereoConfig.TABLE_CORNERS is not None and len(StereoConfig.TABLE_CORNERS) == 4:
                 # Modo AR: Dibujar con perspectiva usando las esquinas calibradas
@@ -497,7 +496,6 @@ class FreeModeWindow(QMainWindow):
                                     else:
                                         # AHORA: Rectificar primero para precisión milimétrica
                                         # 1. Ajustar si hay swap
-                                        from src.vision.stereo_config import StereoConfig
                                         raw_L = pt_right if StereoConfig.CAMERAS_SWAPPED else pt_left
                                         raw_R = pt_left if StereoConfig.CAMERAS_SWAPPED else pt_right
 
@@ -592,7 +590,6 @@ class FreeModeWindow(QMainWindow):
                 # 4. Asignar mapa de teclas
                 # CORREGIDO: En modo AR, NO escalar coordenadas (ya están en espacio del frame)
                 # En modo plano, SÍ escalar al canvas
-                from src.vision.stereo_config import StereoConfig
                 
                 if StereoConfig.TABLE_CORNERS is not None and len(StereoConfig.TABLE_CORNERS) == 4:
                     # MODO AR: Usar coordenadas directas del frame (sin escalar)

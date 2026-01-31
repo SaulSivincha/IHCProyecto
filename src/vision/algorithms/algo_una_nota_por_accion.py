@@ -60,7 +60,10 @@ class UnaNotaPorAccionAlgorithm(BaseAlgorithm):
                 if finger_id in self.dedos_activos:
                     del self.dedos_activos[finger_id]
                 
-                self.cooldown_por_dedo[finger_id] = 6 
+                
+                # Cooldown reducido para permitir trinos y notas rápidas (Latencia mínima)
+                # Antes: 6 frames (200ms). Ahora: 2 frames (66ms)
+                self.cooldown_por_dedo[finger_id] = 2 
                 
                 if self._debug_count % 30 == 0:
                     print(f"[BLOQUEO] [LIFT GUARD] {finger_id} | v={velocity:.2f} (Blocked)")

@@ -22,6 +22,13 @@ class StereoConfig:
     PIXEL_HEIGHT = 720              # Alto en píxeles (aumentado para mejor precisión)
     FRAME_RATE = 30                 # FPS objetivo
     
+    # ==================== LATENCIA / SINCRONIZACIÓN ====================
+    # Optimización Crítica: Tiempo de espera entre frames (segundos)
+    # Reducido de 0.1 a 0.01 para forzar captura casi continua
+    FRAME_WAIT_TIME = 0.01          
+    # Tamaño del buffer de captura. 1 = Solo el frame más reciente (Realtime)
+    QUEUE_LENGTH = 1
+    
     # Flag que indica si los IDs de cámara actuales están invertidos
     # respecto a los IDs usados durante la calibración estéreo.
     # Si True, se deben intercambiar los frames/datos L<->R en el procesamiento.

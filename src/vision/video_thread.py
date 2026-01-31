@@ -61,8 +61,13 @@ class VideoThread:
         if self.buffer_all:
             self.buffer = queue.Queue(self.buffer_length)
         else:
-            # last frame only
-            self.buffer = queue.Queue(1)
+            # last frame only - optimizado para latencia
+            try:
+                from src.vision.stereo_config import StereoConfig
+                q_len = getattr(StereoConfig, 'QUEUE_LENGTH', 1)
+            except ImportError:
+                q_len = 1
+            self.buffer = queue.Queue(q_len)
     
         self.finished = False
 

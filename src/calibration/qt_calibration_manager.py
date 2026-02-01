@@ -20,6 +20,7 @@ from .stereo_calibrator import StereoCalibrator
 from .depth_calibrator import DepthCalibrator
 from .qt_calibration_window import CalibrationWindow
 from .qt_config_dialog import CalibrationConfigDialog
+from ..config.theme import Theme  # Import global theme
 
 # Importar recursos persistentes para reutilizar cámaras
 try:
@@ -1165,121 +1166,219 @@ class QtCalibrationManager(QObject):
         from PyQt6.QtCore import Qt
         
         dialog = QDialog(self.window)
-        dialog.setWindowTitle("Distancia Real del Teclado")
+        dialog.setWindowTitle("Calibración de Profundidad")
         dialog.setModal(True)
-        dialog.setFixedSize(450, 320)
-        dialog.setStyleSheet("""
-            QDialog {
-                background-color: #2b2b2b;
-            }
-            QLabel {
-                color: #ffffff;
-                font-size: 13px;
-            }
-            QLabel#title {
-                color: #00C8FF;
-                font-size: 18px;
-                font-weight: bold;
-            }
-            QLabel#info {
-                color: #888888;
-                font-size: 11px;
-            }
-            QDoubleSpinBox {
-                background-color: #3b3b3b;
-                color: #ffffff;
-                border: 2px solid #00C8FF;
-                border-radius: 4px;
-                padding: 8px;
-                font-size: 20px;
-                font-weight: bold;
-            }
-            QPushButton {
-                background-color: #00C8FF;
-                color: #000000;
-                font-size: 14px;
-                font-weight: bold;
+        dialog.setFixedSize(520, 450)
+        
+        # Usar colores correctos del Theme (Adventure Mode)
+        bg_sky = Theme.to_hex(Theme.BG_MAIN)  # Azul celeste - fondo principal
+        bg_white = Theme.to_hex(Theme.BG_PANEL)  # Blanco - para paneles/inputs
+        text_dark = Theme.to_hex(Theme.TEXT_PRIMARY)  # Azul oscuro - texto
+        header_orange = Theme.to_hex(Theme.BG_HEADER)  # Naranja - header
+        border_orange = Theme.to_hex(Theme.BORDER_FOCUS)  # Naranja - bordes
+        accent_blue = Theme.to_hex(Theme.BTN_PRIMARY_BG)  # Azul vivido - botones
+        success_green = Theme.to_hex(Theme.SUCCESS)  # Verde - success
+        error_red = Theme.to_hex(Theme.ERROR)  # Rojo - cancelar
+        
+        dialog.setStyleSheet(f"""
+            QDialog {{
+                background-color: {bg_sky};
                 border: none;
-                border-radius: 4px;
-                padding: 10px 24px;
-            }
-            QPushButton:hover {
-                background-color: #33D6FF;
-            }
-            QPushButton#skipBtn {
-                background-color: #555555;
-                color: #ffffff;
-            }
-            QPushButton#skipBtn:hover {
-                background-color: #666666;
-            }
+                border-radius: 12px;
+            }}
+            
+            QLabel {{
+                color: {text_dark};
+                font-size: 13px;
+                background: transparent;
+            }}
+            
+            QLabel#title {{
+                color: {header_orange};
+                background: transparent;
+                font-size: 22px;
+                font-weight: bold;
+                padding: 5px;
+            }}
+            
+            QLabel#subtitle {{
+                color: {text_dark};
+                font-size: 13px;
+                padding: 12px 20px;
+                background-color: rgba(255, 255, 255, 0.6);
+                border-radius: 8px;
+            }}
+            
+            QLabel#stepLabel {{
+                color: {text_dark};
+                font-size: 14px;
+                font-weight: 600;
+                background: transparent;
+            }}
+            
+            QLabel#info {{
+                color: {text_dark};
+                font-size: 12px;
+                background-color: rgba(255, 255, 255, 0.8);
+                padding: 12px;
+                border-radius: 8px;
+                border-left: 4px solid {success_green};
+            }}
+            
+            QDoubleSpinBox {{
+                background-color: {bg_white};
+                color: {text_dark};
+                border: 2px solid {border_orange};
+                border-radius: 6px;
+                padding: 10px 14px;
+                font-size: 22px;
+                font-weight: bold;
+                min-width: 150px;
+            }}
+            
+            QDoubleSpinBox:focus {{
+                border: 3px solid {accent_blue};
+            }}
+            
+            QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {{
+                width: 20px;
+                border-radius: 3px;
+            }}
+            
+            QPushButton {{
+                background-color: {border_orange};
+                color: white;
+                font-size: 15px;
+                font-weight: 600;
+                border: none;
+                border-radius: 6px;
+                padding: 12px 32px;
+                min-width: 120px;
+            }}
+            
+            QPushButton:hover {{
+                background-color: {header_orange};
+            }}
+            
+            QPushButton:pressed {{
+                background-color: #CC5500;
+            }}
+            
+            QPushButton#skipBtn {{
+                background-color: {accent_blue};
+                color: white;
+                border: none;
+            }}
+            
+            QPushButton#skipBtn:hover {{
+                background-color: #1468B8;
+            }}
+            
+            QFrame#separator {{
+                background-color: rgba(25, 50, 100, 0.2);
+                max-height: 1px;
+                margin: 8px 30px;
+            }}
         """)
         
+        
         layout = QVBoxLayout(dialog)
-        layout.setSpacing(12)
-        layout.setContentsMargins(24, 24, 24, 24)
+        layout.setSpacing(14)
+        layout.setContentsMargins(25, 25, 25, 25)
         
         # Título
-        title = QLabel("Medicion de Distancia Real")
+        title = QLabel("Calibración de Profundidad")
         title.setObjectName("title")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(title)
         
-        # Instrucciones
-        instructions = QLabel(
-            "Mide con una regla o cinta metrica la distancia\n"
-            "desde las CAMARAS hasta el TECLADO/MESA.\n\n"
-            "Esto permite calcular el error de medicion\n"
-            "y corregir la profundidad automaticamente."
+        layout.addSpacing(2)
+        
+        # Subtítulo
+        subtitle = QLabel(
+            "Ingresa las mediciones de distancia para calibrar\n"
+            "el sistema de detección de profundidad."
         )
-        instructions.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(instructions)
+        subtitle.setObjectName("subtitle")
+        subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(subtitle)
         
-        layout.addSpacing(8)
+        layout.addSpacing(5)
         
-        # Input 1: Altura para la PRIMERA MEDICIÓN (Mano)
+        # Separador
+        separator1 = QFrame()
+        separator1.setObjectName("separator")
+        separator1.setFrameShape(QFrame.Shape.HLine)
+        layout.addWidget(separator1)
+        
+        layout.addSpacing(12)
+        
+        # Input 1: Altura MANO
         input_layout1 = QHBoxLayout()
         input_layout1.addStretch()
-        label1 = QLabel("1. Altura medición MANO:")
+        
+        label1 = QLabel("Altura calibración (mano):")
+        label1.setObjectName("stepLabel")
         input_layout1.addWidget(label1)
+        
+        input_layout1.addSpacing(12)
+        
         self.spin_calib_height = QDoubleSpinBox()
         self.spin_calib_height.setRange(10, 200)
-        self.spin_calib_height.setValue(20)  # Sugerencia: 20cm
+        self.spin_calib_height.setValue(20)
         self.spin_calib_height.setSuffix(" cm")
         self.spin_calib_height.setDecimals(1)
         self.spin_calib_height.setSingleStep(1)
-        self.spin_calib_height.setFixedWidth(140)
         input_layout1.addWidget(self.spin_calib_height)
+        
         input_layout1.addStretch()
         layout.addLayout(input_layout1)
         
-        # Input 2: Altura real de la MESA (Teclado)
+        layout.addSpacing(12)
+        
+        # Input 2: Altura MESA
         input_layout2 = QHBoxLayout()
         input_layout2.addStretch()
-        label2 = QLabel("2. Altura real MESA:")
+        
+        label2 = QLabel("Altura real (mesa/teclado):")
+        label2.setObjectName("stepLabel")
         input_layout2.addWidget(label2)
+        
+        
+        input_layout2.addSpacing(12)
+        
         self.spin_table_height = QDoubleSpinBox()
         self.spin_table_height.setRange(10, 200)
-        self.spin_table_height.setValue(41)  # Sugerencia: 41cm
+        self.spin_table_height.setValue(41)
         self.spin_table_height.setSuffix(" cm")
         self.spin_table_height.setDecimals(1)
         self.spin_table_height.setSingleStep(1)
-        self.spin_table_height.setFixedWidth(140)
         input_layout2.addWidget(self.spin_table_height)
+        
         input_layout2.addStretch()
         layout.addLayout(input_layout2)
         
         # Guardar referencia al diálogo
         self._distance_dialog = dialog
         
-        # Info adicional
-        info = QLabel("Tip: Calibra con la mano más cerca (20cm) para mejor precisión\nLuego indica la altura real de la mesa donde tocarás")
+        layout.addSpacing(15)
+        
+        # Separador
+        separator2 = QFrame()
+        separator2.setObjectName("separator")
+        separator2.setFrameShape(QFrame.Shape.HLine)
+        layout.addWidget(separator2)
+        
+        # Info
+        info = QLabel(
+            "<b>Sugerencia:</b> Calibra con la mano cerca (~20cm) para mejor precisión. "
+            "Luego indica la altura de la mesa donde tocarás."
+        )
         info.setObjectName("info")
-        info.setAlignment(Qt.AlignmentFlag.AlignCenter)
         info.setWordWrap(True)
         layout.addWidget(info)
         
-        layout.addSpacing(12)
+        layout.addStretch()
         
         # Botones
         buttons_layout = QHBoxLayout()
@@ -1290,10 +1389,11 @@ class QtCalibrationManager(QObject):
         skip_btn.clicked.connect(lambda: self._on_distance_entered(dialog, skip=True))
         buttons_layout.addWidget(skip_btn)
         
-        buttons_layout.addSpacing(12)
+        buttons_layout.addSpacing(15)
         
         confirm_btn = QPushButton("Continuar")
         confirm_btn.clicked.connect(lambda: self._on_distance_entered(dialog, skip=False))
+
         buttons_layout.addWidget(confirm_btn)
         
         buttons_layout.addStretch()

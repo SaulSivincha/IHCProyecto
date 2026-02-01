@@ -1747,7 +1747,20 @@ class QtCalibrationManager(QObject):
             if self.stereo_calibrator.T is not None:
                 # T está en mm, convertir a cm
                 baseline_mm = np.linalg.norm(self.stereo_calibrator.T)
-                summary_data['baseline'] = baseline_mm / 10.0
+                summary_data['baseline_cm'] = baseline_mm / 10.0
+        
+        # Agregar datos de Fase 4 (Mesa AR) si existen
+        # Intenta obtener de los atributos guardados o de la configuración persistente
+        if hasattr(self, 'table_corners') and self.table_corners:
+             summary_data['table_corners'] = self.table_corners
+        elif self.calibration_data.get('table_corners'):
+             summary_data['table_corners'] = self.calibration_data.get('table_corners')
+             
+        table_def = self.calibration_data.get('table_definition', {})
+        if table_def and 'corner_depths' in table_def:
+            summary_data['corner_depths'] = table_def['corner_depths']
+        if table_def and 'plane_equation' in table_def:
+            summary_data['plane_equation'] = table_def['plane_equation']
         
         # Mostrar pantalla de resumen
         self.window.show_summary_screen(summary_data)

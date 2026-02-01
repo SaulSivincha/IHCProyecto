@@ -69,6 +69,10 @@ class DepthCalibrator:
         # Buffer para filtro de suavizado (media móvil)
         self.depth_buffer = []
         self.smoothed_depth = None
+        
+        # Métricas de validación
+        self.r2 = 1.0
+        self.mae = 0.0
     
     def set_real_distance(self, distance_cm: float):
         """
@@ -190,8 +194,8 @@ class DepthCalibrator:
             print(f"[ERROR] Se necesita al menos 1 medición")
             return None
             
-        # Calcular pendiente (slope) y offset (intercept)
-        self.slope, self.intercept = self._calculate_regression()
+        # Calcular regresión lineal y guardar
+        self.slope, self.intercept, self.r2, self.mae = self._calculate_regression()
         
         # Mantener correction_factor por retrocompatibilidad (usar slope)
         self.correction_factor = self.slope
@@ -205,10 +209,10 @@ class DepthCalibrator:
         Calcula regresión lineal o offset simple.
         
         Returns:
-            tuple: (slope, intercept)
+            tuple: (slope, intercept, r2, mae)
         """
         if not self.measurements:
-            return 1.0, 0.0
+            return 1.0, 0.0, 1.0, 0.0
         
         # CASO 1 PUNTO: Asumir pendiente perfecta (1.0) y solo corregir el error constante (offset)
         if len(self.measurements) == 1:
@@ -217,27 +221,38 @@ class DepthCalibrator:
             
             slope = 1.0
             intercept = real_val - measured_val
+            r2 = 1.0  # Con un punto la correlación es "perfecta" por definición
+            mae = 0.0 # Error respecto al punto único es 0
             
             print(f"[DEBUG] Calibración de 1 punto:")
             print(f"  Pendiente fija: {slope:.4f}")
-            print(f"  Offset calculado: {intercept:.4f} cm (Diferencia Real - Medido)")
-            return slope, intercept
+            print(f"  Offset calculado: {intercept:.4f} cm")
+            return slope, intercept, r2, mae
 
         # CASO MULTIPLES PUNTOS (Regresión Lineal normal)
-        # x = medidas del sistema (lo que ve la cámara)
-        # y = distancias reales (lo que el usuario mide con regla)
         x = np.array([m[1] for m in self.measurements])
         y = np.array([m[0] for m in self.measurements])
         
         # Ajuste lineal de grado 1 (y = mx + b)
-        # polyfit devuelve [pendiente, intercepto]
         slope, intercept = np.polyfit(x, y, 1)
+        
+        # Calcular R2 (Coeficiente de determinación)
+        y_pred = slope * x + intercept
+        y_mean = np.mean(y)
+        ss_res = np.sum((y - y_pred)**2)
+        ss_tot = np.sum((y - y_mean)**2)
+        r2 = 1 - (ss_res / ss_tot) if ss_tot != 0 else 1.0
+        
+        # MAE (Mean Absolute Error)
+        mae = np.mean(np.abs(y - y_pred))
         
         print(f"[DEBUG] Regresión calculada:")
         print(f"  Pendiente (m): {slope:.4f}")
         print(f"  Offset (b):    {intercept:.4f} cm")
+        print(f"  R2:            {r2:.4f}")
+        print(f"  MAE:           {mae:.4f} cm")
         
-        return slope, intercept
+        return slope, intercept, float(r2), float(mae)
 
     def _save_calibration_params(self):
         """Guarda los parámetros m y b en el JSON"""
@@ -252,6 +267,8 @@ class DepthCalibrator:
                 'method': 'linear_regression',
                 'slope': self.slope,           # m
                 'intercept': self.intercept,   # b
+                'r2': self.r2,                 # R2
+                'mae_cm': self.mae,            # MAE
                 'correction_factor': self.slope,  # Retrocompatibilidad
                 'keyboard_distance_cm': self.keyboard_distance,
                 'measurements': [

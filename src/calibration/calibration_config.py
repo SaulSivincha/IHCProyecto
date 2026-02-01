@@ -285,6 +285,8 @@ class CalibrationConfig:
                 'error_right': data['right_camera'].get('reprojection_error', 'N/A'),
                 'imagenes_left': data['left_camera'].get('num_images', 'N/A'),
                 'imagenes_right': data['right_camera'].get('num_images', 'N/A'),
+                'dist_coeffs_left': data['left_camera'].get('distortion_coeffs', [[]])[0],
+                'dist_coeffs_right': data['right_camera'].get('distortion_coeffs', [[]])[0],
                 'tiene_estereo': 'stereo' in data and data['stereo'] is not None,
                 'tiene_depth_correction': 'depth_correction' in data and data['depth_correction'] is not None
             }
@@ -295,8 +297,35 @@ class CalibrationConfig:
                 summary['pares_stereo'] = data['stereo'].get('num_pairs', 'N/A')
             
             if summary['tiene_depth_correction']:
-                summary['keyboard_distance_cm'] = data['depth_correction'].get('keyboard_distance_cm', 'N/A')
-                summary['keyboard_samples'] = data['depth_correction'].get('keyboard_samples', 'N/A')
+                dc = data.get('depth_correction', {})
+                summary['keyboard_distance_cm'] = dc.get('keyboard_distance_cm', 'N/A')
+                summary['keyboard_samples'] = dc.get('keyboard_samples', 'N/A')
+                summary['depth_m'] = dc.get('slope', 1.0)
+                summary['depth_c'] = dc.get('intercept', 0.0)
+                summary['depth_r2'] = dc.get('r2', 1.0)
+                summary['depth_mae'] = dc.get('mae_cm', 0.0)
+                summary['correction_factor'] = dc.get('correction_factor', 1.0) # For backward compatibility
+
+            # FASE 4: AR & Key Stats
+            summary['corners_complete'] = 'table_definition' in data and data['table_definition'] is not None
+            summary['keys_complete'] = 'key_floors' in data and data['key_floors'] is not None
+            
+            if summary['keys_complete']:
+                floors = list(data['key_floors'].values())
+                summary['num_keys'] = len(floors)
+                summary['avg_key_depth'] = np.mean(floors)
+                summary['std_key_depth'] = np.std(floors)
+            elif summary['corners_complete']:
+                c_depths = data['table_definition'].get('corner_depths', [])
+                if c_depths:
+                    summary['num_keys'] = 24 # Visual fallback
+                    summary['avg_key_depth'] = np.mean(c_depths)
+                    summary['std_key_depth'] = np.std(c_depths)
+            
+            # Additional table/plane data
+            table_def = data.get('table_definition', {})
+            if table_def and 'plane_3d' in table_def:
+                summary['plane_coeffs'] = table_def['plane_3d'].get('coefficients', [])
             
             return summary
             

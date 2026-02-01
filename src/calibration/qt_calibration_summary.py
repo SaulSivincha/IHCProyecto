@@ -1,17 +1,140 @@
+"""
+Calibration Summary Dialog - Adventure Mode High-Fidelity Design
+Implementing professional UI with animations, ripple effects, and modern typography.
+"""
 import sys
+import numpy as np
 from PyQt6.QtWidgets import (
     QApplication, QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, 
-    QSpacerItem, QSizePolicy, QFrame, QWidget
+    QFrame, QWidget, QGraphicsDropShadowEffect, QScrollArea
 )
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QFont, QColor, QPalette, QLinearGradient, QPainter
+from PyQt6.QtCore import Qt, QTimer, QPropertyAnimation, QEasingCurve, QRect, QPoint, QPointF, QSize, pyqtProperty
+from PyQt6.QtGui import QColor, QLinearGradient, QRadialGradient, QPainter, QFont, QFontDatabase, QPen
 from src.config.theme import Theme
+
+class AnimatedLabel(QLabel):
+    """Label that supports numeric counting animation"""
+    def __init__(self, text="", parent=None):
+        super().__init__(text, parent)
+        self._value = 0.0
+        self._format = "{:.2f}"
+        self._final_value = 0.0
+        self._timer = QTimer(self)
+        self._timer.timeout.connect(self._update_text)
+        self._steps = 40
+        self._current_step = 0
+        self._increment = 0.0
+
+    def animate_to(self, target_value, duration=1000, fmt="{:.2f}"):
+        try:
+            self._final_value = float(target_value)
+        except (ValueError, TypeError):
+            self.setText(str(target_value))
+            return
+
+        self._format = fmt
+        self._value = 0.0
+        self._current_step = 0
+        self._increment = self._final_value / self._steps
+        
+        interval = max(16, duration // self._steps)
+        self._timer.start(interval)
+
+    def _update_text(self):
+        self._current_step += 1
+        self._value += self._increment
+        
+        if self._current_step >= self._steps:
+            self._value = self._final_value
+            self._timer.stop()
+            
+        self.setText(self._format.format(self._value))
+
+class RippleButton(QPushButton):
+    """Button with ripple effect and hover scaling"""
+    def __init__(self, text="", color="#FB8C00", parent=None):
+        super().__init__(text, parent)
+        self._ripple_pos = QPoint()
+        self._ripple_radius = 0
+        self._color = QColor(color)
+        self._hover_scale = 1.0
+        self._animation = QPropertyAnimation(self, b"ripple_radius")
+        self._scale_anim = QPropertyAnimation(self, b"hover_scale")
+        
+        # Style
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setMinimumHeight(50)
+
+    @pyqtProperty(int)
+    def ripple_radius(self): return self._ripple_radius
+    @ripple_radius.setter
+    def ripple_radius(self, radius):
+        self._ripple_radius = radius
+        self.update()
+
+    @pyqtProperty(float)
+    def hover_scale(self): return self._hover_scale
+    @hover_scale.setter
+    def hover_scale(self, scale):
+        self._hover_scale = scale
+        self.update()
+
+    def mousePressEvent(self, event):
+        self._ripple_pos = event.pos()
+        self._animation.stop()
+        self._animation.setDuration(600)
+        self._animation.setStartValue(0)
+        self._animation.setEndValue(max(self.width(), self.height()) * 2)
+        self._animation.setEasingCurve(QEasingCurve.Type.OutQuad)
+        self._animation.start()
+        super().mousePressEvent(event)
+
+    def enterEvent(self, event):
+        self._scale_anim.stop()
+        self._scale_anim.setDuration(200)
+        self._scale_anim.setEndValue(1.05)
+        self._scale_anim.start()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self._scale_anim.stop()
+        self._scale_anim.setDuration(200)
+        self._scale_anim.setEndValue(1.0)
+        self._scale_anim.start()
+        super().leaveEvent(event)
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        
+        # Draw background with scale
+        rect = self.rect()
+        painter.translate(rect.center())
+        painter.scale(self._hover_scale, self._hover_scale)
+        painter.translate(-rect.center())
+        
+        painter.setBrush(self._color)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.drawRoundedRect(rect, 12, 12)
+        
+        # Draw ripple
+        if self._animation.state() == QPropertyAnimation.State.Running:
+            painter.setBrush(QColor(255, 255, 255, 80))
+            painter.drawEllipse(self._ripple_pos, self._ripple_radius, self._ripple_radius)
+        
+        # Draw text
+        painter.setPen(Qt.GlobalColor.white)
+        font = QFont("Poppins")
+        font.setPixelSize(16) # 1rem (16px) specified
+        font.setBold(True)
+        painter.setFont(font)
+        painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, self.text())
 
 class CalibrationSummaryDialog(QDialog):
     # Return codes
     ACTION_START = 1
     ACTION_RECALIBRATE_STEREO = 2
-    ACTION_RECALIBRATE_DEPTH = 4  # Nuevo código para Fase 3
+    ACTION_RECALIBRATE_DEPTH = 4
     ACTION_RECALIBRATE_ALL = 3
     ACTION_EXIT = 0
 
@@ -21,362 +144,441 @@ class CalibrationSummaryDialog(QDialog):
         self.result_action = self.ACTION_EXIT
         
         self.setWindowTitle("Resumen de Calibración")
-        self.setMinimumSize(900, 700)
+        self.setFixedSize(900, 820) # Further increased height for comfort
+        
+        # Colors
+        self.ORANGE = "#FB8C00"
+        self.BLUE = "#1E90FF"
+        self.DARK = "#193264"
+        self.CYAN_BG = "#E0F7FA"
+        
+        # Try to load fonts
+        self._load_fonts()
         
         self._build_ui()
-    
+        self._start_entrance_animations()
+
+    def _load_fonts(self):
+        # We assume the system might have them, or we use fallbacks
+        self.font_title = QFont("Righteous")
+        self.font_title.setFamilies(["Righteous", "Impact", "Arial Black", "sans-serif"])
+        self.font_title.setPixelSize(35) # 35.2px specified
+        self.font_title.setBold(True)
+        
+        self.font_body = QFont("Poppins")
+        self.font_body.setPixelSize(14) # 14.4px specified
+        
+        self.font_data = QFont("Poppins", weight=QFont.Weight.Bold)
+        self.font_data.setPixelSize(18) # 17.6px specified
+
     def paintEvent(self, event):
-        """Dibuja el fondo con gradiente del tema"""
         painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         
-        grad_start = QColor(Theme.to_hex(Theme.BG_GRADIENT_START))
-        grad_end = QColor(Theme.to_hex(Theme.BG_GRADIENT_END))
+        # Background color
+        painter.fillRect(self.rect(), QColor(self.CYAN_BG))
         
-        gradient = QLinearGradient(0, 0, 0, self.height())
-        gradient.setColorAt(0, grad_start)
-        gradient.setColorAt(1, grad_end)
-        painter.fillRect(self.rect(), gradient)
+        # Decorative circles
+        time_offset = 0 # Could add a timer for actual animation if needed
+        
+        # Top-right orange glow
+        grad1 = QRadialGradient(QPointF(self.width(), 0), 400)
+        grad1.setColorAt(0, QColor(251, 140, 0, 40))
+        grad1.setColorAt(0.7, QColor(251, 140, 0, 0))
+        painter.setBrush(grad1)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.drawEllipse(self.width()-300, -200, 600, 600)
+        
+        # Bottom-left blue glow
+        grad2 = QRadialGradient(QPointF(0, self.height()), 300)
+        grad2.setColorAt(0, QColor(30, 144, 255, 30))
+        grad2.setColorAt(0.7, QColor(30, 144, 255, 0))
+        painter.setBrush(grad2)
+        painter.drawEllipse(-150, self.height()-150, 400, 400)
 
     def _build_ui(self):
-        main_layout = QVBoxLayout()
-        main_layout.setContentsMargins(40, 30, 40, 30)
-        main_layout.setSpacing(15)
+        # Base layout for the dialog
+        dialog_layout = QVBoxLayout(self)
+        dialog_layout.setContentsMargins(0, 0, 0, 0)
         
-        # Colors from theme
-        text_color = Theme.to_hex(Theme.TEXT_PRIMARY)
-        highlight_color = Theme.to_hex(Theme.TEXT_HIGHLIGHT)
-        success_color = Theme.to_hex(Theme.SUCCESS)
-        warning_color = Theme.to_hex(Theme.WARNING)
-        muted_color = Theme.to_hex(Theme.TEXT_SECONDARY)
+        # Main scroll area for overflow protection
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setStyleSheet("background: transparent;")
+        dialog_layout.addWidget(scroll)
+        
+        # Content container
+        self.container = QWidget()
+        self.container.setStyleSheet("background: transparent;")
+        self.container_layout = QVBoxLayout(self.container)
+        self.container_layout.setContentsMargins(25, 20, 25, 20) # Optimized vertical margins
+        self.container_layout.setSpacing(10) # Balanced spacing between phases
+        scroll.setWidget(self.container)
         
         # Header
-        header_layout = QVBoxLayout()
-        title = QLabel("CALIBRACIÓN COMPLETA")
-        title.setStyleSheet(f"""
-            color: {highlight_color};
-            font-size: 28px;
-            font-weight: bold;
-            font-family: 'Comic Sans MS', 'Arial';
-            background: transparent;
-        """)
-        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        header = QWidget()
+        header_layout = QVBoxLayout(header)
+        header_layout.setSpacing(4) # Tighter header
         
-        subtitle = QLabel(f"Fecha: {self.summary.get('fecha', 'N/A')}   |   Versión: {self.summary.get('version', '2.0')}")
-        subtitle.setStyleSheet(f"""
-            color: {muted_color};
-            font-size: 14px;
-            background: transparent;
+        title = QLabel("CALIBRACIÓN COMPLETA")
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        title.setMinimumHeight(45) # Lower height
+        title.setStyleSheet(f"""
+            QLabel {{
+                color: {self.ORANGE};
+                font-family: 'Righteous', 'Impact', 'Arial Black';
+                font-size: 40px; /* Slight reduction for space */
+                font-weight: bold;
+                text-transform: uppercase;
+                letter-spacing: 2px;
+                margin: 0;
+            }}
         """)
-        subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        
+        # Exact shadow from HTML: 3px 3px 0px rgba(30, 144, 255, 0.2)
+        shadow = QGraphicsDropShadowEffect()
+        shadow.setBlurRadius(0)
+        shadow.setOffset(3, 3)
+        shadow.setColor(QColor(30, 144, 255, 51))
+        title.setGraphicsEffect(shadow)
+        
+        info_badges = QHBoxLayout()
+        info_badges.setSpacing(20)
+        info_badges.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        
+        fecha_badge = self._create_info_badge(f"Fecha: {self.summary.get('fecha', 'N/A')}")
+        version_badge = self._create_info_badge(f"Versión: {self.summary.get('version', '2.0')}")
+        info_badges.addWidget(fecha_badge)
+        info_badges.addWidget(version_badge)
         
         header_layout.addWidget(title)
-        header_layout.addWidget(subtitle)
-        main_layout.addLayout(header_layout)
+        header_layout.addLayout(info_badges)
+        self.container_layout.addWidget(header)
         
-        self._add_separator(main_layout)
+        # Phase sections tracking
+        self.phase_sections = []
         
-        # Phase 1 Section
-        lbl_p1 = QLabel("FASE 1: CALIBRACIÓN INDIVIDUAL")
-        lbl_p1.setStyleSheet(f"""
-            color: {highlight_color};
-            font-size: 20px;
-            font-weight: bold;
-            font-family: 'Comic Sans MS', 'Arial';
-            margin-top: 10px;
-            background: transparent;
-        """)
-        main_layout.addWidget(lbl_p1)
+        # Phase 1: Individual
+        p1 = self._create_phase_section(1, "Parametrización Intrínseca")
+        err_l = self.summary.get('error_left', 0.0)
+        err_r = self.summary.get('error_right', 0.0)
         
-        p1_layout = QVBoxLayout()
-        p1_layout.setSpacing(5)
+        # Row Left with distortion status
+        self._add_data_row_with_status_badge(p1, "RMS de Reproyección Intrínseca (RMSL)", f"{err_l:.6f}", "px", "CORREGIDA")
+        # Lens coefficients Izq
+        k_left = self.summary.get('dist_coeffs_left', [0, 0])
+        self._add_data_row(p1, "  └ Coef. Radiales Izquierda (k1, k2)", f"{k_left[0]:.4f}, {k_left[1]:.4f}", "")
         
-        # Left Camera
-        row_left = QHBoxLayout()
-        lbl_left = QLabel("Cámara IZQUIERDA:")
-        lbl_left.setStyleSheet(f"color: {text_color}; font-size: 14px; background: transparent;")
-        row_left.addWidget(lbl_left)
-        err_left = self.summary.get('error_left', 'N/A')
-        val_left = f"{err_left:.6f} px" if isinstance(err_left, float) else str(err_left)
-        lbl_val_left = QLabel(val_left)
-        lbl_val_left.setStyleSheet(f"color: {text_color}; font-size: 14px; background: transparent;")
-        row_left.addWidget(lbl_val_left)
-        row_left.addStretch()
-        p1_layout.addLayout(row_left)
+        # Row Right with distortion status
+        self._add_data_row_with_status_badge(p1, "RMS de Reproyección Intrínseca (RMSR)", f"{err_r:.6f}", "px", "CORREGIDA")
+        # Lens coefficients Der
+        k_right = self.summary.get('dist_coeffs_right', [0, 0])
+        self._add_data_row(p1, "  └ Coef. Radiales Derecha (k1, k2)", f"{k_right[0]:.4f}, {k_right[1]:.4f}", "")
+        self.container_layout.addWidget(p1)
+        self.phase_sections.append(p1)
         
-        # Right Camera
-        row_right = QHBoxLayout()
-        lbl_right = QLabel("Cámara DERECHA:")
-        lbl_right.setStyleSheet(f"color: {text_color}; font-size: 14px; background: transparent;")
-        row_right.addWidget(lbl_right)
-        err_right = self.summary.get('error_right', 'N/A')
-        val_right = f"{err_right:.6f} px" if isinstance(err_right, float) else str(err_right)
-        lbl_val_right = QLabel(val_right)
-        lbl_val_right.setStyleSheet(f"color: {text_color}; font-size: 14px; background: transparent;")
-        row_right.addWidget(lbl_val_right)
-        row_right.addStretch()
-        p1_layout.addLayout(row_right)
+        # Phase 2: Stereo
+        p2 = self._create_phase_section(2, "Geometría Estereoscópica")
+        baseline = self.summary.get('baseline_cm', 0.0)
+        rms_stereo = self.summary.get('error_stereo', 0.0)
+        self._add_data_row(p2, "Longitud de Línea Base Óptica (b)", f"{baseline:.2f}", "cm")
+        self._add_status_row(p2, "RMS de Reproyección Estéreo (RMSstereo)", f"{rms_stereo:.6f}")
+        self.container_layout.addWidget(p2)
+        self.phase_sections.append(p2)
         
-        main_layout.addLayout(p1_layout)
+        # Phase 3: Depth
+        p3 = self._create_phase_section(3, "Optimización de Profundidad")
+        kb_dist = self.summary.get('keyboard_distance_cm', 0.0)
+        m = self.summary.get('depth_m', 1.0)
+        c = self.summary.get('depth_c', 0.0)
+        r2 = self.summary.get('depth_r2', 1.0)
+        mae = self.summary.get('depth_mae', 0.0)
         
-        self._add_separator(main_layout)
+        self._add_data_row(p3, "Distancia Nominal al Plano Focal (Zref)", f"{kb_dist:.2f}", "cm")
+        self._add_data_row(p3, "Sesgo Sistemático de Profundidad (c)", f"{c:.4f}", "cm", precision=4)
         
-        # Phase 2 Section
-        lbl_p2 = QLabel("FASE 2: CALIBRACIÓN ESTÉREO")
-        lbl_p2.setStyleSheet(f"""
-            color: {highlight_color};
-            font-size: 20px;
-            font-weight: bold;
-            font-family: 'Comic Sans MS', 'Arial';
-            margin-top: 10px;
-            background: transparent;
-        """)
-        main_layout.addWidget(lbl_p2)
+        self.container_layout.addWidget(p3)
+        self.phase_sections.append(p3)
         
-        p2_layout = QVBoxLayout()
+        # Phase 4: Plane
+        p4 = self._create_phase_section(4, "Estimación de Plano de Referencia")
         
-        # Baseline
-        row_base = QHBoxLayout()
-        lbl_base_title = QLabel("Baseline (distancia):")
-        lbl_base_title.setStyleSheet(f"color: {text_color}; font-size: 14px; background: transparent;")
-        row_base.addWidget(lbl_base_title)
-        base_val = self.summary.get('baseline_cm', 'N/A')
-        val_base = f"{base_val:.2f} cm" if isinstance(base_val, float) else str(base_val)
-        lbl_base = QLabel(val_base)
-        lbl_base.setStyleSheet(f"color: {highlight_color}; font-weight: bold; font-size: 18px; background: transparent;")
-        row_base.addWidget(lbl_base)
-        row_base.addStretch()
-        p2_layout.addLayout(row_base)
+        coeffs = self.summary.get('plane_coeffs', [])
+        avg_depth = self.summary.get('avg_key_depth', 0.0)
+        std_depth = self.summary.get('std_key_depth', 0.0)
         
-        # RMS Error
-        row_rms = QHBoxLayout()
-        lbl_rms_title = QLabel("Error RMS:")
-        lbl_rms_title.setStyleSheet(f"color: {text_color}; font-size: 14px; background: transparent;")
-        row_rms.addWidget(lbl_rms_title)
-        rms_val = self.summary.get('error_stereo', 'N/A')
-        val_rms = f"{rms_val:.4f}" if isinstance(rms_val, float) else str(rms_val)
-        lbl_rms = QLabel(val_rms)
-        lbl_rms.setStyleSheet(f"color: {text_color}; font-size: 14px; background: transparent;")
-        row_rms.addWidget(lbl_rms)
-        
-        # Quality indicator
-        if isinstance(rms_val, float):
-            quality = "EXCELENTE" if rms_val < 0.3 else "BUENA" if rms_val < 0.5 else "REGULAR" if rms_val < 1.0 else "MALA"
-            color = success_color if rms_val < 0.5 else warning_color if rms_val < 1.0 else Theme.to_hex(Theme.ERROR)
-            lbl_qual = QLabel(quality)
-            lbl_qual.setStyleSheet(f"color: {color}; font-weight: bold; margin-left: 20px; background: transparent;")
-            row_rms.addWidget(lbl_qual)
+        if coeffs and len(coeffs) == 4:
+            nx, ny, nz, d = coeffs
+            # Plane Model with actual values
+            sign_y = "+" if ny >= 0 else "-"
+            sign_z = "+" if nz >= 0 else "-"
+            sign_d = "+" if d >= 0 else "-"
+            eq_str = f"{nx:.3f}x {sign_y} {abs(ny):.3f}y {sign_z} {abs(nz):.3f}z {sign_d} {abs(d):.1f} = 0"
             
-        row_rms.addStretch()
-        p2_layout.addLayout(row_rms)
-        
-        main_layout.addLayout(p2_layout)
-        
-        self._add_separator(main_layout)
-        
-        # Phase 3 Section (NEW)
-        lbl_p3 = QLabel("FASE 3: PROFUNDIDAD")
-        lbl_p3.setStyleSheet(f"""
-            color: {success_color};
-            font-size: 20px;
-            font-weight: bold;
-            font-family: 'Comic Sans MS', 'Arial';
-            margin-top: 10px;
-            background: transparent;
-        """)
-        main_layout.addWidget(lbl_p3)
-        
-        p3_layout = QVBoxLayout()
-        
-        # Distancia del teclado calibrada
-        row_distance = QHBoxLayout()
-        lbl_dist_title = QLabel("Distancia del Teclado:")
-        lbl_dist_title.setStyleSheet(f"color: {text_color}; font-size: 14px; background: transparent;")
-        row_distance.addWidget(lbl_dist_title)
-        
-        keyboard_dist = self.summary.get('keyboard_distance_cm', 'N/A')
-        keyboard_samples = self.summary.get('keyboard_samples', 'N/A')
-             
-        if isinstance(keyboard_dist, (int, float)):
-            val_dist = f"{keyboard_dist:.2f} cm"
-            lbl_dist = QLabel(val_dist)
-            lbl_dist.setStyleSheet(f"color: {success_color}; font-weight: bold; font-size: 16px; background: transparent;")
+            self._add_data_row(p4, "Ecuación del Plano de Referencia", eq_str, "")
+            self._add_data_row(p4, "  └ Vector Normal (nx, ny, nz)", f"{nx:.3f}, {ny:.3f}, {nz:.3f}", "")
+            self._add_data_row(p4, "Resolución Topográfica Vertical (ΔZkeys)", f"±{std_depth:.3f}", "cm")
+        elif avg_depth > 0:
+            self._add_data_row(p4, "Distancia Media Planar", f"{avg_depth:.2f}", "cm")
+            self._add_data_row(p4, "Estado", "Modelo Parcial", "")
         else:
-            lbl_dist = QLabel("N/A")
-            lbl_dist.setStyleSheet(f"color: {warning_color}; font-weight: bold; font-size: 16px; background: transparent;")
+            self._add_data_row(p4, "Estado", "Pendiente", "")
         
-        row_distance.addWidget(lbl_dist)
+        self.container_layout.addWidget(p4)
+        self.phase_sections.append(p4)
         
-        # Muestras usadas
-        if isinstance(keyboard_samples, int) and keyboard_samples > 0:
-            lbl_samples = QLabel(f"({keyboard_samples} muestras)")
-            lbl_samples.setStyleSheet(f"color: {muted_color}; font-size: 14px; background: transparent;")
-            row_distance.addWidget(lbl_samples)
-        
-        row_distance.addStretch()
-        p3_layout.addLayout(row_distance)
-        
-        # Factor de corrección (si existe)
-        correction_factor = self.summary.get('correction_factor', None)
-        if correction_factor is not None and correction_factor != 1.0:
-            row_factor = QHBoxLayout()
-            lbl_factor_title = QLabel("Factor de Correccion:")
-            lbl_factor_title.setStyleSheet(f"color: {text_color}; font-size: 14px; background: transparent;")
-            row_factor.addWidget(lbl_factor_title)
-            lbl_factor = QLabel(f"{correction_factor:.4f}")
-            lbl_factor.setStyleSheet(f"color: {highlight_color}; font-weight: bold; font-size: 16px; background: transparent;")
-            row_factor.addWidget(lbl_factor)
-            row_factor.addStretch()
-            p3_layout.addLayout(row_factor)
-        
-        # Error de medición (si existe distancia real)
-        real_dist = self.summary.get('real_distance_cm', None)
-        measured_dist = self.summary.get('measured_distance_cm', None)
-        error_percent = self.summary.get('depth_error_percent', None)
-        
-        if real_dist is not None and measured_dist is not None:
-            row_comparison = QHBoxLayout()
-            lbl_meas = QLabel("Medicion del Sistema:")
-            lbl_meas.setStyleSheet(f"color: {text_color}; font-size: 14px; background: transparent;")
-            row_comparison.addWidget(lbl_meas)
-            lbl_measured = QLabel(f"{measured_dist:.2f} cm")
-            lbl_measured.setStyleSheet(f"color: {muted_color}; font-size: 14px; background: transparent;")
-            row_comparison.addWidget(lbl_measured)
-            
-            lbl_vs = QLabel("  vs  Distancia Real:")
-            lbl_vs.setStyleSheet(f"color: {text_color}; font-size: 14px; background: transparent;")
-            row_comparison.addWidget(lbl_vs)
-            lbl_real = QLabel(f"{real_dist:.2f} cm")
-            lbl_real.setStyleSheet(f"color: {highlight_color}; font-size: 14px; background: transparent;")
-            row_comparison.addWidget(lbl_real)
-            row_comparison.addStretch()
-            p3_layout.addLayout(row_comparison)
-            
-            if error_percent is not None:
-                row_error = QHBoxLayout()
-                lbl_err_title = QLabel("Error de Medicion:")
-                lbl_err_title.setStyleSheet(f"color: {text_color}; font-size: 14px; background: transparent;")
-                row_error.addWidget(lbl_err_title)
-                
-                # Color según el error
-                if error_percent < 5:
-                    error_color = success_color  # Verde - excelente
-                    quality = "EXCELENTE"
-                elif error_percent < 10:
-                    error_color = warning_color  # Amarillo - bueno
-                    quality = "BUENO"
-                elif error_percent < 20:
-                    error_color = Theme.to_hex(Theme.ORANGE_VIVID)  # Naranja - regular
-                    quality = "REGULAR"
-                else:
-                    error_color = Theme.to_hex(Theme.ERROR)  # Rojo - malo
-                    quality = "ALTO"
-                
-                lbl_error = QLabel(f"{error_percent:.1f}%")
-                lbl_error.setStyleSheet(f"color: {error_color}; font-weight: bold; font-size: 16px; background: transparent;")
-                row_error.addWidget(lbl_error)
-                
-                lbl_quality = QLabel(f"({quality})")
-                lbl_quality.setStyleSheet(f"color: {error_color}; font-size: 14px; margin-left: 10px; background: transparent;")
-                row_error.addWidget(lbl_quality)
-                
-                row_error.addStretch()
-                p3_layout.addLayout(row_error)
-        
-        main_layout.addLayout(p3_layout)
-        
-        self._add_separator(main_layout)
-        
-        # Warning Box
-        warn_frame = QFrame()
-        warn_frame.setStyleSheet(f"""
-            QFrame {{
-                border: 2px solid {highlight_color};
-                border-radius: 10px;
-                background-color: rgba(255,255,255,0.9);
-                padding: 10px;
-            }}
-        """)
-        warn_layout = QVBoxLayout(warn_frame)
-        
-        lbl_warn_title = QLabel("ESTA CALIBRACIÓN ES VÁLIDA PARA:")
-        lbl_warn_title.setStyleSheet(f"color: {highlight_color}; font-weight: bold; background: transparent;")
-        lbl_warn_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        
-        lbl_warn1 = QLabel("- La misma ubicación física de las cámaras")
-        lbl_warn1.setStyleSheet(f"color: {text_color}; background: transparent;")
-        lbl_warn1.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        lbl_warn2 = QLabel("- Si moviste las cámaras, RE-CALIBRA")
-        lbl_warn2.setStyleSheet(f"color: {Theme.to_hex(Theme.ORANGE_VIVID)}; font-weight: bold; background: transparent;")
-        lbl_warn2.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        
-        warn_layout.addWidget(lbl_warn_title)
-        warn_layout.addWidget(lbl_warn1)
-        warn_layout.addWidget(lbl_warn2)
-        
-        main_layout.addWidget(warn_frame)
-        
-        main_layout.addStretch()
+        self.container_layout.addStretch()
         
         # Buttons
-        btn_layout = QVBoxLayout()
+        btn_group = QHBoxLayout()
+        btn_group.setSpacing(15) 
+        btn_group.setContentsMargins(0, 10, 0, 0) # Optimized margin at top of buttons
         
-        btn_recalibrate = QPushButton("RE-CALIBRAR")
-        btn_recalibrate.setStyleSheet(f"""
-            QPushButton {{
-                background-color: {highlight_color};
-                color: #FFFFFF;
-                border: 3px solid #FFFFFF;
-                padding: 12px 20px;
-                font-size: 16px;
-                font-weight: bold;
-                border-radius: 20px;
-                font-family: 'Comic Sans MS', 'Arial';
-            }}
-            QPushButton:hover {{
-                background-color: {Theme.to_hex(Theme.SELECTION_BG)};
-            }}
-        """)
-        btn_recalibrate.clicked.connect(lambda: self._finish(self.ACTION_RECALIBRATE_ALL))
-        btn_layout.addWidget(btn_recalibrate)
+        btn_recal = RippleButton("Re-Calibrar", self.ORANGE)
+        btn_recal.setMinimumHeight(40) # Slightly shorter
+        btn_recal.clicked.connect(lambda: self._finish(self.ACTION_RECALIBRATE_ALL))
         
-        btn_exit = QPushButton("VOLVER")
-        btn_exit.setStyleSheet(f"""
-            QPushButton {{
-                background-color: rgba(255,255,255,0.3);
-                color: {text_color};
-                border: 2px solid {Theme.to_hex(Theme.BORDER_DEFAULT)};
-                padding: 12px 20px;
-                font-size: 16px;
-                font-weight: bold;
-                border-radius: 20px;
-                font-family: 'Comic Sans MS', 'Arial';
-            }}
-            QPushButton:hover {{
-                background-color: rgba(255,255,255,0.5);
-            }}
-        """)
-        btn_exit.clicked.connect(lambda: self._finish(self.ACTION_EXIT))
-        btn_layout.addWidget(btn_exit)
+        btn_back = RippleButton("Volver", self.BLUE)
+        btn_back.setMinimumHeight(40) # Slightly shorter
+        btn_back.clicked.connect(lambda: self._finish(self.ACTION_EXIT))
         
-        main_layout.addLayout(btn_layout)
-        
-        self.setLayout(main_layout)
+        btn_group.addWidget(btn_recal)
+        btn_group.addWidget(btn_back)
+        self.container_layout.addLayout(btn_group)
 
-    def _add_separator(self, layout):
+    def _create_info_badge(self, text):
+        badge = QLabel(text)
+        badge.setStyleSheet(f"""
+            QLabel {{
+                background: rgba(135, 206, 235, 0.2);
+                color: {self.DARK};
+                padding: 6px 16px;
+                border-radius: 15px;
+                border: 1px solid rgba(30, 144, 255, 0.3);
+                font-family: 'Poppins';
+                font-weight: 500;
+                font-size: 14px; /* 14.4px specified */
+            }}
+        """)
+        return badge
+
+    def _create_phase_section(self, num, title_text):
+        section = QFrame()
+        section.setObjectName(f"phaseSection{num}")
+        section.setStyleSheet(f"""
+            QFrame#phaseSection{num} {{
+                background: rgba(255, 255, 255, 0.85);
+                border-radius: 16px;
+                border-left: 6px solid {self.ORANGE};
+            }}
+            QFrame#phaseSection{num}:hover {{
+                border: 1px solid rgba(251, 140, 0, 0.3);
+                border-left: 6px solid {self.ORANGE};
+            }}
+        """)
+        
+        layout = QVBoxLayout(section)
+        layout.setContentsMargins(20, 10, 20, 10) # Optimized internal padding
+        layout.setSpacing(5) # Balanced internal spacing
+        
+        title_layout = QHBoxLayout()
+        title_layout.setSpacing(8)
+        title_layout.setContentsMargins(0, 0, 0, 2) # Minimal space below title
+        
+        num_circle = QLabel(str(num))
+        num_circle.setFixedSize(32, 32)
+        num_circle.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        num_circle.setStyleSheet(f"""
+            QLabel {{
+                background: {self.ORANGE};
+                color: white;
+                border-radius: 16px;
+                font-weight: bold;
+                font-family: 'Poppins';
+                font-size: 16px; /* 16px specified */
+            }}
+        """)
+        
+        title = QLabel(title_text)
+        title.setStyleSheet(f"""
+            QLabel {{
+                color: {self.ORANGE};
+                font-family: 'Righteous', 'Impact', 'Arial Black';
+                font-size: 20px;
+                min-height: 25px;
+            }}
+        """)
+        title.setAlignment(Qt.AlignmentFlag.AlignVCenter)
+        
+        title_layout.addWidget(num_circle)
+        title_layout.addWidget(title)
+        title_layout.addStretch()
+        
+        layout.addLayout(title_layout)
+        return section
+
+    def _add_data_row(self, section, label_text, value_text, unit_text, precision=2):
+        row = QWidget()
+        row.setMinimumHeight(25) # Ultra-reduced height
+        row_layout = QHBoxLayout(row)
+        row_layout.setContentsMargins(0, 0, 0, 0) # No margin
+        
+        label = QLabel(label_text)
+        label.setStyleSheet(f"color: {self.DARK}; font-weight: 600; font-family: 'Poppins'; font-size: 13px;") # Tighter font size
+        label.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
+        
+        value_container = QWidget()
+        value_layout = QHBoxLayout(value_container)
+        value_layout.setContentsMargins(0, 0, 0, 0)
+        value_layout.setSpacing(4)
+        
+        format_str = "{:.6f}" if "px" in unit_text else f"{{:.{precision}f}}"
+        val_label = AnimatedLabel(parent=self)
+        val_label.setStyleSheet(f"""
+            QLabel {{
+                color: {self.BLUE};
+                font-family: 'Poppins';
+                font-size: 18px; /* 17.6px specified */
+                font-weight: bold;
+            }}
+        """)
+        val_label.animate_to(value_text, fmt=format_str)
+        val_label.setMinimumHeight(24) # Adjusted for compact rows
+        val_label.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight)
+        
+        unit = QLabel(unit_text)
+        unit.setStyleSheet(f"color: {self.ORANGE}; font-weight: 600; font-family: 'Poppins'; font-size: 14px;") # 14.4px specified
+        unit.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
+        
+        value_layout.addWidget(val_label)
+        value_layout.addWidget(unit)
+        
+        row_layout.addWidget(label)
+        row_layout.addStretch()
+        row_layout.addWidget(value_container)
+        
+        # Add a subtle separator except for the first child (which is the title layout)
+        if section.layout().count() > 1:
+            line = QFrame()
+            line.setFrameShape(QFrame.Shape.HLine)
+            line.setStyleSheet("background: rgba(0, 0, 0, 0.06); max-height: 1px; border: none;")
+            section.layout().addWidget(line)
+            
+        section.layout().addWidget(row)
+
+    def _add_status_row(self, section, label_text, value_text):
+        row = QWidget()
+        row.setMinimumHeight(25)
+        row_layout = QHBoxLayout(row)
+        row_layout.setContentsMargins(0, 0, 0, 0)
+        
+        label = QLabel(label_text)
+        label.setStyleSheet(f"color: {self.DARK}; font-weight: 600; font-family: 'Poppins'; font-size: 13px;")
+        label.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
+        
+        val_label = AnimatedLabel(parent=self)
+        val_label.setStyleSheet(f"""
+            QLabel {{
+                color: {self.BLUE};
+                font-family: 'Poppins';
+                font-size: 16px;
+                font-weight: bold;
+            }}
+        """)
+        val_label.animate_to(value_text, fmt="{:.4f}")
+        val_label.setMinimumHeight(20)
+        val_label.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight)
+        
+        # Status Badge
+        try:
+            val = float(value_text)
+            status_text = "EXCELENTE" if val < 0.3 else "BUENA" if val < 0.5 else "REGULAR" if val < 1.0 else "MALA"
+        except:
+            status_text = "REGULAR"
+            
+        badge = self._create_status_badge(status_text)
+        
+        row_layout.addWidget(label)
+        row_layout.addStretch()
+        row_layout.addWidget(val_label)
+        row_layout.addSpacing(10)
+        row_layout.addWidget(badge)
+        
         line = QFrame()
         line.setFrameShape(QFrame.Shape.HLine)
-        line.setFrameShadow(QFrame.Shadow.Sunken)
-        line.setStyleSheet(f"background-color: {Theme.to_hex(Theme.BORDER_DEFAULT)}; max-height: 2px;")
-        layout.addWidget(line)
+        line.setStyleSheet("background: rgba(0, 0, 0, 0.06); max-height: 1px; border: none;")
+        section.layout().addWidget(line)
+        section.layout().addWidget(row)
+
+    def _add_data_row_with_status_badge(self, section, label_text, value_text, unit_text, badge_text):
+        """Helper to add a data row with a trailing status badge (like corrected distortion)"""
+        row = QWidget()
+        row.setMinimumHeight(25)
+        row_layout = QHBoxLayout(row)
+        row_layout.setContentsMargins(0, 0, 0, 0)
+        
+        label = QLabel(label_text)
+        label.setStyleSheet(f"color: {self.DARK}; font-weight: 600; font-family: 'Poppins'; font-size: 13px;")
+        label.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
+        
+        value_container = QWidget()
+        v_layout = QHBoxLayout(value_container)
+        v_layout.setContentsMargins(0, 0, 0, 0)
+        v_layout.setSpacing(4)
+        
+        val_label = AnimatedLabel(parent=self)
+        val_label.setStyleSheet(f"color: {self.BLUE}; font-family: 'Poppins'; font-size: 16px; font-weight: bold;")
+        val_label.animate_to(value_text, fmt="{:.6f}")
+        
+        unit = QLabel(unit_text)
+        unit.setStyleSheet(f"color: {self.ORANGE}; font-weight: 600; font-family: 'Poppins'; font-size: 14px;")
+        
+        v_layout.addWidget(val_label)
+        v_layout.addWidget(unit)
+        
+        badge = self._create_status_badge(badge_text)
+        
+        row_layout.addWidget(label)
+        row_layout.addStretch()
+        row_layout.addWidget(value_container)
+        row_layout.addSpacing(10)
+        row_layout.addWidget(badge)
+        
+        if section.layout().count() > 1:
+            line = QFrame()
+            line.setFrameShape(QFrame.Shape.HLine)
+            line.setStyleSheet("background: rgba(0, 0, 0, 0.06); max-height: 1px; border: none;")
+            section.layout().addWidget(line)
+            
+        section.layout().addWidget(row)
+
+    def _create_status_badge(self, text):
+        badge = QLabel(text)
+        badge.setStyleSheet(f"""
+            QLabel {{
+                background: {self.ORANGE};
+                color: white;
+                padding: 2px 10px;
+                border-radius: 10px;
+                font-weight: bold;
+                font-size: 12px;
+                font-family: 'Poppins';
+            }}
+        """)
+        return badge
+
+    def _start_entrance_animations(self):
+        # We removed the Opacity animation as it was causing some widgets to disappear 
+        # on certain systems. Keeping the interface static and stable for now.
+        pass
 
     def _finish(self, action):
         self.result_action = action
         self.accept()
 
 def show_calibration_summary(summary_data):
-    """
-    Muestra el diálogo de resumen y retorna la acción seleccionada
-    """
+    """Muestra el diálogo de resumen y retorna la acción seleccionada"""
     app = QApplication.instance()
     if not app:
         app = QApplication(sys.argv)

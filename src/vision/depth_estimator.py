@@ -703,6 +703,7 @@ class DepthEstimator:
     def rectify_point(self, point, is_left=True):
         """
         Rectifica un punto 2D de imagen original a imagen rectificada
+        usando cv2.undistortPoints (método correcto para puntos individuales)
         
         Args:
             point: (x, y) en imagen original
@@ -714,23 +715,17 @@ class DepthEstimator:
         x, y = point
         
         if is_left:
-            mapx, mapy = self.mapx_left, self.mapy_left
+            K, D, R, P = self.K_left, self.D_left, self.R1, self.P1
         else:
-            mapx, mapy = self.mapx_right, self.mapy_right
+            K, D, R, P = self.K_right, self.D_right, self.R2, self.P2
         
-        # Validar límites del mapa
-        h, w = mapx.shape[:2]
-        ix, iy = int(x), int(y)
+        # cv2.undistortPoints requires shape (N, 1, 2)
+        pt = np.array([[[x, y]]], dtype=np.float32)
         
-        # Clamp a límites válidos
-        ix = max(0, min(ix, w - 1))
-        iy = max(0, min(iy, h - 1))
+        # Esto desdistorsiona y rectifica el punto correctamente
+        rect_pt = cv2.undistortPoints(pt, K, D, R=R, P=P)
         
-        # Obtener coordenadas rectificadas usando mapas
-        x_rect = mapx[iy, ix]
-        y_rect = mapy[iy, ix]
-        
-        return (x_rect, y_rect)
+        return (rect_pt[0, 0, 0], rect_pt[0, 0, 1])
     
     def enable_smoothing(self, enabled=True, window_size=5):
         """

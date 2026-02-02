@@ -120,11 +120,17 @@ class DepthCalibrator:
         pt_L = (index_left.x * self.width, index_left.y * self.height)
         pt_R = (index_right.x * self.width, index_right.y * self.height)
         
-        # Triangular sin corrección (usar factor 1.0 temporalmente)
-        original_factor = self.depth_estimator.DEPTH_CORRECTION_FACTOR
-        self.depth_estimator.DEPTH_CORRECTION_FACTOR = 1.0
+        # --- CORRECCIÓN CRÍTICA: Forzar modo "RAW" absoluto ---
+        # Guardar valores actuales
+        original_factor = getattr(self.depth_estimator, 'DEPTH_CORRECTION_FACTOR', 1.0)
+        original_slope = getattr(self.depth_estimator, 'depth_slope', 1.0)
+        original_intercept = getattr(self.depth_estimator, 'depth_intercept', 0.0)
         
-        # --- CORRECCIÓN FASE 3: Unificar lógica con Fase 4B ---
+        # Eliminar cualquier corrección previa para medir el error crudo
+        self.depth_estimator.DEPTH_CORRECTION_FACTOR = 1.0
+        self.depth_estimator.depth_slope = 1.0
+        self.depth_estimator.depth_intercept = 0.0
+        
         try:
             from ..vision.stereo_config import StereoConfig
             
@@ -141,14 +147,19 @@ class DepthCalibrator:
             rect_R = self.depth_estimator.rectify_point(raw_R, is_left=False)
             
             # 3. Triangular SIMPLE (Igual que en Fase 4B)
-            # Nota: rectify_point ya devuelve puntos listos para triangulación simple
+            # Nota: triangulate_point con method='simple' usa internamente apply_depth_correction
+            # Pero como acabamos de poner slope=1 e intercept=0, obtendremos Z crudo.
             point_3d = self.depth_estimator.triangulate_point(rect_L, rect_R, method='simple')
             
         except Exception as e:
-            print(f"[DepthCalibrator] Error en cálculo unificado: {e}")
+            print(f"[DepthCalibrator] Error en cálculo unificado (RAW): {e}")
             point_3d = None
             
-        self.depth_estimator.DEPTH_CORRECTION_FACTOR = original_factor
+        finally:
+            # Restaurar valores originales SIEMPRE
+            self.depth_estimator.DEPTH_CORRECTION_FACTOR = original_factor
+            self.depth_estimator.depth_slope = original_slope
+            self.depth_estimator.depth_intercept = original_intercept
         
         if point_3d is not None:
             raw_depth = point_3d[2]  # Profundidad Z

@@ -249,7 +249,7 @@ class CalibrationConfig:
             return True
             
         except Exception as e:
-            print(f"⚠ Error al verificar calibración: {e}")
+            print(f"Error al verificar calibración: {e}")
             return False
     
     @classmethod
@@ -330,7 +330,7 @@ class CalibrationConfig:
             return summary
             
         except Exception as e:
-            print(f"⚠ Error al leer resumen: {e}")
+            print(f"Error al leer resumen: {e}")
             return None
     
     @classmethod

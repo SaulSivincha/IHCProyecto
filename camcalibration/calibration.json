@@ -372,13 +372,15 @@
     "depth_correction": {
         "method": "linear_regression",
         "slope": 1.0,
-        "intercept": 0.89498091371253,
+        "intercept": 4.0537663845543435,
+        "r2": 1.0,
+        "mae_cm": 0.0,
         "correction_factor": 1.0,
         "keyboard_distance_cm": 41.0,
         "measurements": [
             {
                 "real_cm": 41.0,
-                "measured_cm": 40.10501908628747
+                "measured_cm": 36.94623361544566
             }
         ],
         "num_samples": 1
@@ -386,20 +388,20 @@
     "table_definition": {
         "corners": [
             [
-                829,
-                598
+                799,
+                561
             ],
             [
-                301,
-                598
+                249,
+                561
             ],
             [
-                301,
-                386
+                249,
+                364
             ],
             [
-                829,
-                386
+                799,
+                364
             ]
         ],
         "camera": "left",
@@ -408,17 +410,17 @@
             720
         ],
         "corner_depths": [
-            39.0,
-            40.5,
-            42.2,
-            41.9
+            41.1,
+            41.0,
+            41.1,
+            40.3
         ],
         "plane_3d": {
             "coefficients": [
-                0.057486499938894806,
-                0.15269320508477394,
-                0.9866002673047044,
-                -40.606920368192554
+                -0.0033049701891646223,
+                0.008652306572249684,
+                0.9999571064615864,
+                -41.145063142771605
             ],
             "description": "Plano ax + by + cz + d = 0 generado por toque"
         }

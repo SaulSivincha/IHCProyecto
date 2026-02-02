@@ -70,12 +70,50 @@ class HandDetector:
     def getAllLandmarks(self): 
         return self.results.multi_hand_landmarks if self.results.multi_hand_landmarks else []
 
-    def drawHands(self, img, rotate_180=False): 
-        # Nota: draw_landmarks estándar no soporta rotación fácil. 
-        # Si rotate_180 es True, evitamos dibujar el esqueleto para no ensuciar la pantalla con líneas invertidas.
-        if self.results.multi_hand_landmarks and not rotate_180:
-            for h in self.results.multi_hand_landmarks: 
-                self.mpDraw.draw_landmarks(img, h, self.mpHands.HAND_CONNECTIONS)
+    def drawHands(self, img, rotate_180=False, highlight_finger_id=8): 
+        """
+        Dibuja el esqueleto completo de la mano.
+        Soporta rotación de 180 grados para alinearse con el display.
+        """
+        if not self.results.multi_hand_landmarks:
+            return
+
+        h, w = img.shape[:2]
+        
+        for handLms in self.results.multi_hand_landmarks:
+            # Dibujar conexiones primero
+            for connection in self.mpHands.HAND_CONNECTIONS:
+                id1, id2 = connection
+                lm1 = handLms.landmark[id1]
+                lm2 = handLms.landmark[id2]
+                
+                cx1, cy1 = int(lm1.x * w), int(lm1.y * h)
+                cx2, cy2 = int(lm2.x * w), int(lm2.y * h)
+                
+                if rotate_180:
+                    cx1, cy1 = w - cx1, h - cy1
+                    cx2, cy2 = w - cx2, h - cy2
+                
+                cv2.line(img, (cx1, cy1), (cx2, cy2), (255, 255, 255), 2)
+            
+            # Dibujar puntos
+            for id, lm in enumerate(handLms.landmark):
+                cx, cy = int(lm.x * w), int(lm.y * h)
+                if rotate_180:
+                    cx, cy = w - cx, h - cy
+                
+                # Color base: Amarillo para mayor visibilidad
+                color = (0, 255, 255) if id > 0 else (255, 255, 255)
+                radius = 7 # Aumentado de 5
+                
+                # Resaltar dedo específico en Rojo (ej: índice para Fase 3)
+                if id == highlight_finger_id:
+                    color = (0, 0, 255) # Rojo puro para el dedo de medición
+                    radius = 10 # Aumentado de 8
+                    cv2.circle(img, (cx, cy), radius + 5, (0, 0, 255), 1) # Aura roja
+                
+                cv2.circle(img, (cx, cy), radius, color, cv2.FILLED)
+                cv2.circle(img, (cx, cy), radius, (20, 20, 20), 1) # Borde oscuro fino
 
     def drawTips(self, img, rotate_180=False):
         # Reutilizamos la lógica centralizada

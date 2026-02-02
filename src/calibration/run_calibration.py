@@ -15,6 +15,6 @@ if __name__ == '__main__':
     success = run_qt_calibration(cam_left_id=1, cam_right_id=2)
     
     if success:
-        print("\n🎉 ¡Calibración completa exitosa!")
+        print("\nCalibración completa exitosa!")
     else:
-        print("\n❌ La calibración no se completó.")
+        print("\nLa calibración no se completó.")

@@ -199,7 +199,7 @@ class CameraCalibrator:
         print(f"Error de reproyección: {mean_error:.4f} píxeles")
         
         if mean_error > CalibrationConfig.MAX_REPROJECTION_ERROR:
-            print(f"⚠ ADVERTENCIA: Error alto (>{CalibrationConfig.MAX_REPROJECTION_ERROR} px)")
+            print(f"ADVERTENCIA: Error alto (>{CalibrationConfig.MAX_REPROJECTION_ERROR} px)")
             print(f"  Considera recapturar imágenes con mejor calidad")
         
         print(f"\nMatriz de cámara:")

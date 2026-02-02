@@ -285,7 +285,7 @@ class DepthCalibrator:
             print(f"  Fórmula: Real = {self.slope:.4f} * Medido + {self.intercept:.4f}")
             
         except Exception as e:
-            print(f"⚠ Error al guardar: {e}")
+            print(f"Error al guardar: {e}")
     
     def add_keyboard_distance_sample(self, depth):
         """

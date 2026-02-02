@@ -130,7 +130,7 @@ class StereoCalibrator:
         """
         min_pairs = 8
         if len(self.obj_points) < min_pairs:
-            print(f"✗ Insuficientes pares de imágenes: {len(self.obj_points)} < {min_pairs}")
+            print(f"X Insuficientes pares de imágenes: {len(self.obj_points)} < {min_pairs}")
             return None
         
         print(f"\n{'='*70}")
@@ -165,7 +165,7 @@ class StereoCalibrator:
             
             # ret es el error RMS, un float > 0 para calibración exitosa
             if ret is None or ret <= 0:
-                print("✗ Error durante la calibración estéreo (ret inválido)")
+                print("X Error durante la calibración estéreo (ret inválido)")
                 return None
             
             # Guardar resultados
@@ -182,9 +182,9 @@ class StereoCalibrator:
             baseline = np.linalg.norm(T)
             
             # Mostrar resultados
-            print(f"✓ Calibración estéreo completada")
+            print(f"[OK] Calibración estéreo completada")
             print(f"Error RMS: {ret:.6f}")
-            print(f"\n📏 PARÁMETROS EXTRÍNSECOS:")
+            print(f"\nPARÁMETROS EXTRÍNSECOS:")
             print(f"Baseline (distancia entre cámaras): {baseline*100:.2f} cm")
             print(f"\nMatriz de Rotación R:")
             print(R)
@@ -204,7 +204,7 @@ class StereoCalibrator:
             }
             
         except Exception as e:
-            print(f"✗ Excepción durante calibración estéreo: {e}")
+            print(f"X Excepción durante calibración estéreo: {e}")
             import traceback
             traceback.print_exc()
             return None
@@ -218,7 +218,7 @@ class StereoCalibrator:
             dict: Parámetros de rectificación o None si falla
         """
         if self.R is None or self.T is None:
-            print("✗ Debes ejecutar calibrate_stereo_pair() primero")
+            print("X Debes ejecutar calibrate_stereo_pair() primero")
             return None
         
         print(f"\n{'='*70}")
@@ -244,7 +244,7 @@ class StereoCalibrator:
         self.P2 = P2
         self.Q = Q
         
-        print(f"✓ Rectificación calculada")
+        print(f"[OK] Rectificación calculada")
         print(f"\nMatriz de reproyección Q:")
         print(Q)
         print(f"{'='*70}\n")

@@ -433,7 +433,7 @@ class QtCalibrationManager(QObject):
             "   El borde de la mesa o tablero debe quedar <b>PARALELO</b> a la línea",
             "   (ver ejemplos BIEN / MAL en pantalla)",
             "",
-            "<span style='color: #00FF00;'>✔ LISTO:</span> Cuando esté paralelo en AMBAS → <b>CONTINUAR</b>"
+            "<span style='color: #00FF00;'>LISTO:</span> Cuando esté paralelo en AMBAS → <b>CONTINUAR</b>"
         ]
         self.window.show_intro_screen("ALINEACIÓN DE CÁMARAS", instructions)
         self.window.show_continue_button(True)
@@ -528,7 +528,7 @@ class QtCalibrationManager(QObject):
         elif self.current_phase == "table_definition":
             # --- CORRECCIÓN: VALIDACIÓN PARA EVITAR INDEX ERROR ---
             if not self.table_corners or len(self.table_corners) != 4:
-                self.window.set_status("⚠️ ERROR: Debes dibujar el área del teclado primero", "#FF0000")
+                self.window.set_status("ERROR: Debes dibujar el área del teclado primero", "#FF0000")
                 return
             # ------------------------------------------------------
             self._save_table_definition() # Guardar coordenadas
@@ -543,7 +543,7 @@ class QtCalibrationManager(QObject):
             # El usuario confirmó las instrucciones (Intro)
             # Ocultamos el botón para que no confunda, la detección ya corre en background
             self.window.show_continue_button(False)
-            self.window.set_status("👆 Buscando dedo en la esquina...", "#00FF00")
+            self.window.set_status("Buscando dedo en la esquina...", "#00FF00")
         
         elif self.current_phase == "phase4b_complete":
             # Fase 4B completada - IR A FASE 4C (Nivelación de teclas)
@@ -957,9 +957,9 @@ class QtCalibrationManager(QObject):
         summary_html += "</table>"
         
         if error_val > 1.0:
-            summary_html += "<p style='color: #FF0000; margin-top: 10px;'>⚠ Error alto. Se recomienda <b>Reintentar</b>.</p>"
+            summary_html += "<p style='color: #FF0000; margin-top: 10px;'>Error alto. Se recomienda <b>Reintentar</b>.</p>"
         else:
-            summary_html += "<p style='color: #00FF00; margin-top: 20px;'><b>✔ Calibración Correcta</b><br>Presiona CONTINUAR</p>"
+            summary_html += "<p style='color: #00FF00; margin-top: 20px;'><b>Calibración Correcta</b><br>Presiona CONTINUAR</p>"
         
         self.window.set_instructions(summary_html)
         self.window.set_status("[OK] Calibracion completada", "#00FF00")
@@ -1122,7 +1122,7 @@ class QtCalibrationManager(QObject):
         self.cap_right = None
         
         # Ejecutar calibración estéreo
-        print("\n⏳ Procesando calibración estéreo...")
+        print("\nProcesando calibración estéreo...")
         stereo_result = self.stereo_calibrator.calibrate_stereo_pair()
         
         if stereo_result is None:
@@ -1131,7 +1131,7 @@ class QtCalibrationManager(QObject):
             return
         
         # Calcular rectificación
-        print("⏳ Calculando parámetros de rectificación...")
+        print("Calculando parámetros de rectificación...")
         self.stereo_calibrator.compute_rectification()
         
         # Recopilar datos finales
@@ -1436,7 +1436,7 @@ class QtCalibrationManager(QObject):
             f"Configuración: Medir desde <b>{self.calib_start_height} cm</b>",
             f"Mesa definida a: <b>{self.real_table_height} cm</b>",
             "",
-            "<b>🎯 CALIBRACIÓN RÁPIDA (1 PUNTO):</b>",
+            "<b>CALIBRACIÓN RÁPIDA (1 PUNTO):</b>",
             f"   1. Pon tu mano a <b>{self.depth_targets[0]:.0f} cm</b> y captura.",
             "",
             "El sistema calculará el ajuste automáticamente."
@@ -1550,7 +1550,7 @@ class QtCalibrationManager(QObject):
             step_msg = f"Coloca tu mano a <b>{target:.1f} cm</b>"
             
             self.window.set_instructions(
-                f"<b>🎯 PASO {step_num}/{total_steps}</b><br><br>"
+                f"<b>PASO {step_num}/{total_steps}</b><br><br>"
                 f"{step_msg}<br><br>"
                 f"<span style='color: #00FF00;'>Presiona ESPACIO o CAPTURAR cuando esté listo</span>"
             )
@@ -1598,7 +1598,7 @@ class QtCalibrationManager(QObject):
         display_left = StereoConfig.apply_display_transform(frame_left)
         display_right = StereoConfig.apply_display_transform(frame_right)
         
-        # 4. Dibujar en Display (con rotate_180=True)
+        # 3. Dibujar en Display (usando drawHands para esqueleto completo y resaltado)
         if landmarks_right:
             self.hand_detector_right.drawHands(display_right, rotate_180=True)
             
@@ -1782,9 +1782,9 @@ class QtCalibrationManager(QObject):
         self.finished.emit(success)
         
         if success:
-            print("\n🎉 ¡Calibración completa exitosa!")
+            print("\nCalibración completa exitosa!")
         else:
-            print("\n❌ La calibración no se completó.")
+            print("\nLa calibración no se completó.")
     
     def _cleanup(self):
         """Limpia recursos (cámaras, timers, etc.)"""
@@ -1950,13 +1950,13 @@ class QtCalibrationManager(QObject):
         instructions = [
             "<b>CONFIGURACIÓN DE PROYECCIÓN AR</b>",
             "",
-            "📐 <b>ARRASTRA para definir el área del teclado:</b>",
+            "<b>ARRASTRA para definir el área del teclado:</b>",
             "",
             "1. Haz <b>CLIC</b> en una esquina del área deseada",
             "2. <b>MANTÉN PRESIONADO</b> y arrastra hasta la esquina opuesta",
             "3. <b>SUELTA</b> para confirmar el rectángulo",
             "",
-            "💡 El rectángulo aparecerá en <span style='color:#00FF00'>VERDE</span> mientras arrastras"
+            "El rectángulo aparecerá en <span style='color:#00FF00'>VERDE</span> mientras arrastras"
         ]
         
         self.window.show_intro_screen(
@@ -1974,7 +1974,7 @@ class QtCalibrationManager(QObject):
              self.cap_left = self._get_or_create_camera("left")
         
         self.timer.start(33)
-        self.window.set_status("🖱️ Arrastra en la CÁMARA IZQUIERDA para definir el área", "#00C8FF")
+        self.window.set_status("Arrastra en la CÁMARA IZQUIERDA para definir el área", "#00C8FF")
 
     def _update_table_definition_frame(self):
         """Muestra el video y dibuja el rectángulo (durante drag o finalizado)"""
@@ -2043,7 +2043,7 @@ class QtCalibrationManager(QObject):
         self.drag_start_point = (x, y)
         self.drag_current_point = (x, y)
         self.table_corners = []  # Limpiar esquinas previas
-        self.window.set_status("🎯 Arrastrando... suelta para confirmar", "#FFFF00")
+        self.window.set_status("Arrastrando... suelta para confirmar", "#FFFF00")
         print(f"[Drag] Iniciado en ({x}, {y})")
     
     def _on_drag_moved(self, camera_name, x, y):
@@ -2111,7 +2111,7 @@ class QtCalibrationManager(QObject):
         print(f"[Drag] Rectángulo definido (RAW): {self.table_corners}")
         
         # CAMBIO: Mostrar botón en lugar de usar Timer automático
-        self.window.set_status("✅ Área definida. Presiona CONTINUAR para calibrar profundidad.", "#00FF00")
+        self.window.set_status("Área definida. Presiona CONTINUAR para calibrar profundidad.", "#00FF00")
         self.window.show_continue_button(True)
 
     def _on_frame_clicked(self, camera_name, x, y):
@@ -2128,7 +2128,7 @@ class QtCalibrationManager(QObject):
     def _finish_table_definition(self):
         """Finaliza la Fase 4A e inicia OBLIGATORIAMENTE la Fase 4B (Toque)"""
         if not self.table_corners or len(self.table_corners) < 4:
-            self.window.set_status("⚠️ Error: Dibuja el rectángulo primero", "#FF0000")
+            self.window.set_status("Error: Dibuja el rectángulo primero", "#FF0000")
             return
 
         print("\n[PLANO 3D] Zona definida. Iniciando Fase 4B (Toque manual)...")
@@ -2314,7 +2314,7 @@ class QtCalibrationManager(QObject):
             print(f"[INFO] Intercept actual: {self.depth_estimator.depth_intercept:.4f}")
         except Exception as e:
             print(f"[ERROR] No se pudo cargar depth_estimator: {e}")
-            self.window.set_status(f"⚠️ Error cargando calibración: {e}", "#FF0000")
+            self.window.set_status(f"Error cargando calibración: {e}", "#FF0000")
             # self._finish_calibration_without_4b() # NO SALTAR la fase si hay error
             return
         # -------------------------------------------------------
@@ -2334,13 +2334,13 @@ class QtCalibrationManager(QObject):
         self.window.show_intro_screen(
             f"FASE 4B: Calibración de Esquina {self.current_corner_index + 1}/4",
             [
-                f"<b>📍 Esquina: {corner_names[self.current_corner_index]}</b>",
+                f"<b>Esquina: {corner_names[self.current_corner_index]}</b>",
                 "",
                 f"<span style='color:{corner_colors[self.current_corner_index]}'>●</span> Un círculo marca la esquina en el video",
                 "",
-                "👆 <b>Toca la esquina con tu dedo índice</b>",
+                "<b>Toca la esquina con tu dedo índice</b>",
                 "",
-                "📊 Mantén el dedo quieto mientras se recogen muestras",
+                "Mantén el dedo quieto mientras se recogen muestras",
                 "",
                 f"Muestras: 0 / {self.samples_per_corner}",
                 "",
@@ -2348,7 +2348,7 @@ class QtCalibrationManager(QObject):
             ]
         )
         
-        self.window.set_status(f"👆 Toca la esquina {corner_names[self.current_corner_index]} con tu dedo", "#00C8FF")
+        self.window.set_status(f"Toca la esquina {corner_names[self.current_corner_index]} con tu dedo", "#00C8FF")
     
     def _update_corner_depth_frame(self):
         """Actualiza el frame durante la calibración de esquinas"""
@@ -2536,7 +2536,7 @@ class QtCalibrationManager(QObject):
                 
                 if point_3d:
                     corners_3d.append(point_3d)
-                    print(f"  📍 Esquina {i}: 2D({pixel_x}, {pixel_y}) + Z({avg_depth:.1f}) -> 3D{point_3d}")
+                    print(f"  Esquina {i}: 2D({pixel_x}, {pixel_y}) + Z({avg_depth:.1f}) -> 3D{point_3d}")
             else:
                 # Fallback
                 fallback = self.depth_estimator.keyboard_distance_cm or 41.0
@@ -2551,16 +2551,16 @@ class QtCalibrationManager(QObject):
         self._save_ar_calibration(corner_depths, plane_coeffs)
         
         # Mostrar resumen
-        msg = ["✅ Mesa 3D calibrada exitosamente", ""]
+        msg = ["Mesa 3D calibrada exitosamente", ""]
         if plane_coeffs:
             a, b, c, d = plane_coeffs
-            msg.append(f"📐 Plano detectado: {a:.2f}x + {b:.2f}y + {c:.2f}z + {d:.1f} = 0")
-            msg.append("🎹 El piano se ajustará a la inclinación de tu mesa.")
+            msg.append(f"Plano detectado: {a:.2f}x + {b:.2f}y + {c:.2f}z + {d:.1f} = 0")
+            msg.append("El piano se ajustará a la inclinación de tu mesa.")
         else:
-            msg.append("⚠️ No se pudo calcular el plano (usando modo plano simple).")
+            msg.append("No se pudo calcular el plano (usando modo plano simple).")
             
         self.window.show_intro_screen("¡CALIBRACIÓN AR COMPLETA!", msg)
-        self.window.set_status("✅ Calibración AR lista", "#00FF00")
+        self.window.set_status("Calibración AR lista", "#00FF00")
         self.window.show_continue_button(True)
         self.current_phase = "phase4b_complete"
     
@@ -2642,12 +2642,12 @@ class QtCalibrationManager(QObject):
         self.window.show_intro_screen(
             "¡CALIBRACIÓN FINALIZADA!",
             [
-                "✅ Has completado las fases principales.",
+                "Has completado las fases principales.",
                 "",
-                "⚠️ La Fase 4B no pudo completarse.",
+                "La Fase 4B no pudo completarse.",
                 "   Se usará distancia fija para la detección.",
                 "",
-                "🎹 Tu piano virtual está listo.",
+                "Tu piano virtual está listo.",
                 "",
                 "Presiona <b>Continuar</b> para comenzar a tocar."
             ]
@@ -2946,7 +2946,7 @@ class QtCalibrationManager(QObject):
         self.current_phase = "key_depth_calibration"
         
         instructions = [
-            "<b>🎹 FASE FINAL: NIVELACIÓN DE TECLAS</b>",
+            "<b>FASE FINAL: NIVELACIÓN DE TECLAS</b>",
             "El sistema necesita aprender la altura exacta de cada tecla.",
             "",
             "1. Pasa tu dedo presionando <b>FIRMEMENTE</b> tecla por tecla.",

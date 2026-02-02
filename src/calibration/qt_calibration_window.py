@@ -569,7 +569,7 @@ class CalibrationWindow(QMainWindow):
         Args:
             summary_data: Diccionario con resultados de calibración
         """
-        self.title_label.setText("✓ CALIBRACIÓN COMPLETADA")
+        self.title_label.setText("CALIBRACIÓN COMPLETADA")
         
         success_color = Theme.to_hex(Theme.SUCCESS)
         text_color = Theme.to_hex(Theme.TEXT_PRIMARY)
@@ -601,6 +601,6 @@ class CalibrationWindow(QMainWindow):
         html += f"<p style='color: {muted_color}; font-size: 12px;'>Presiona CONTINUAR o ENTER para finalizar</p>"
         
         self.set_instructions(html)
-        self.set_status("✓ Proceso completado", Theme.to_hex(Theme.SUCCESS))
+        self.set_status("Proceso completado", Theme.to_hex(Theme.SUCCESS))
         self.show_continue_button(True)
         self.progress_bar.setValue(100)

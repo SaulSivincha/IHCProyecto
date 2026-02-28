@@ -1,0 +1,62 @@
+#!/bin/bash
+
+ARCHIVO_REGISTRO="postulantes.txt"
+
+# Crear el archivo si no existe
+if [ ! -f "$ARCHIVO_REGISTRO" ]; then
+    touch "$ARCHIVO_REGISTRO"
+fi
+
+# Cabecera
+clear
+echo "   SISTEMA DE RECLUTAMIENTO ACM SEC   "
+echo ""
+
+while true; do
+    read -p "Ingrese su Alias/Nombre clave: " ALIAS
+    
+    # 1. Validar que no esté vacío
+    if [ -z "$ALIAS" ]; then
+        echo "Error: El alias no puede 
+        estar vacío."
+    # 2. Validar duplicados (Busca si el alias
+     ya está en el archivo)
+    elif grep -q " - $ALIAS - " "$ARCHIVO_REGISTRO";
+     then
+        echo "Error: El alias '$ALIAS' ya ha sido 
+        egistrado previamente."
+        exit 1
+    else
+        break
+    fi
+done
+
+echo ""
+echo "Generando desafío de seguridad..."
+sleep 1
+
+# --- BANCO DE PREGUNTAS (Arrays) ---
+# Índices: 0=Pregunta, 1=Opción A, 2=Opción B, 3=Opción C, 
+4=Respuesta Correcta (letra)
+
+# Pregunta 1
+P1=("¿Qué comando se usa para ver procesos activos?" "list" 
+"ps" "show" "b")
+# Pregunta 2
+P2=("¿Qué permiso octal representa lectura y escritura (rw-)?"
+ "600" "777" "400" "a")
+# Pregunta 3
+P3=("¿Cuál es el puerto estándar para SSH?" "80" "21" "22" "c")
+# Pregunta 4
+P4=("¿Qué comando muestra la ruta del directorio actual?" "pwd" 
+"cd" "whereis" "a")
+
+# Selección aleatoria de pregunta (genera un número entre 1 y 4)
+NUM_PREGUNTA=$(( ( RANDOM % 4 ) + 1 ))
+
+# Asignar variables según el número aleatorio 
+(Indirección de variables)
+declare -n PREGUNTA_SELECCIONADA="P$NUM_PREGUNTA"
+
+TEXTO_PREGUNTA=${PREGUNTA_SELECCIONADA[0]}
+OPT_A
